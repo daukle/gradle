@@ -1,0 +1,23 @@
+schema = 1
+project = "example/app"
+version = "1.0.0"
+
+[modules]
+
+[sources."forebay/basekit"]
+kind = "fixture"
+path = "./producer"
+
+[plugins]
+fixture = "./plugins/fixture.lua"
+plugin = "./plugins/plugin.lua"
+
+[[consumers]]
+id = "jvm"
+language = "gradle"
+file = "build.gradle"
+configuration = "githubImplementation"
+
+  [consumers.dependencies."forebay/basekit"]
+  version = "^5.0.0"
+  modules = []
