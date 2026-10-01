@@ -13,6 +13,7 @@ jobs:
       runners: '["ubuntu-latest", "windows-latest", "macos-latest"]'
       extra_repository: daukle/daukle
       extra_path: .daukle
+      extra_ref: development
       cmake_configure: '-S .daukle -B .daukle/build -DCMAKE_BUILD_TYPE=Release'
       cmake_build: '--build .daukle/build --config Release'
       cmake_test: ''
