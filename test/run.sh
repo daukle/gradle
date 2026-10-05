@@ -3,10 +3,11 @@
 # Gradle against a real JDK, both provisioned by the plugin under test. A stub
 # of either would be testing the stub.
 #
-# A case carrying "needs-tools" provisions ~280 MB and is skipped unless
-# DAUKLE_GRADLE_E2E=1. CI sets it on every runner: compiling and testing through
-# a provisioned Gradle is the whole of what this plugin does, and a run that
-# skipped those proved only that bad input is refused.
+# A case carrying "needs-tools" provisions roughly 330 MB, 137 MB of Gradle and
+# a JDK of about 190 MB, and is skipped unless DAUKLE_GRADLE_E2E=1. CI sets it
+# on every runner: compiling and testing through a provisioned Gradle is the
+# whole of what this plugin does, and a run that skipped those proved only that
+# bad input is refused.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -51,7 +52,8 @@ run_case() {
   rm -rf "$sandbox"
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
-  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task"
+  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
+         "$sandbox/expect-output.txt"
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -86,12 +88,26 @@ run_case() {
     compare_expected "$case_dir" "$sandbox" "$name" || return
   fi
 
+  # An EXAMPLE asserts on what the program PRINTED, which is what a reader of
+  # the example came for; a test case asserts on what the tool produced.
+  if [ -f "$case_dir/expect-output.txt" ]; then
+    clause=$(cat "$case_dir/expect-output.txt")
+    if [ -z "$clause" ]; then
+      fail "$name" "the expected-clause file is empty, so this case asserts nothing"
+      return
+    fi
+    if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
+      echo "--- stdout ---" >&2
+      tail -40 "$sandbox/stdout.txt" >&2
+      fail "$name" "$command printed no \"$clause\""
+      return
+    fi
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails
   # silently when its path arithmetic is wrong: Gradle resolves the roots
   # against the wrong directory, finds nothing, compiles nothing and exits 0.
   # Only compiled output catches that.
-  if [ -f "$case_dir/needs-tools" ]; then
+  elif [ -f "$case_dir/needs-tools" ]; then
     classes=$(find "$sandbox/build/daukle/gradle/build/classes" -name '*.class' 2>/dev/null | wc -l)
     if [ "$classes" -lt 2 ]; then
       fail "$name" "expected compiled classes, found $classes"
@@ -107,8 +123,13 @@ run_case() {
       grep -o 'tests="[0-9]*"[^>]*' $results >&2 || true
       return
     fi
-    # Nothing Gradle writes may reach the project root. This is the property
-    # the whole redirect exists for, and it is asserted rather than assumed.
+  fi
+
+  # Nothing Gradle writes may reach the project root. This is the property the
+  # whole redirect exists for, it is asserted rather than assumed, and it is
+  # asserted for the EXAMPLE as well: the example is the one place a reader
+  # looks to see what a project holds.
+  if [ -f "$case_dir/needs-tools" ]; then
     for stray in build.gradle settings.gradle .gradle gradlew; do
       if [ -e "$sandbox/$stray" ]; then
         fail "$name" "$stray reached the project root"
@@ -142,7 +163,9 @@ compare_expected() {
 }
 
 rm -rf "$work"
-for case_dir in "$root"/test/cases/*/; do
+# examples/ runs under the same harness as test/cases/, so an example that
+# stops working is a red suite rather than something noticed later. D-45.
+for case_dir in "$root"/test/cases/*/ "$root"/examples/*/; do
   [ -d "$case_dir" ] || continue
   run_case "${case_dir%/}"
 done

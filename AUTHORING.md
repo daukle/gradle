@@ -118,15 +118,20 @@ leading component, so the executable sits under the archive's own directory, and
 
 ## Tests
 
-`test/run.sh` runs every directory under `test/cases/` against a real daukle, and the cases that
-matter run a **real Gradle against a real JDK, both provisioned by the plugin under test**.
+`test/run.sh` runs every directory under `test/cases/` **and under `examples/`** against a real
+daukle, and the cases that matter run a **real Gradle against a real JDK, both provisioned by the
+plugin under test**. The example runs under the same harness so that it is a red suite when it stops
+working rather than something noticed later, which is `D-45`.
 
 - a case with `expect-error.txt` must fail with a message carrying that clause
 - a case with `expected/` must match every file in it, byte for byte
-- a case with `needs-tools` provisions roughly 280 MB and is skipped unless `DAUKLE_GRADLE_E2E=1`.
+- a case with `needs-tools` provisions roughly 330 MB and is skipped unless `DAUKLE_GRADLE_E2E=1`.
   **CI sets it on every runner**: a run that skipped them proved only that bad input is refused
-- a `needs-tools` case asserts on **compiled classes and the JUnit XML**, and that no `build.gradle`,
-  `settings.gradle`, `.gradle` or `gradlew` reached the project root
+- a case with `expect-output.txt` asserts on what the task **printed**, which is what a reader of an
+  example came for; a case without one asserts on **compiled classes and the JUnit XML**, which is
+  what a test case came for
+- every `needs-tools` case, example included, asserts that no `build.gradle`, `settings.gradle`,
+  `.gradle` or `gradlew` reached the project root
 
 ```sh
 DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/run.sh

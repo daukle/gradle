@@ -3,3 +3,4 @@
 # absent from a clone, and the wrapper then reports a missing pin file in CI alone.
 /.daukle/
 test/.work/
+build/
