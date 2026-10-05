@@ -1,7 +1,0 @@
-dependencies {
-    // daukle:begin
-    githubImplementation "forebay:basekit:5.0.0:contracts"
-    githubImplementation "forebay:basekit:5.0.0:ir"
-    // daukle:end
-    testImplementation "junit"
-}

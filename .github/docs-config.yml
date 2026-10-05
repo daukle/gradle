@@ -1,2 +1,2 @@
 kind: generic
-description: The Gradle language plugin for daukle. It renders resolved modules into a Gradle dependency region, one configuration line per module, rewriting only the text between the daukle markers.
+description: The Gradle toolchain for daukle. It generates the build file Gradle reads into the derived directory, provisions Gradle and a JDK, and runs Gradle against daukle-pinned dependencies, so a project holds no build.gradle, no settings.gradle and no wrapper.
