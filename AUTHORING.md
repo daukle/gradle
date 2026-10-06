@@ -49,7 +49,7 @@ daukle gradle:run                # needs "main"
 
 | key | meaning |
 | --- | --- |
-| `version` | which Gradle to provision. Defaults to `8.13`; `lib/distributions.lua` has the pinned set |
+| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`8.13`, `8.14`, `8.14.4`, `9.3.1`, `9.6.0`**, and a version not in that set is refused by name rather than fetched |
 | `jdk` | which JDK to provision, through `daukle/java`'s table. Defaults to `17` |
 | `sourceRoot` | defaults to `src/main/java` |
 | `resourceRoot` | defaults to `src/main/resources` |
@@ -96,6 +96,24 @@ is the exact opposite of Maven Central, which publishes `.jar.sha256` for none o
 artifacts `D-77` measured and is the whole reason `daukle.pin` exists. So a Gradle is pinned like a
 JDK: a table in `lib/`, transcribed from the publisher's attestation, moving only with a release of
 this plugin. **No new core verb and no `--resolve`.**
+
+### Which versions the table carries, and why it is not just the newest
+
+**A project's Gradle version is the project's decision, not daukle's**, so the table covers a RANGE.
+Measured 2026-10-06 over the 190 `gradle-wrapper.properties` files under `F:/Documents/GitHub`:
+**18 distinct versions, 6.7 through 9.3.1**, with `9.3.1` (79) and `8.14` (59) dominating and 8.x
+still the majority at 106 against 84. **Pinning only the newest would have served none of them**,
+because nothing in the tree declares `9.6.0`.
+
+**A row is a url and a digest, so rows are cheap and CI is not.** The e2e cases therefore run one
+version at each EDGE of the range, `8.13` and `9.6.0`, which is not decoration: the same build that
+works on 8 fails outright on 9 for want of a `junit-platform-launcher` that is in no POM graph.
+A single-major suite would have shipped that.
+
+**The rows in between are covered by `test/pins.sh`**, which checks every pinned digest against the
+`.sha256` gradle.org publishes. It costs one small GET per row, it fails on a wrong digest, and it
+**fails on a row it cannot parse** rather than skipping it, because a row nothing reads is a row
+nothing checks.
 
 ## The JDK table is `daukle/java`'s
 

@@ -15,7 +15,9 @@
 -- a Gradle is pinned the easy way and nothing here needs --resolve.
 local DIGESTS = {
   ["8.13"] = "20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78",
+  ["8.14"] = "61ad310d3c7d3e5da131b76bbf22b5a4c0786e9d892dae8c1658d4b484de3caa",
   ["8.14.4"] = "f1771298a70f6db5a29daf62378c4e18a17fc33c9ba6b14362e0cdf40610380d",
+  ["9.3.1"] = "b266d5ff6b90eada6dc3b20cb090e3731302e553a27c5d3e4df1f0d76beaff06",
   ["9.6.0"] = "bbaeb2fef8710818cf0e261201dab964c572f92b942812df0c3620d62a529a01",
 }
 
@@ -24,9 +26,14 @@ local DIGESTS = {
      given plugin version always provisions the same Gradle. Same argument
      daukle/java's lib/jdks.lua makes for its default JDK.
 
-     8 rather than 9, because every Gradle project measured in this tree is on
-     8 and because 9 removed the automatic JUnit Platform launcher that a
-     generated build has to supply for itself. ]]
+     8 rather than 9 because 8 is still the majority, MEASURED 2026-10-06 over
+     190 gradle-wrapper.properties in this tree: 106 on 8.x against 84 on 9.x.
+     The sentence here until then said every project measured was on 8, which
+     was never true of 9.3.1's seventy-nine.
+
+     The second reason it gave is spent rather than wrong: 9 removed the
+     automatic JUnit Platform launcher, and this plugin now pins one itself, so
+     9 is served and not avoided. ]]
 local DEFAULT = "8.13"
 
 local function known()
