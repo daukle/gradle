@@ -5,13 +5,21 @@ A Gradle project with no Gradle in it. The repository holds `daukle.toml` and `s
 the build file Gradle reads into `build/daukle/gradle/`, downloads a Gradle distribution and a JDK,
 verifies both against digests the plugin pins, and runs Gradle with that directory as the project.
 
+```console
+$ daukle gradle:run
+hello from gradle, with no build file
 ```
-daukle gradle:run       # compiles and runs, printing "hello from gradle, with no build file"
-daukle gradle:classes   # compiles only
-daukle gradle:jar       # packages build/daukle/gradle/build/libs/example-...-no-build-file.jar
-daukle gradle:version   # prints the version of the Gradle daukle provisioned
-daukle tasks            # lists the five tasks the plugin declares
-```
+
+The other four tasks are the same shape and are not repeated in the block above, because only the
+`console` block is executed and running a provisioned Gradle four more times would multiply the
+runner cost for no new information:
+
+| task | what it does |
+| --- | --- |
+| `daukle gradle:classes` | compiles only |
+| `daukle gradle:jar` | packages `build/daukle/gradle/build/libs/example-...-no-build-file.jar` |
+| `daukle gradle:version` | prints the version of the Gradle daukle provisioned |
+| `daukle tasks` | lists the five tasks the plugin declares |
 
 ## What to look at
 
@@ -23,10 +31,9 @@ land under `build/daukle/gradle/`, and the generated `sourceSets` block points b
 path arithmetic is wrong: Gradle resolves the source roots against the wrong directory, finds
 nothing, compiles nothing and exits 0.
 
-**This copy points at the working tree, and a real project names a coordinate.** The manifest here
-says `gradle = "./plugins"` so that the suite in this repository tests the plugin as it stands, and
-a red example means a real defect rather than a stale release. In your own project the two lines are
-a pinned resolver and a coordinate:
+**This example names a published coordinate, exactly as your own project would.** Nothing here
+points at a working tree, so the directory can be copied anywhere and `daukle sync` works. That is
+what the resolver and coordinate lines in `daukle.toml` are:
 
 ```toml
 [resolvers.github]
@@ -36,6 +43,12 @@ sha256 = "..."
 [plugins]
 gradle = { resolver = "github", coordinate = "daukle/gradle@^1.0.0" }
 ```
+
+**The suite then runs it twice**, which is how it keeps both properties at once. The first run is
+the example exactly as committed, against the published release, and it is the only thing in this
+organization that checks a *published* plugin still works. The second stages this repository's
+working tree over a copy and runs it again, so a break in the plugin as it stands now reddens this
+repository's own CI rather than waiting for a release.
 
 **`version` is Gradle's version and `jdk` is the JDK's, and both have a default.** This example pins
 `version = "8.13"` because it also pins what it exercises; leaving it out gives the same 8.13, and
@@ -91,12 +104,12 @@ own pinned table rather than a second copy of it, so a project on both toolchain
 downloads one JDK instead of two; the two plugins default to different majors, 17 here and 21 there,
 so say which one you want if you use both.
 
-## The three files that are harness inputs rather than part of the example
+## The one file that is a harness input rather than part of the example
 
-`task`, `needs-tools` and `expect-output.txt` are read by `test/run.sh`, never by daukle. `task`
-holds the one task CI runs here, `gradle:run`; `expect-output.txt` holds the clause its output must
-contain; and `needs-tools` marks the case as one that provisions real tools, which `test/run.sh`
-skips unless `DAUKLE_GRADLE_E2E=1` is set. CI sets it on every runner.
+`needs-tools` marks this example as one that provisions real tools, which the harness skips unless
+`DAUKLE_EXAMPLE_E2E=1` is set. CI sets it on every runner. The `console` block above is **executed**
+rather than decorative: its `$ ` line is run and the line beneath it must appear in the output, so
+the command and its result cannot drift apart the way a separate expectation file did.
 
 **There is no committed build output here, and nothing is missing.** `gradle:run` really does
 compile and run the program; `build/` is gitignored, which is the only reason you cannot see the
