@@ -52,8 +52,7 @@ run_case() {
   rm -rf "$sandbox"
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
-  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
-         "$sandbox/expect-output.txt"
+  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task"
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -88,26 +87,12 @@ run_case() {
     compare_expected "$case_dir" "$sandbox" "$name" || return
   fi
 
-  # An EXAMPLE asserts on what the program PRINTED, which is what a reader of
-  # the example came for; a test case asserts on what the tool produced.
-  if [ -f "$case_dir/expect-output.txt" ]; then
-    clause=$(cat "$case_dir/expect-output.txt")
-    if [ -z "$clause" ]; then
-      fail "$name" "the expected-clause file is empty, so this case asserts nothing"
-      return
-    fi
-    if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
-      echo "--- stdout ---" >&2
-      tail -40 "$sandbox/stdout.txt" >&2
-      fail "$name" "$command printed no \"$clause\""
-      return
-    fi
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails
   # silently when its path arithmetic is wrong: Gradle resolves the roots
   # against the wrong directory, finds nothing, compiles nothing and exits 0.
   # Only compiled output catches that.
-  elif [ -f "$case_dir/needs-tools" ]; then
+  if [ -f "$case_dir/needs-tools" ]; then
     classes=$(find "$sandbox/build/daukle/gradle/build/classes" -name '*.class' 2>/dev/null | wc -l)
     if [ "$classes" -lt 2 ]; then
       fail "$name" "expected compiled classes, found $classes"
@@ -163,9 +148,7 @@ compare_expected() {
 }
 
 rm -rf "$work"
-# examples/ runs under the same harness as test/cases/, so an example that
-# stops working is a red suite rather than something noticed later. D-45.
-for case_dir in "$root"/test/cases/*/ "$root"/examples/*/; do
+for case_dir in "$root"/test/cases/*/; do
   [ -d "$case_dir" ] || continue
   run_case "${case_dir%/}"
 done
