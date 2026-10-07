@@ -19,7 +19,7 @@ runner cost for no new information:
 | `daukle gradle:classes` | compiles only |
 | `daukle gradle:jar` | packages `build/daukle/gradle/build/libs/example-...-no-build-file.jar` |
 | `daukle gradle:version` | prints the version of the Gradle daukle provisioned |
-| `daukle tasks` | lists the five tasks the plugin declares |
+| `daukle tasks` | lists the six tasks the plugin declares |
 
 ## What to look at
 
@@ -68,19 +68,19 @@ downloading.
 
 ## What this example cannot show
 
-**A project with real build logic**, which is the boundary this plugin deliberately does not cross.
-The generated build applies `plugins { id 'java' }` and nothing else, so a third-party Gradle plugin,
-a shared preset, a convention plugin or a custom task does not survive. A third-party plugin needs a
-`repositories {}` for the plugin itself, and the reason that is out of scope is not effort: a plugin
-resolved by Gradle is a dependency daukle did not pin. **A raw Groovy escape hatch is refused by
-name** for the same reason: `extra = """..."""` would be the shortest path to covering a real project
-and it readmits `build.gradle` through the back door, with the user editing Groovy inside a TOML
-string. The escape hatch this project decided on is a manifest task's `run = { tool, args }`.
+**A third-party Gradle plugin**, which this example declares none of so that it stays the smallest
+thing that works. That is not a boundary: `gradle-third-party-plugin` beside this one applies a real
+plugin from the Gradle Plugin Portal, configures it and runs a task it contributes. This page said
+until 2026-10-07 that a third-party plugin needed a `repositories {}` of its own and so could never
+work. **It does not**: it needs a pinned jar on the buildscript classpath, which `daukle/maven`
+acquires like any other coordinate.
 
-**Build logic fetched at configure time.** `online-gradle`, which some projects in this org use,
-downloads build logic over HTTP with `autoUpdate = true`, so the same commit builds differently an
-hour later. Every acquisition in daukle is pinned by sha256, and this is the one feature where
-"impossible" is the right answer rather than a gap.
+**Build logic written as CODE**, which is the boundary this plugin does deliberately not cross. A
+task with a body, a `tasks.withType(...)` that computes something, an `if` over a project property:
+none of it is data, and the renderer holds no Groovy. **A raw Groovy escape hatch is refused by
+name**: `extra = """..."""` would be the shortest path to covering a real project and it readmits
+`build.gradle` through the back door, with the user editing Groovy inside a TOML string. The escape
+hatch this project decided on is a manifest task's `run = { tool, args }`.
 
 **A multi-project build.** The generated `settings.gradle` names one root project and nothing here
 says what an `include ':app'` tree would need.
