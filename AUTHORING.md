@@ -3,8 +3,8 @@
 `plugin.lua` plus `lib/` is the whole plugin. It is published as a release asset, one uncompressed
 tar of the four files, and acquired by a `[plugins]` entry naming `daukle/gradle@<range>`.
 
-It declares `uses = { "provision", "artifact", "exec", "write" }` and
-`requires = { java = ... }`.
+It declares `uses = { "provision", "artifact", "exec", "write", "read", "parse" }`,
+`env = { "GITHUB_TOKEN" }` and `requires = { java = ... }`.
 
 **This repository used to hold a `daukle.language` dependency writer** that edited a `build.gradle`
 you owned. It was replaced rather than kept beside the toolchain, because core refuses one chunk to
@@ -43,6 +43,7 @@ daukle gradle:classes
 daukle gradle:test
 daukle gradle:jar
 daukle gradle:run                # needs "main"
+daukle gradle:discover           # what your applied plugins contribute
 ```
 
 ## Keys
@@ -58,6 +59,163 @@ daukle gradle:run                # needs "main"
 | `release` | Java source and target level, e.g. `"8"` |
 | `main` | the class `gradle:run` runs |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven` |
+| `plugins` | a list of `{ id, version }`, one `apply plugin:` line each |
+| `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
+| `configure` | a free-form tree, one Groovy block per extension |
+| `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
+
+## The tasks a plugin contributes
+
+`plugin.lua` declares five tasks of its own and a Gradle plugin contributes its own. **The two
+halves are kept apart**, because only one of them needs Gradle:
+
+```sh
+daukle gradle:discover    # runs Gradle twice, writes build/daukle/gradle/discovered.txt
+```
+
+```toml
+[toolchains.gradle]
+tasks = ["publishGithub"]   # now `daukle gradle:publish-github` runs it
+```
+
+**`gradle:discover` REPORTS and nothing reads it back.** It renders the build file twice, once with
+the apply lines and once without, runs a generated `daukleTasks` task in each, and the difference is
+what the plugins added. The baseline is **this project with its apply lines removed**, not a bare
+project elsewhere: same source sets, same dependencies, same Gradle, so the difference is the
+plugins and not whatever two projects happen to differ by. It is also **computed every time**,
+because Gradle's own task set differs between majors and a stored baseline is a number that gets
+incremented.
+
+**It is not run automatically.** It provisions and runs Gradle twice, and a `daukle tasks` that did
+that would make listing tasks the slowest command in the tool. Same reason `maven:resolve` needs
+`--resolve`.
+
+### Why `tasks` is written by hand, and why the spec's committed file is not here
+
+The design this implements wanted `gradle:discover` to write a committed `daukle/gradle/tasks.toml`
+that the chunk read back. **That deadlocks, measured 2026-10-07.** A chunk cannot read a file
+conditionally: there is no `pcall` in the sandbox and `daukle.read` raises on a file that is not
+there, so a project that declared plugins failed **every** command until its first discovery,
+including the discovery itself. The error was the raw `cannot open ".../tasks.toml"` with a Lua
+traceback.
+
+Reading the names out of `daukle.toml` instead has no such moment, and it is better on two counts
+the spec did not weigh: the project carries **one** committed file instead of two, which is the
+file-location rule's third clause, and a project surfaces the plugin tasks it actually uses rather
+than all of them. `gradle:discover` is then exactly what `maven:list` is to a coordinate: a report
+into the derived directory that a human acts on.
+
+### The mapping is lossy, and not in the way the spec said
+
+camelCase to kebab, lowercased: `publishGithub` becomes `publish-github` and
+`processGitHubResources` becomes `process-git-hub-resources`, which is ugly and correct. Inventing
+an acronym rule would be per-plugin knowledge in the one place this design refuses it.
+
+**The spec said `publishGithub` and `publishgithub` collide. They do not**: the hyphen is inserted
+only at a lowercase-to-uppercase boundary, so the second stays `publishgithub`. The real collision
+is `publishGithub` against a Gradle task literally named `publish-github`, and that pair is refused
+by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, `version` or
+`discover`. A duplicate task name is fatal on **every** command in a project, so it is refused where
+the name is read rather than where it is used.
+
+## Third-party Gradle plugins
+
+**The generated build still declares no `repositories {}`.** A plugin is applied from a jar daukle
+pinned, on the buildscript classpath, which is the pair that keeps `repositories declared` at zero:
+
+```toml
+[toolchains.maven]
+for = "gradle"
+coordinates = ["org.slf4j:slf4j-api:1.7.36"]
+
+  # A plugin marker is an ordinary POM whose single dependency is the real
+  # artifact, so acquiring a plugin is acquiring a coordinate. It lives on the
+  # Plugin Portal, which Central does not mirror, so it needs its own closure.
+  [[toolchains.maven.resolve]]
+  repository  = "https://plugins.gradle.org/m2"
+  coordinates = ["io.github.intisy.github-gradle:io.github.intisy.github-gradle.gradle.plugin:1.8.2.1"]
+  into        = "pluginClasspath"
+
+[toolchains.gradle]
+release = "8"
+
+  [[toolchains.gradle.plugins]]
+  id      = "io.github.intisy.github-gradle"
+  version = "1.8.2.1"
+
+  [toolchains.gradle.configure.github]
+  accessToken = { env = "GITHUB_TOKEN" }
+
+  [toolchains.gradle.configure.publishGithub]
+  releaseName = "Release 1.2.3"
+
+    [[toolchains.gradle.configure.publishGithub.artifacts.artifact]]
+    classifier = ""
+    jar        = { buildOutput = "libs/java-utils.jar" }
+```
+
+**Nothing in this plugin knows what `publishGithub` is.** A `configure` tree becomes nested Groovy
+text by shape: a string, number or boolean becomes an assignment, a table becomes a block, and a
+TOML array of tables becomes the same block repeated. That is possible only because this plugin
+GENERATES a file rather than configuring a live project; reflection against the extension's own
+methods hits an overload mismatch between `artifacts(Action)` and `artifacts(Closure)` and was the
+wrong model.
+
+**Keys are emitted sorted, values before blocks**, because Lua's `pairs` order is undefined and a
+test compares the file byte for byte.
+
+### The three markers, and why each is a table rather than a string
+
+A magic prefix inside a string is a thing a real value collides with one day, so each is a one-key
+table. Every spelling was run on Gradle 8.13 and 9.6.0.
+
+| written | rendered | for |
+| --- | --- | --- |
+| `{ file = "assets" }` | `new File(file('../../..'), 'assets')` | a path in YOUR tree |
+| `{ buildOutput = "libs/x.jar" }` | `layout.buildDirectory.file('libs/x.jar').get().asFile` | a path Gradle produced |
+| `{ env = "GITHUB_TOKEN" }` | `System.getenv('GITHUB_TOKEN') ?: ''` | a value that may not be committed |
+
+**`file` and `buildOutput` are a PAIR because daukle moved the project directory out from under a
+hand-written path.** In a build file at the project root, `file('assets')` meant the root and
+`file('build/libs/x.jar')` meant the build directory, and both were spelled the same way. Here the
+root is three levels up and the build directory is Gradle's own, so one marker would be silently
+wrong for whichever half it did not serve. Measured over this tree's `build.gradle` files, the two
+kinds are roughly half each, which is why neither could be the default.
+
+**A one-key table whose key is `file`, `buildOutput` or `env` is a marker, and anything else is a
+block.** The cost is that a plugin with a real nested block named exactly `file` and holding one
+string key cannot be expressed; nothing in this tree has one. A table that MIXES a marker key with
+others is refused, which is the mistake that shape invites.
+
+### GITHUB_TOKEN reaches Gradle and DAUKLE_TOKEN does not
+
+`daukle.plugin{ env = { "GITHUB_TOKEN" } }`. Core scrubs every credential it knows from a child a
+plugin starts unless that plugin declared it, so without the declaration the rendered
+`System.getenv('GITHUB_TOKEN') ?: ''` hands Gradle an empty string with nothing saying why. 56 of
+this tree's 77 build files apply a plugin that takes a token, which is what makes this the one
+worth passing. `DAUKLE_TOKEN` is refused by name in `lib/build_file.lua`: it is daukle's own
+credential, it is scrubbed, and a refusal is better than an empty string.
+
+**That declaration did nothing until 2026-10-07**, when the measurement below found core never
+copied a chunk's `env` into a TASK's slot, so every other callback honoured the allowlist and the
+only one allowed to `exec` ran with an empty one. Fixed in core with its own pair of tests.
+
+### What a `configure` block CANNOT be checked for
+
+**A block naming an extension no applied plugin registered is not caught when the file is
+written**, and the spec said it would be. It cannot be: this plugin holds no plugin knowledge, so it
+cannot know which extensions a jar registers, and `configure.java` or `configure.jar` is legitimate
+with no third-party plugin applied at all. Gradle's own failure names the block
+(`Could not find method noSuchExtension()`), measured on 8.13, which is most of what a check would
+have said. What IS refused here: a `configure` entry that is not a block, a mixed marker table, a
+marker whose value is not a string, `DAUKLE_TOKEN`, a `plugins` entry with no `id` or `version`, a
+`plugins` list with an empty `pluginClasspath`, and a plugin version no pinned entry carries.
+
+### A TOML integer arrives as a float
+
+Core carries the manifest through JSON and pushes every number with `lua_pushnumber`, so a plugin
+cannot tell `7` from `7.0`. An integral value is written as a Groovy integer, which is right for the
+spelling anybody uses and wrong for a property that genuinely wants `7.0`.
 
 ## What the generation does, and the one number in it that is load bearing
 
@@ -136,23 +294,25 @@ leading component, so the executable sits under the archive's own directory, and
 
 ## Tests
 
-`test/run.sh` runs every directory under `test/cases/` **and under `examples/`** against a real
-daukle, and the cases that matter run a **real Gradle against a real JDK, both provisioned by the
-plugin under test**. The example runs under the same harness so that it is a red suite when it stops
-working rather than something noticed later, which is `D-45`.
+`test/cases.sh` runs every directory under `test/cases/` against a real daukle, and the cases that
+matter run a **real Gradle against a real JDK, both provisioned by the plugin under test**. The
+example runs under core's `tools/run-examples.sh`, so it is a red suite when it stops working rather
+than something noticed later, which is `D-45`. `test/pins.sh` checks every pinned digest against
+gradle.org.
 
 - a case with `expect-error.txt` must fail with a message carrying that clause
 - a case with `expected/` must match every file in it, byte for byte
 - a case with `needs-tools` provisions roughly 330 MB and is skipped unless `DAUKLE_GRADLE_E2E=1`.
   **CI sets it on every runner**: a run that skipped them proved only that bad input is refused
-- a case with `expect-output.txt` asserts on what the task **printed**, which is what a reader of an
-  example came for; a case without one asserts on **compiled classes and the JUnit XML**, which is
-  what a test case came for
+- a case with `expect-file.txt` names one path per line that the TOOL must have produced. The text of
+  a generated file proves what daukle wrote; only a file Gradle made proves Gradle read it
+- a `needs-tools` case asserts **compiled classes**, and the JUnit XML as well when its task is
+  `gradle:test`
 - every `needs-tools` case, example included, asserts that no `build.gradle`, `settings.gradle`,
   `.gradle` or `gradlew` reached the project root
 
 ```sh
-DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/run.sh
+DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/cases.sh
 ```
 
 ### What is proved by mutation rather than asserted
@@ -161,6 +321,16 @@ DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/run.sh
 | --- | --- |
 | `ROOT` from `../../..` to `../..` | both e2e cases red: **0 classes compiled, and Gradle still exits 0**. This is the silent failure the output assertions exist for |
 | `refuse_a_missing_launcher` returns early | `refuses-a-test-engine-with-no-launcher` goes green, and the resulting build would fail on the next Gradle major |
+| drop the `buildscript` block | both plugin cases red: `Plugin with id '...' not found`, which is the negative control for the whole acquisition route |
+| the `file` marker renders a bare `file(...)` | the marker case's text expectation differs |
+| `refuse_a_version_no_pin_carries` returns early | `refuses-a-plugin-version-no-pin-carries` gets a success where it wanted a failure |
+| `marker_of` stops refusing a mixed table | `refuses-a-marker-mixed-with-other-keys` goes green |
+| `REFUSED_ENV` emptied | `refuses-daukles-own-token-in-a-build-file` goes green |
+| **the `env` marker renders `''`, AND the text expectation is regenerated from that run** | the diff passes, because the expectation now encodes the bug, and **only `expect-file.txt` fails**: Gradle produced `.jar` rather than `marker-probe.jar`. That is what the second assertion is for |
+| `discovery.contributed` returns the full list | the discovery report carries Gradle's own 34 tasks and differs |
+| the baseline run is not bare | the difference is empty and the report differs |
+| the registration loop iterates nothing | the three `tasks` refusal cases get a success where they wanted a failure |
+| **the rendered marker is desynchronised from `discovery.MARKER`** | `gradle:discover` fails with *"Gradle printed no task names at all"*. Changing `discovery.MARKER` alone does NOT reproduce it, because the renderer is handed that same string rather than carrying a second copy, which is the point of passing it |
 
 ### One bug this suite found that reading did not
 

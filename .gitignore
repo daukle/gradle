@@ -3,5 +3,8 @@
 # absent from a clone, and the wrapper then reports a missing pin file in CI alone.
 /.daukle/
 test/.work/
-build/
+# Anchored for the same reason as the line above: unanchored it swallows a case's
+# expected/build/daukle/gradle/build.gradle, which is then present locally and
+# absent from the clone CI runs, and compare_expected asserts only what it finds.
+/build/
 test/.work-examples/

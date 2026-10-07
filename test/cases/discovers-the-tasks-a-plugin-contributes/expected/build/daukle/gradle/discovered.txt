@@ -1,0 +1,10 @@
+# Written by gradle:discover. Nothing reads this back.
+#
+# Each line is a task your applied plugins contributed, found by running Gradle
+# once with the apply lines and once without. Copy the ones you want into
+# daukle.toml as [toolchains.gradle] tasks = [ ... ], by their GRADLE name.
+#
+# gradle name -> daukle task
+tiJson -> gradle:ti-json
+tiOrder -> gradle:ti-order
+tiTree -> gradle:ti-tree

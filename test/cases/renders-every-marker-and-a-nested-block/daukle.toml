@@ -1,0 +1,33 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# No pinned entry anywhere, so the generated build file holds no absolute path
+# into daukle's cache and can be compared byte for byte. That is the only reason
+# this case declares no plugin: what it asserts is the TEXT of every marker and
+# of a nested block, and `ext` plus `test { reports {} }` are two shapes Gradle
+# itself accepts, so the same run proves the text is also a build Gradle reads.
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+
+[toolchains.gradle.configure.ext]
+daukleProbeFile = { file = "notes.txt" }
+daukleProbeOutput = { buildOutput = "libs/renamed.jar" }
+daukleProbeEnv = { env = "DAUKLE_GRADLE_PROBE" }
+daukleProbeNumber = 7
+daukleProbeFlag = true
+
+[toolchains.gradle.configure.test.reports.junitXml]
+required = false
+
+# The one marker whose value an assertion can see: the jar Gradle produces is
+# named after it, so expect-file.txt proves the variable reached Gradle rather
+# than only reaching the text.
+[toolchains.gradle.configure.jar]
+archiveBaseName = { env = "DAUKLE_GRADLE_PROBE" }
