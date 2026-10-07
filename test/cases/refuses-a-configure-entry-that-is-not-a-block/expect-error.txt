@@ -1,0 +1,1 @@
+must be a block: configure names the extension

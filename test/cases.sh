@@ -29,6 +29,13 @@ if [ -z "$daukle" ] || [ ! -x "$daukle" ]; then
   exit 1
 fi
 
+# The value an `{ env = ... }` marker is checked against. An ordinary variable
+# rather than a credential on purpose: what a case needs to prove is that the
+# marker reaches Gradle, and core's own suite proves the allowlist that governs
+# a credential. Exporting GITHUB_TOKEN here would also fight whatever CI sets.
+DAUKLE_GRADLE_PROBE=marker-probe
+export DAUKLE_GRADLE_PROBE
+
 passed=0
 failed=0
 skipped=0
@@ -52,7 +59,8 @@ run_case() {
   rm -rf "$sandbox"
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
-  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task"
+  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
+         "$sandbox/expect-file.txt"
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -87,6 +95,19 @@ run_case() {
     compare_expected "$case_dir" "$sandbox" "$name" || return
   fi
 
+  # One path per line that the TOOL must have produced. The text of a generated
+  # file proves what daukle wrote; only a file Gradle made proves Gradle read it,
+  # and a value rendered into a name is the cheapest thing to look at.
+  if [ -f "$case_dir/expect-file.txt" ]; then
+    while IFS= read -r wanted; do
+      [ -n "$wanted" ] || continue
+      if [ ! -e "$sandbox/$wanted" ]; then
+        fail "$name" "expected $wanted, which the build did not produce"
+        return
+      fi
+    done < "$case_dir/expect-file.txt"
+  fi
+
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails
   # silently when its path arithmetic is wrong: Gradle resolves the roots
@@ -98,15 +119,20 @@ run_case() {
       fail "$name" "expected compiled classes, found $classes"
       return
     fi
-    results=$(find "$sandbox/build/daukle/gradle/build/test-results" -name '*.xml' 2>/dev/null)
-    if [ -z "$results" ]; then
-      fail "$name" "the test task produced no results"
-      return
-    fi
-    if ! grep -q 'tests="2"' $results || ! grep -q 'failures="0"' $results; then
-      fail "$name" "expected 2 tests and 0 failures"
-      grep -o 'tests="[0-9]*"[^>]*' $results >&2 || true
-      return
+    # Only a case that ran the test task; a case built around applying a plugin
+    # compiles and never runs a test, and demanding results of it would be a
+    # check that passes for the wrong reason or not at all.
+    if [ "$command" = "gradle:test" ]; then
+      results=$(find "$sandbox/build/daukle/gradle/build/test-results" -name '*.xml' 2>/dev/null)
+      if [ -z "$results" ]; then
+        fail "$name" "the test task produced no results"
+        return
+      fi
+      if ! grep -q 'tests="2"' $results || ! grep -q 'failures="0"' $results; then
+        fail "$name" "expected 2 tests and 0 failures"
+        grep -o 'tests="[0-9]*"[^>]*' $results >&2 || true
+        return
+      fi
     fi
   fi
 

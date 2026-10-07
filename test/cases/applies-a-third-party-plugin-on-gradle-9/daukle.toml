@@ -1,0 +1,33 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A REAL plugin from the Gradle Plugin Portal, applied from a jar daukle pinned,
+# with no repository anywhere in the generated build. gradle-taskinfo is the
+# fixture because it is shaded, so its closure is one jar of 3.3 MB rather than
+# the 37 MB the plugin this tree actually uses costs, and because it registers an
+# extension: a build that succeeds with the configure block below could not have
+# skipped either half. A plugin that was not applied fails the block with
+# MissingMethodException, and a property the extension does not have fails with
+# "Could not set unknown property".
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+
+[[toolchains.gradle.plugins]]
+id = "org.barfuin.gradle.taskinfo"
+version = "2.2.0"
+
+[[toolchains.gradle.pluginClasspath]]
+url = "https://plugins.gradle.org/m2/org/barfuin/gradle/taskinfo/gradle-taskinfo/2.2.0/gradle-taskinfo-2.2.0.jar"
+sha256 = "ebf2dc6a475b8790a0fb0b92f7329c7f3f0012493a16759097a5c86ee28dc60c"
+as = "gradle-taskinfo 2.2.0"
+
+[toolchains.gradle.configure.taskinfo]
+showTaskTypes = true
+color = false

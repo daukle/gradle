@@ -14,6 +14,14 @@ daukle.plugin{
   api = 1,
   uses = { "provision", "artifact", "exec", "write" },
   exports = { "lib/distributions", "lib/build_file", "lib/junit" },
+  --[[ Core scrubs every credential it knows from a child it starts unless the
+       plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
+       unset and a generated `System.getenv(...) ?: ''` would hand the build an
+       empty string with nothing saying why. 56 of this tree's 77 build files
+       apply a plugin that takes one, which is what makes this the credential
+       worth passing. DAUKLE_TOKEN is deliberately not here: see
+       REFUSED_ENV in lib/build_file.lua. D-32. ]]
+  env = { "GITHUB_TOKEN" },
   --[[ The JDK table is daukle/java's and is read rather than copied: a second
        copy drifts, and a project using both toolchains would download two
        JDKs. Measured before being relied on (D-90, G10): lib/jdks calls no
@@ -99,6 +107,46 @@ local function project_name(context)
   return (name:match("([^/]+)$") or name)
 end
 
+local function checked_plugins(entries)
+  if entries == nil then return {} end
+  if type(entries) ~= "table" then
+    error('"plugins" must be a list of entries, not a ' .. type(entries), 0)
+  end
+  for index = 1, #entries do
+    local entry = entries[index]
+    if type(entry) ~= "table" or type(entry.id) ~= "string" or type(entry.version) ~= "string" then
+      error('"plugins[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
+            .. " applies and the version is what the pinned jars are checked against", 0)
+    end
+  end
+  return entries
+end
+
+--[[ The jar a plugin is applied from is pinned somewhere else entirely, by
+     daukle/maven, so nothing links the version the project APPLIES to the
+     version it ACQUIRED. Bumping one and not the other is silent: Gradle
+     applies whatever jar it was handed. The version has to appear in some
+     pinned entry, which the Maven layout puts in the url and which a
+     hand-written pin can carry in "as". ]]
+local function refuse_a_version_no_pin_carries(plugins, pins)
+  for index = 1, #plugins do
+    local version = plugins[index].version
+    local pinned = false
+    for pin = 1, #pins do
+      local entry = pins[pin]
+      if entry.url:find("/" .. version .. "/", 1, true) ~= nil
+         or (type(entry.as) == "string" and entry.as:find(" " .. version, 1, true) ~= nil) then
+        pinned = true
+      end
+    end
+    if not pinned then
+      error('"plugins[' .. index .. ']" applies ' .. plugins[index].id .. " " .. version
+            .. ', and no entry in "pluginClasspath" names that version: resolve the plugin'
+            .. " marker at that version, or correct the one here", 0)
+    end
+  end
+end
+
 --- Everything `generate` can check without starting a process or fetching.
 local function validated(context, config)
   distributions.for_version(config.version)
@@ -108,6 +156,19 @@ local function validated(context, config)
   checked_classpath(config.testClasspath, "testClasspath")
   string_key(config, "release", nil)
   string_key(config, "main", nil)
+
+  local plugins = checked_plugins(config.plugins)
+  local plugin_jars = checked_classpath(config.pluginClasspath, "pluginClasspath")
+  if #plugins > 0 and #plugin_jars == 0 then
+    error('"plugins" names ' .. #plugins .. " plugin(s) and \"pluginClasspath\" is empty: a"
+          .. " plugin is applied from a jar daukle pinned, so resolve its marker into"
+          .. ' "pluginClasspath" first', 0)
+  end
+  refuse_a_version_no_pin_carries(plugins, plugin_jars)
+  --[[ Rendered and thrown away, so a tree this refuses is refused by `daukle
+       check` rather than by the task that would have written it. Running the
+       real renderer is what stops the refusal drifting from the writer. ]]
+  build_file.configuration(config.configure)
 end
 
 --[[ settings.gradle is generated and build.gradle is NOT, and the split is
@@ -137,6 +198,9 @@ local function paths_of(entries)
 end
 
 local function write_build_file(context, config)
+  --[[ Again here and not only in generate: a task is reachable without a sync,
+       so a check that only ran there would be a check a user can walk past. ]]
+  validated(context, config)
   local compile = checked_classpath(config.classpath, "classpath")
   local test = checked_classpath(config.testClasspath, "testClasspath")
   --[[ The test side of the classpath is the compile side FOLLOWED BY the
@@ -150,9 +214,13 @@ local function write_build_file(context, config)
   return daukle.write{
     path = BUILD_FILE,
     text = build_file.render(layout_of(config),
-                             { compile = paths_of(compile), test = paths_of(test) },
+                             { compile = paths_of(compile), test = paths_of(test),
+                               plugin = paths_of(checked_classpath(config.pluginClasspath,
+                                                                   "pluginClasspath")) },
                              { release = string_key(config, "release", nil),
-                               main = string_key(config, "main", nil) }),
+                               main = string_key(config, "main", nil),
+                               plugins = checked_plugins(config.plugins),
+                               configure = config.configure }),
   }
 end
 
