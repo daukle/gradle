@@ -1,0 +1,42 @@
+schema = 1
+project = "daukle/example-gradle-third-party-plugin"
+version = "1.0.0"
+
+[modules]
+
+[resolvers.github]
+url = "https://raw.githubusercontent.com/daukle/daukle/1f515141e06d16eace718a45944a39933611fa39/plugins/github-releases.lua"
+sha256 = "3789865c266eb53fafcf7300d77a24461170c615195d92d0ddf88078c556e23e"
+
+[plugins]
+gradle = { resolver = "github", coordinate = "daukle/gradle@^1.2.0" }
+
+[toolchains.gradle]
+version = "8.13"
+# The Gradle task names this project wants as daukle tasks. `daukle
+# gradle:discover` is what tells you which ones exist.
+tasks = ["publishGithub"]
+
+# One apply plugin: line. The version is checked against the pinned jars below,
+# because nothing else links the version a build APPLIES to the one it ACQUIRED.
+[[toolchains.gradle.plugins]]
+id = "io.github.intisy.github-gradle"
+version = "1.8.2.1"
+
+# Normally written by daukle/maven from the plugin's marker coordinate. It is
+# hand-written here so this example stays about one plugin; see the ABOUT.
+[[toolchains.gradle.pluginClasspath]]
+url = "https://plugins.gradle.org/m2/io/github/intisy/github-gradle/1.8.2.1/github-gradle-1.8.2.1.jar"
+sha256 = "872763e7537378bed5e63a9fd6e3cf77189f57e727007ca92492f21ed272a045"
+as = "github-gradle 1.8.2.1"
+
+[toolchains.gradle.configure.github]
+accessToken = { env = "GITHUB_TOKEN" }
+
+[toolchains.gradle.configure.publishGithub]
+releaseName = "Release 1.0.0"
+repo = "daukle/example-gradle-third-party-plugin"
+
+  [[toolchains.gradle.configure.publishGithub.artifacts.artifact]]
+  classifier = ""
+  jar = { buildOutput = "libs/example-gradle-third-party-plugin-1.0.0.jar" }
