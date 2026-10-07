@@ -285,6 +285,22 @@ function build_file.render(layout, jars, options)
     lines[#lines + 1] = configuration[index]
   end
 
+  --[[ Only for a discovery run, so an ordinary build file carries no task
+       nobody asked for. `discover` is the MARKER the caller prints with rather
+       than a flag, because a second copy of that string here and in
+       lib/discovery is two things that will one day disagree. Both halves of a
+       discovery write this block, so it cancels out of the difference the way
+       Gradle's own tasks do. ]]
+  if options.discover ~= nil then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "tasks.register('daukleTasks') {"
+    lines[#lines + 1] = "  doLast {"
+    lines[#lines + 1] = "    project.tasks.names.each { println "
+                        .. groovy_string(options.discover) .. " + it }"
+    lines[#lines + 1] = "  }"
+    lines[#lines + 1] = "}"
+  end
+
   if options.main ~= nil then
     lines[#lines + 1] = ""
     lines[#lines + 1] = "tasks.register('daukleRun', JavaExec) {"

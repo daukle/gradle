@@ -3,7 +3,7 @@
 `plugin.lua` plus `lib/` is the whole plugin. It is published as a release asset, one uncompressed
 tar of the four files, and acquired by a `[plugins]` entry naming `daukle/gradle@<range>`.
 
-It declares `uses = { "provision", "artifact", "exec", "write" }`,
+It declares `uses = { "provision", "artifact", "exec", "write", "read", "parse" }`,
 `env = { "GITHUB_TOKEN" }` and `requires = { java = ... }`.
 
 **This repository used to hold a `daukle.language` dependency writer** that edited a `build.gradle`
@@ -43,6 +43,7 @@ daukle gradle:classes
 daukle gradle:test
 daukle gradle:jar
 daukle gradle:run                # needs "main"
+daukle gradle:discover           # what your applied plugins contribute
 ```
 
 ## Keys
@@ -61,6 +62,61 @@ daukle gradle:run                # needs "main"
 | `plugins` | a list of `{ id, version }`, one `apply plugin:` line each |
 | `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
 | `configure` | a free-form tree, one Groovy block per extension |
+| `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
+
+## The tasks a plugin contributes
+
+`plugin.lua` declares five tasks of its own and a Gradle plugin contributes its own. **The two
+halves are kept apart**, because only one of them needs Gradle:
+
+```sh
+daukle gradle:discover    # runs Gradle twice, writes build/daukle/gradle/discovered.txt
+```
+
+```toml
+[toolchains.gradle]
+tasks = ["publishGithub"]   # now `daukle gradle:publish-github` runs it
+```
+
+**`gradle:discover` REPORTS and nothing reads it back.** It renders the build file twice, once with
+the apply lines and once without, runs a generated `daukleTasks` task in each, and the difference is
+what the plugins added. The baseline is **this project with its apply lines removed**, not a bare
+project elsewhere: same source sets, same dependencies, same Gradle, so the difference is the
+plugins and not whatever two projects happen to differ by. It is also **computed every time**,
+because Gradle's own task set differs between majors and a stored baseline is a number that gets
+incremented.
+
+**It is not run automatically.** It provisions and runs Gradle twice, and a `daukle tasks` that did
+that would make listing tasks the slowest command in the tool. Same reason `maven:resolve` needs
+`--resolve`.
+
+### Why `tasks` is written by hand, and why the spec's committed file is not here
+
+The design this implements wanted `gradle:discover` to write a committed `daukle/gradle/tasks.toml`
+that the chunk read back. **That deadlocks, measured 2026-10-07.** A chunk cannot read a file
+conditionally: there is no `pcall` in the sandbox and `daukle.read` raises on a file that is not
+there, so a project that declared plugins failed **every** command until its first discovery,
+including the discovery itself. The error was the raw `cannot open ".../tasks.toml"` with a Lua
+traceback.
+
+Reading the names out of `daukle.toml` instead has no such moment, and it is better on two counts
+the spec did not weigh: the project carries **one** committed file instead of two, which is the
+file-location rule's third clause, and a project surfaces the plugin tasks it actually uses rather
+than all of them. `gradle:discover` is then exactly what `maven:list` is to a coordinate: a report
+into the derived directory that a human acts on.
+
+### The mapping is lossy, and not in the way the spec said
+
+camelCase to kebab, lowercased: `publishGithub` becomes `publish-github` and
+`processGitHubResources` becomes `process-git-hub-resources`, which is ugly and correct. Inventing
+an acronym rule would be per-plugin knowledge in the one place this design refuses it.
+
+**The spec said `publishGithub` and `publishgithub` collide. They do not**: the hyphen is inserted
+only at a lowercase-to-uppercase boundary, so the second stays `publishgithub`. The real collision
+is `publishGithub` against a Gradle task literally named `publish-github`, and that pair is refused
+by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, `version` or
+`discover`. A duplicate task name is fatal on **every** command in a project, so it is refused where
+the name is read rather than where it is used.
 
 ## Third-party Gradle plugins
 
@@ -271,6 +327,10 @@ DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/cases.sh
 | `marker_of` stops refusing a mixed table | `refuses-a-marker-mixed-with-other-keys` goes green |
 | `REFUSED_ENV` emptied | `refuses-daukles-own-token-in-a-build-file` goes green |
 | **the `env` marker renders `''`, AND the text expectation is regenerated from that run** | the diff passes, because the expectation now encodes the bug, and **only `expect-file.txt` fails**: Gradle produced `.jar` rather than `marker-probe.jar`. That is what the second assertion is for |
+| `discovery.contributed` returns the full list | the discovery report carries Gradle's own 34 tasks and differs |
+| the baseline run is not bare | the difference is empty and the report differs |
+| the registration loop iterates nothing | the three `tasks` refusal cases get a success where they wanted a failure |
+| **the rendered marker is desynchronised from `discovery.MARKER`** | `gradle:discover` fails with *"Gradle printed no task names at all"*. Changing `discovery.MARKER` alone does NOT reproduce it, because the renderer is handed that same string rather than carrying a second copy, which is the point of passing it |
 
 ### One bug this suite found that reading did not
 

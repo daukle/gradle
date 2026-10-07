@@ -1,0 +1,1 @@
+both map to "gradle:publish-github"

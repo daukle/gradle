@@ -113,7 +113,12 @@ run_case() {
   # silently when its path arithmetic is wrong: Gradle resolves the roots
   # against the wrong directory, finds nothing, compiles nothing and exits 0.
   # Only compiled output catches that.
-  if [ -f "$case_dir/needs-tools" ]; then
+  # Every needs-tools case must assert on something the TOOL produced, and
+  # compiled classes are what a case asserts when it names nothing more
+  # specific. A case carrying expected/ or expect-file.txt has named something
+  # stronger, and gradle:discover compiles nothing at all.
+  if [ -f "$case_dir/needs-tools" ] \
+     && [ ! -d "$case_dir/expected" ] && [ ! -f "$case_dir/expect-file.txt" ]; then
     classes=$(find "$sandbox/build/daukle/gradle/build/classes" -name '*.class' 2>/dev/null | wc -l)
     if [ "$classes" -lt 2 ]; then
       fail "$name" "expected compiled classes, found $classes"
