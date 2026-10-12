@@ -266,6 +266,12 @@ local function write_build_file(context, config, options)
     }
   end
 
+  local plugin_jars = bare and {}
+                      or paths_of(checked_classpath(config.pluginClasspath, "pluginClasspath"))
+  if #plugin_jars > 0 then
+    daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
+  end
+
   --[[ `release`, `plugins` and `configure` are project-wide and are rendered
        into EVERY module rather than into an `allprojects {}` block: the
        renderer is the only writer, so the duplication costs a reader nothing
