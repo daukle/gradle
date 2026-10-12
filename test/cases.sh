@@ -60,7 +60,7 @@ run_case() {
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
-         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt"
+         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt"
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -126,6 +126,32 @@ run_case() {
         return
       fi
     done < "$case_dir/expect-file.txt"
+  fi
+
+  # "<path> <literal>" per line, for an assertion about what is INSIDE a file
+  # the tool produced. A zip stores its entry NAMES uncompressed in the central
+  # directory, so grepping a jar for an entry name needs no unzip on the runner;
+  # its entry CONTENTS are deflated and are not greppable, which is why nothing
+  # here asserts a jar MANIFEST and why the fat-jar case proves its Main-Class
+  # by RUNNING the jar instead. Measured both ways in daukle/java, D-81.
+  if [ -f "$case_dir/expect-contains.txt" ]; then
+    if ! grep -q . "$case_dir/expect-contains.txt"; then
+      fail "$name" "expect-contains.txt is empty, so this case asserts nothing"
+      return
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      target=${line%% *}
+      literal=${line#* }
+      if [ ! -f "$sandbox/$target" ]; then
+        fail "$name" "expected $target, which the build did not produce"
+        return
+      fi
+      if ! grep -qF "$literal" "$sandbox/$target"; then
+        fail "$name" "$target does not carry: $literal"
+        return
+      fi
+    done < "$case_dir/expect-contains.txt"
   fi
 
   # A case that ran a task asserts on what the TOOL produced, never on the text

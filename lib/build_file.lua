@@ -232,7 +232,20 @@ function build_file.render(layout, jars, options)
     lines[#lines + 1] = ""
   end
 
-  lines[#lines + 1] = "plugins { id 'java' }"
+  --[[ `application` alongside `java` when a main class is declared, because
+       the application EXTENSION is the only place a packaging plugin looks for
+       one: shadow reads Main-Class from there, so a generated build applying
+       only `java` produced a fat jar whose manifest named no entry point and
+       which nothing could run. Both are built into Gradle, so naming them here
+       resolves nothing and the no-repository property is untouched. ]]
+  if options.main ~= nil then
+    lines[#lines + 1] = "plugins {"
+    lines[#lines + 1] = "  id 'java'"
+    lines[#lines + 1] = "  id 'application'"
+    lines[#lines + 1] = "}"
+  else
+    lines[#lines + 1] = "plugins { id 'java' }"
+  end
   lines[#lines + 1] = ""
 
   for index = 1, #options.plugins do
@@ -301,7 +314,15 @@ function build_file.render(layout, jars, options)
     lines[#lines + 1] = "}"
   end
 
+  --[[ `daukleRun` is kept beside the `run` that `application` contributes
+       rather than replaced by it: gradle:run is a published surface two
+       examples exercise, and a task this plugin registers itself cannot be
+       renamed or reconfigured by a third-party plugin the project applies. ]]
   if options.main ~= nil then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "application {"
+    lines[#lines + 1] = "  mainClass = " .. groovy_string(options.main)
+    lines[#lines + 1] = "}"
     lines[#lines + 1] = ""
     lines[#lines + 1] = "tasks.register('daukleRun', JavaExec) {"
     lines[#lines + 1] = "  classpath = sourceSets.main.runtimeClasspath"
