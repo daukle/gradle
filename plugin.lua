@@ -47,6 +47,32 @@ local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
 local REPORT_FILE = "discovered.txt"
 
+--[[ Gated on the manifest being DECLARATIVE: core accepts a project whose only
+     manifest is daukle.lua by falling back to the overlay, and daukle.parse
+     refuses to run one. There is no pcall in the sandbox, so an unguarded parse
+     is fatal on every command rather than only where the document is wanted,
+     which is what daukle/cmake@1.4.0 shipped. ]]
+local function declarative_manifest()
+  if string.match(daukle.manifest, "%.toml$") == nil then return nil end
+  return daukle.parse(daukle.read(daukle.manifest), daukle.manifest)
+end
+
+local MANIFEST = declarative_manifest()
+
+--- Whether the manifest ITSELF declares modules, which is the one question a
+--- core too old to publish its module list cannot be asked.
+---
+--- @implNote read from the parsed manifest rather than from a context, because
+--- the context is exactly what such a core leaves out. A project whose manifest
+--- is daukle.lua cannot be read at all, so this is false there and nothing is
+--- refused, which is what every overlay project already gets.
+local function manifest_declares_modules(document)
+  local declared = document ~= nil and document.modules or nil
+  return type(declared) == "table" and next(declared) ~= nil
+end
+
+local MANIFEST_DECLARES_MODULES = manifest_declares_modules(MANIFEST)
+
 local function config_of(context)
   return context.toolchain ~= nil and context.toolchain.config or context.config
 end
@@ -166,6 +192,20 @@ local function refuse_a_version_no_pin_carries(plugins, pins)
   end
 end
 
+--- @implNote core publishes `context.modules` as a table, empty when the
+--- project declares none, so an ABSENT one is a core too old to publish the
+--- list at all rather than a project without modules. Refused because nothing
+--- downstream can tell the difference: the single-project file would be
+--- rendered against source roots a module-shaped repository does not have, and
+--- Gradle would report BUILD SUCCESSFUL having compiled nothing.
+local function refuse_a_core_that_publishes_no_modules(context)
+  if MANIFEST_DECLARES_MODULES and context.modules == nil then
+    error('this project declares modules and the daukle running it is too old to publish the'
+          .. ' module list, so every module in "[modules]" would be silently ignored: upgrade'
+          .. ' daukle, or take the modules back out of the manifest', 0)
+  end
+end
+
 --- Everything `generate` can check without starting a process or fetching.
 ---
 --- @implNote the module checks live here rather than beside the writer so that
@@ -173,6 +213,7 @@ end
 --- generate and no task, so a check only the writer ran would be one a user
 --- never meets until the first build.
 local function validated(context, config)
+  refuse_a_core_that_publishes_no_modules(context)
   distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
@@ -413,11 +454,7 @@ daukle.task{
 }
 
 --[[ One daukle task per name the project asked for, read from the manifest by
-     the name daukle was started from. Gated on the manifest being DECLARATIVE:
-     core accepts a project whose only manifest is daukle.lua by falling back to
-     the overlay, and daukle.parse refuses to run one. There is no pcall in the
-     sandbox, so an unguarded parse is fatal on every command rather than only
-     on these tasks, which is what daukle/cmake@1.4.0 shipped.
+     the name daukle was started from.
 
      The names come from daukle.toml and NOT from a file gradle:discover wrote,
      and that reversal is this design's correction to its own spec. A generated
@@ -426,15 +463,9 @@ daukle.task{
      the discovery itself. Reading the manifest also leaves the project with one
      committed file instead of two, which is the file-location rule's third
      clause: if we can do without the file, we should. ]]
-local function declarative_manifest()
-  if string.match(daukle.manifest, "%.toml$") == nil then return nil end
-  return daukle.parse(daukle.read(daukle.manifest), daukle.manifest)
-end
-
 local function declared_tasks()
-  local document = declarative_manifest()
-  local gradle = document ~= nil and document.toolchains ~= nil
-                 and document.toolchains.gradle or nil
+  local gradle = MANIFEST ~= nil and MANIFEST.toolchains ~= nil
+                 and MANIFEST.toolchains.gradle or nil
   return discovery.mapped(gradle ~= nil and gradle.tasks or nil)
 end
 
