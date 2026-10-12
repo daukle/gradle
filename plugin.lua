@@ -266,11 +266,42 @@ local function paths_of(entries)
   return paths
 end
 
---[[ `options` is how a discovery run differs from an ordinary one: it may
-     suppress the apply lines and the configure blocks, and it names the marker
-     the generated listing task prints with. Everything else about the two files
-     is identical on purpose, so the difference between their task lists is what
-     the plugins contributed and nothing else. ]]
+--- @implNote the test side of the classpath is the compile side FOLLOWED BY the
+--- test-only entries, which is the testImplementation/implementation separation
+--- daukle/maven writes against.
+local function test_reachable(compile, test)
+  local reachable = {}
+  for index = 1, #compile do reachable[#reachable + 1] = compile[index] end
+  for index = 1, #test do reachable[#reachable + 1] = test[index] end
+  return reachable
+end
+
+--- @implNote per module, because a module carries its own testClasspath: a
+--- project-wide check would pass while one module's test runtime held a
+--- platform engine and no launcher, which is the declaration that passes on
+--- Gradle 8 and dies on the next major.
+local function refuse_a_module_missing_launcher(module)
+  junit.refuse_a_missing_launcher(test_reachable(module.compile, module.test))
+end
+
+--- Every build file Gradle reads, written into the derived directory.
+---
+--- `options` is how a discovery run differs from an ordinary one: it may
+--- suppress the apply lines and the configure blocks, and it names the marker
+--- the generated listing task prints with. Everything else about the two files
+--- is identical on purpose, so the difference between their task lists is what
+--- the plugins contributed and nothing else.
+---
+--- @implNote `release`, `plugins` and `configure` are project-wide and are
+--- rendered into EVERY module rather than into an `allprojects {}` block: the
+--- renderer is the only writer, so the duplication costs a reader nothing and
+--- there is no second configuration mechanism to learn.
+--- @implNote the root file is written on every multi-project run, carrying only
+--- its header when there is no plugin classpath. A task's write is not in
+--- core's generate ledger and core prunes nothing, so a single-project build
+--- file an earlier build left at the derived root would otherwise stay the root
+--- project of this one, with its own source roots, its own jar and its own
+--- daukleRun.
 local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
@@ -282,13 +313,12 @@ local function write_build_file(context, config, options)
   if bare then configure = nil end
   local compile = checked_classpath(config.classpath, "classpath")
   local test = checked_classpath(config.testClasspath, "testClasspath")
-  --[[ The test side of the classpath is the compile side FOLLOWED BY the
-       test-only entries, which is the testImplementation/implementation
-       separation daukle/maven writes against. ]]
-  local test_reachable = {}
-  for index = 1, #compile do test_reachable[#test_reachable + 1] = compile[index] end
-  for index = 1, #test do test_reachable[#test_reachable + 1] = test[index] end
-  junit.refuse_a_missing_launcher(test_reachable)
+  junit.refuse_a_missing_launcher(test_reachable(compile, test))
+
+  --[[ One expression for both paths: a project-wide key added to one of two
+       copies is a key half the projects get. ]]
+  local plugin_jars = bare and {}
+                      or paths_of(checked_classpath(config.pluginClasspath, "pluginClasspath"))
 
   local declared = module_graph.declared(context)
   if #declared == 0 then
@@ -296,9 +326,7 @@ local function write_build_file(context, config, options)
       path = BUILD_FILE,
       text = build_file.render(layout_of(config),
                                { compile = paths_of(compile), test = paths_of(test),
-                                 plugin = bare and {}
-                                          or paths_of(checked_classpath(config.pluginClasspath,
-                                                                        "pluginClasspath")) },
+                                 plugin = plugin_jars },
                                { release = string_key(config, "release", nil),
                                  main = string_key(config, "main", nil),
                                  plugins = bare and {} or checked_plugins(config.plugins),
@@ -307,31 +335,12 @@ local function write_build_file(context, config, options)
     }
   end
 
-  local plugin_jars = bare and {}
-                      or paths_of(checked_classpath(config.pluginClasspath, "pluginClasspath"))
-  if #plugin_jars > 0 then
-    daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
-  end
+  daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
 
-  --[[ `release`, `plugins` and `configure` are project-wide and are rendered
-       into EVERY module rather than into an `allprojects {}` block: the
-       renderer is the only writer, so the duplication costs a reader nothing
-       and there is no second configuration mechanism to learn. ]]
   local modules = checked_modules(config, declared)
   for index = 1, #modules do
     local module = modules[index]
-    local module_reachable = {}
-    for entry = 1, #module.compile do
-      module_reachable[#module_reachable + 1] = module.compile[entry]
-    end
-    for entry = 1, #module.test do
-      module_reachable[#module_reachable + 1] = module.test[entry]
-    end
-    --[[ Per module, because a module carries its own testClasspath: a
-         project-wide check would pass while one module's test runtime held a
-         platform engine and no launcher, which is the declaration that passes
-         on Gradle 8 and dies on the next major. ]]
-    junit.refuse_a_missing_launcher(module_reachable)
+    refuse_a_module_missing_launcher(module)
     daukle.write{
       path = module.name .. "/" .. BUILD_FILE,
       text = build_file.module(module.layout,
