@@ -3,23 +3,29 @@
 
 local modules = {}
 
-local NESTING_CHARACTERS = { ":", "/", "\\" }
+local REFUSED_SUBSTRINGS = { ":", "/", "\\" }
+local REFUSED_NAMES = { [""] = true, ["."] = true, [".."] = true }
+local CONTROL_CHARACTER = "%c"
 
-local function holds_a_nesting_character(name)
-  for _, character in ipairs(NESTING_CHARACTERS) do
-    if string.find(name, character, 1, true) ~= nil then
-      return true
-    end
+local function cannot_be_modelled(name)
+  if REFUSED_NAMES[name] ~= nil then return true end
+  if string.find(name, CONTROL_CHARACTER) ~= nil then return true end
+  for _, substring in ipairs(REFUSED_SUBSTRINGS) do
+    if string.find(name, substring, 1, true) ~= nil then return true end
   end
   return false
 end
 
---- @implNote a backslash is refused too because the renderer turns every
---- backslash into a slash, which would smuggle a nested include past the guard.
-local function refuse_a_nested_name(name)
-  if holds_a_nesting_character(name) then
-    error('the module "' .. name .. '" holds ":", "/" or "\\", and this toolchain models a'
-          .. ' flat module list: a nested module is not generated', 0)
+--- @implNote a backslash is refused because the renderer turns every backslash
+--- into a slash, which would smuggle a nested include past the guard. "." is
+--- refused because it renders `include ':.'` and writes the module's build file
+--- OVER the root's, and ".." because core refuses it only at write time, which
+--- names a climb-out rather than the module the name came from.
+local function refuse_a_name_this_toolchain_cannot_model(name)
+  if cannot_be_modelled(name) then
+    error('the module "' .. name .. '" is not a name this toolchain can model: it models a flat'
+          .. ' list of one directory per module, so ":", "/", "\\", ".", "..", an empty name and'
+          .. ' a control character are all refused', 0)
   end
 end
 
@@ -68,7 +74,7 @@ function modules.declared(context)
   local out = {}
   for index = 1, #declared do
     local entry = declared[index]
-    refuse_a_nested_name(entry.name)
+    refuse_a_name_this_toolchain_cannot_model(entry.name)
     out[#out + 1] = { name = entry.name, requires = entry.requires }
   end
   refuse_an_unknown_requires(out)
