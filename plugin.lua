@@ -93,6 +93,33 @@ local function checked_classpath(entries, key)
   return entries
 end
 
+--- Every declared module with its own block read and shape-checked.
+---
+--- @implNote `validated` runs this and throws the result away, so a module's
+--- classpath is refused by `daukle sync` and not only by the task that would
+--- have written its file. One function rather than a second loop beside the
+--- writer's: two loops over the same blocks would drift.
+local function checked_modules(config, declared)
+  local blocks = module_graph.blocks_of(config, declared)
+  local checked = {}
+  for index = 1, #declared do
+    local name = declared[index].name
+    --[[ A module fault labelled "classpath" would name a key the manifest does
+         not hold and that this plugin refuses project-wide. ]]
+    local scope = "modules." .. name .. "."
+    local block = blocks[name] or {}
+    checked[index] = {
+      name = name,
+      requires = declared[index].requires,
+      layout = module_graph.layout_of(name, block),
+      main = string_key(block, "main", nil, scope .. "main"),
+      compile = checked_classpath(block.classpath, scope .. "classpath"),
+      test = checked_classpath(block.testClasspath, scope .. "testClasspath"),
+    }
+  end
+  return checked
+end
+
 local function project_name(context)
   local name = context.project or "project"
   return (name:match("([^/]+)$") or name)
@@ -150,7 +177,7 @@ local function validated(context, config)
   layout_of(config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
-  module_graph.blocks_of(config, declared)
+  checked_modules(config, declared)
   checked_classpath(config.classpath, "classpath")
   checked_classpath(config.testClasspath, "testClasspath")
   string_key(config, "release", nil)
@@ -242,21 +269,15 @@ local function write_build_file(context, config, options)
        into EVERY module rather than into an `allprojects {}` block: the
        renderer is the only writer, so the duplication costs a reader nothing
        and there is no second configuration mechanism to learn. ]]
-  local blocks = module_graph.blocks_of(config, declared)
-  for index = 1, #declared do
-    local name = declared[index].name
-    local block = blocks[name] or {}
-    --[[ A module fault labelled "classpath" would name a key the manifest does
-         not hold and that this plugin refuses project-wide. ]]
-    local scope = "modules." .. name .. "."
-    local module_compile = checked_classpath(block.classpath, scope .. "classpath")
-    local module_test = checked_classpath(block.testClasspath, scope .. "testClasspath")
+  local modules = checked_modules(config, declared)
+  for index = 1, #modules do
+    local module = modules[index]
     local module_reachable = {}
-    for entry = 1, #module_compile do
-      module_reachable[#module_reachable + 1] = module_compile[entry]
+    for entry = 1, #module.compile do
+      module_reachable[#module_reachable + 1] = module.compile[entry]
     end
-    for entry = 1, #module_test do
-      module_reachable[#module_reachable + 1] = module_test[entry]
+    for entry = 1, #module.test do
+      module_reachable[#module_reachable + 1] = module.test[entry]
     end
     --[[ Per module, because a module carries its own testClasspath: a
          project-wide check would pass while one module's test runtime held a
@@ -264,16 +285,16 @@ local function write_build_file(context, config, options)
          on Gradle 8 and dies on the next major. ]]
     junit.refuse_a_missing_launcher(module_reachable)
     daukle.write{
-      path = name .. "/" .. BUILD_FILE,
-      text = build_file.module(module_graph.layout_of(name, block),
-                               { compile = paths_of(module_compile),
-                                 test = paths_of(module_test),
+      path = module.name .. "/" .. BUILD_FILE,
+      text = build_file.module(module.layout,
+                               { compile = paths_of(module.compile),
+                                 test = paths_of(module.test),
                                  plugin = {} },
                                { release = string_key(config, "release", nil),
-                                 main = string_key(block, "main", nil, scope .. "main"),
+                                 main = module.main,
                                  plugins = bare and {} or checked_plugins(config.plugins),
                                  configure = configure,
-                                 requires = declared[index].requires,
+                                 requires = module.requires,
                                  discover = options ~= nil and options.discover or nil }),
     }
   end
