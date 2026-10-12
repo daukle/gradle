@@ -1,1 +1,1 @@
-holds ":" or "/", and this toolchain models a flat module list
+a flat module list
