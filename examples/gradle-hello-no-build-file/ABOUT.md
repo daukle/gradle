@@ -59,8 +59,8 @@ refused by name, because a version it does not pin is a version it cannot verify
 **`main` is a class name, not a path**, and it is what makes `gradle:run` exist: the generated build
 registers a `JavaExec` task against `sourceSets.main.runtimeClasspath`. It also applies Gradle's
 `application` plugin, which costs this example nothing and is what lets a packaging plugin find a
-`Main-Class`: that is what makes a fat jar built through this toolchain runnable. Leave `main` out
-and the other four tasks still work.
+`Main-Class`: that is how `gradle-fat-jar` beside this one produces a jar `java -jar` runs. Leave
+`main` out and the other four tasks still work.
 
 **The generated build declares no `repositories {}` block at all, and that is the point rather than
 an omission.** A dependency reaches Gradle as an absolute path into daukle's artifact cache, pinned
