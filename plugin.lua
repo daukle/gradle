@@ -13,7 +13,7 @@
 daukle.plugin{
   api = 1,
   uses = { "provision", "artifact", "exec", "write", "read", "parse" },
-  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery" },
+  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules" },
   --[[ Core scrubs every credential it knows from a child it starts unless the
        plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
        unset and a generated `System.getenv(...) ?: ''` would hand the build an
@@ -39,6 +39,7 @@ local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
 local junit = daukle.require("lib/junit")
 local discovery = daukle.require("lib/discovery")
+local module_graph = daukle.require("lib/modules")
 local jdks = daukle.require("java:lib/jdks")
 
 local DEFAULT_JDK = "17"
@@ -196,7 +197,8 @@ daukle.toolchain{
   generate = function(context)
     local config = config_of(context)
     validated(context, config)
-    return { [SETTINGS_FILE] = build_file.settings(project_name(context)) }
+    return { [SETTINGS_FILE] = build_file.settings(project_name(context),
+                                                   module_graph.declared(context)) }
   end,
 }
 
