@@ -55,14 +55,19 @@ end
 
      `file` and `buildOutput` exist as a PAIR because a path in a hand-written
      build means one of two things and daukle moved the project directory out
-     from under both: `file('assets')` meant the project root, which is now
-     three levels up, and `file('build/libs/x.jar')` meant the build directory,
-     which Gradle still owns. Measured across this tree's build files, roughly
-     half of each, so collapsing them into one marker is silently wrong for the
-     other half. ]]
+     from under both: `file('assets')` meant the project root, which the derived
+     directory sits three levels below and a module's directory four, and
+     `file('build/libs/x.jar')` meant the build directory, which Gradle still
+     owns. Measured across this tree's build files, roughly half of each, so
+     collapsing them into one marker is silently wrong for the other half.
+
+     `file` therefore takes the same depth the source roots do: a project-wide
+     configure block is rendered into every module's file, so a marker that
+     carried the derived root's own depth would resolve one directory too high
+     in every one of them. ]]
 local MARKERS = {
-  file = function(text)
-    return "new File(file(" .. groovy_string(ROOT) .. "), " .. groovy_string(text) .. ")"
+  file = function(text, depth)
+    return "new File(file(" .. groovy_string(depth) .. "), " .. groovy_string(text) .. ")"
   end,
   buildOutput = function(text)
     return "layout.buildDirectory.file(" .. groovy_string(text) .. ").get().asFile"
@@ -121,16 +126,16 @@ end
 
 local render_body
 
-local function render_block(lines, indent, name, body, path)
+local function render_block(lines, indent, name, body, path, depth)
   if type(body) ~= "table" then
     error('"' .. path .. '" must be a block or a value, not a ' .. type(body), 0)
   end
   lines[#lines + 1] = indent .. name .. " {"
-  render_body(lines, indent .. "  ", body, path)
+  render_body(lines, indent .. "  ", body, path, depth)
   lines[#lines + 1] = indent .. "}"
 end
 
-local function render_assignment(lines, indent, key, value, path)
+local function render_assignment(lines, indent, key, value, path, depth)
   local kind = type(value)
   if kind == "string" then
     lines[#lines + 1] = indent .. key .. " = " .. groovy_string(value)
@@ -140,7 +145,7 @@ local function render_assignment(lines, indent, key, value, path)
     lines[#lines + 1] = indent .. key .. " = " .. tostring(value)
   elseif kind == "table" then
     local marker = marker_of(value, path)
-    lines[#lines + 1] = indent .. key .. " = " .. MARKERS[marker](value[marker])
+    lines[#lines + 1] = indent .. key .. " = " .. MARKERS[marker](value[marker], depth)
   else
     error('"' .. path .. '" is a ' .. kind .. ", which no Gradle value can be spelled as", 0)
   end
@@ -150,7 +155,7 @@ end
      undefined and a generated file a test compares byte for byte may not depend
      on it. Values first is not only cosmetic: a nested closure that reads a
      property of its own extension sees one that was already set. ]]
-function render_body(lines, indent, body, path)
+function render_body(lines, indent, body, path, depth)
   if is_list(body) then
     error('"' .. path .. '" is a list where a block was expected', 0)
   end
@@ -171,24 +176,29 @@ function render_body(lines, indent, body, path)
 
   for index = 1, #values do
     local key = values[index]
-    render_assignment(lines, indent, key, body[key], path .. "." .. key)
+    render_assignment(lines, indent, key, body[key], path .. "." .. key, depth)
   end
   for index = 1, #blocks do
     local key = blocks[index]
     local value = body[key]
     if is_list(value) then
       for entry = 1, #value do
-        render_block(lines, indent, key, value[entry], path .. "." .. key .. "[" .. entry .. "]")
+        render_block(lines, indent, key, value[entry], path .. "." .. key .. "[" .. entry .. "]",
+                     depth)
       end
     else
-      render_block(lines, indent, key, value, path .. "." .. key)
+      render_block(lines, indent, key, value, path .. "." .. key, depth)
     end
   end
 end
 
 --- Every `configure` block, as Groovy text. Pure, so `generate` can run it to
 --- refuse a bad tree before anything is acquired.
-function build_file.configuration(configure)
+---
+--- @param depth the `file` marker's prefix, defaulting to the derived root's,
+--- so a caller that only validates a tree needs to know nothing about depth
+function build_file.configuration(configure, depth)
+  depth = depth or ROOT
   if configure == nil then return {} end
   if type(configure) ~= "table" then
     error('"configure" must be a table of extension blocks, not a ' .. type(configure), 0)
@@ -206,7 +216,7 @@ function build_file.configuration(configure)
             .. " registered, and its keys are what that extension takes", 0)
     end
   end
-  render_body(lines, "", configure, "configure")
+  render_body(lines, "", configure, "configure", depth)
   return lines
 end
 
@@ -297,7 +307,7 @@ local function render_project(layout, jars, options, depth, requires)
   lines[#lines + 1] = ""
   lines[#lines + 1] = "test { useJUnitPlatform() }"
 
-  local configuration = build_file.configuration(options.configure)
+  local configuration = build_file.configuration(options.configure, depth)
   for index = 1, #configuration do
     --[[ One blank line before each top-level block, which is every line this
          returns at indent zero that is not a closing brace. ]]

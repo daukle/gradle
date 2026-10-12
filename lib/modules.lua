@@ -47,32 +47,34 @@ local DEFAULT_SUFFIX = {
   testResourceRoot = "src/test/resources",
 }
 
-local function string_key(block, key, fallback)
+--- @param label where the key really lives, when that is not the key itself: a
+--- module's fault names "modules.<name>.<key>" so the refusal names something
+--- the manifest actually holds
+function modules.string_key(block, key, fallback, label)
   local value = block[key]
   if value == nil then return fallback end
   if type(value) ~= "string" then
-    error('"' .. key .. '" must be a string, not a ' .. type(value), 0)
+    error('"' .. (label or key) .. '" must be a string, not a ' .. type(value), 0)
   end
   return value
 end
 
+--- The source layout of one module, or of the project itself when `name` is nil.
+---
 --- @implNote a module's roots default to its own name, which is the shape 117
 --- of this tree's 185 subproject build files rely on: they declare nothing and
---- take the convention.
+--- take the convention. One function for both so the four defaults live in one
+--- table: a second copy drifts the first time a fifth root is added.
 function modules.layout_of(name, block)
   block = block or {}
+  local prefix = name ~= nil and (name .. "/") or ""
+  local scope = name ~= nil and ("modules." .. name .. ".") or ""
+  local function dirs_for(key)
+    return { modules.string_key(block, key, prefix .. DEFAULT_SUFFIX[key], scope .. key) }
+  end
   return {
-    main = {
-      java = { string_key(block, "sourceRoot", name .. "/" .. DEFAULT_SUFFIX.sourceRoot) },
-      resources = { string_key(block, "resourceRoot",
-                               name .. "/" .. DEFAULT_SUFFIX.resourceRoot) },
-    },
-    test = {
-      java = { string_key(block, "testSourceRoot",
-                          name .. "/" .. DEFAULT_SUFFIX.testSourceRoot) },
-      resources = { string_key(block, "testResourceRoot",
-                               name .. "/" .. DEFAULT_SUFFIX.testResourceRoot) },
-    },
+    main = { java = dirs_for("sourceRoot"), resources = dirs_for("resourceRoot") },
+    test = { java = dirs_for("testSourceRoot"), resources = dirs_for("testResourceRoot") },
   }
 end
 

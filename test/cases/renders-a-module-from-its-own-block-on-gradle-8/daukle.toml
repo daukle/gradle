@@ -1,0 +1,27 @@
+schema = 1
+project = "example/block"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+# No pinned entry anywhere, so the generated module file holds no absolute path
+# into daukle's cache and can be compared byte for byte. What it asserts is the
+# REDIRECT: every path in a module's file resolves four levels up, the source
+# roots and the `file` marker alike, and three would point at the derived
+# directory's own parent with Gradle reporting nothing.
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+
+[toolchains.gradle.configure.ext]
+daukleProbeFile = { file = "notes.txt" }
+
+[toolchains.gradle.modules.alpha]
+main = "alpha.Alpha"
+sourceRoot = "alpha/java"
+resourceRoot = "alpha/assets"
+testSourceRoot = "alpha/test-java"
+testResourceRoot = "alpha/test-assets"

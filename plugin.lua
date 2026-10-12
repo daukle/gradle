@@ -47,25 +47,11 @@ local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
 local REPORT_FILE = "discovered.txt"
 
-local DEFAULT_LAYOUT = {
-  sourceRoot = "src/main/java",
-  resourceRoot = "src/main/resources",
-  testSourceRoot = "src/test/java",
-  testResourceRoot = "src/test/resources",
-}
-
 local function config_of(context)
   return context.toolchain ~= nil and context.toolchain.config or context.config
 end
 
-local function string_key(config, key, fallback)
-  local value = config[key]
-  if value == nil then return fallback end
-  if type(value) ~= "string" then
-    error('"' .. key .. '" must be a string, not a ' .. type(value), 0)
-  end
-  return value
-end
+local string_key = module_graph.string_key
 
 --- @implNote core keeps a toolchain's `version` in the config a GENERATE callback
 --- sees and drops it from a TASK's, exposing it as context.toolchain.version
@@ -87,6 +73,10 @@ local function jdk_for(context, config)
                         version = jdk_version_of(config) }
 end
 
+local function layout_of(config)
+  return module_graph.layout_of(nil, config)
+end
+
 local function checked_classpath(entries, key)
   if entries == nil then return {} end
   if type(entries) ~= "table" then
@@ -101,19 +91,6 @@ local function checked_classpath(entries, key)
     end
   end
   return entries
-end
-
-local function layout_of(config)
-  return {
-    main = {
-      java = { string_key(config, "sourceRoot", DEFAULT_LAYOUT.sourceRoot) },
-      resources = { string_key(config, "resourceRoot", DEFAULT_LAYOUT.resourceRoot) },
-    },
-    test = {
-      java = { string_key(config, "testSourceRoot", DEFAULT_LAYOUT.testSourceRoot) },
-      resources = { string_key(config, "testResourceRoot", DEFAULT_LAYOUT.testResourceRoot) },
-    },
-  }
 end
 
 local function project_name(context)
@@ -269,8 +246,11 @@ local function write_build_file(context, config, options)
   for index = 1, #declared do
     local name = declared[index].name
     local block = blocks[name] or {}
-    local module_compile = checked_classpath(block.classpath, "classpath")
-    local module_test = checked_classpath(block.testClasspath, "testClasspath")
+    --[[ A module fault labelled "classpath" would name a key the manifest does
+         not hold and that this plugin refuses project-wide. ]]
+    local scope = "modules." .. name .. "."
+    local module_compile = checked_classpath(block.classpath, scope .. "classpath")
+    local module_test = checked_classpath(block.testClasspath, scope .. "testClasspath")
     local module_reachable = {}
     for entry = 1, #module_compile do
       module_reachable[#module_reachable + 1] = module_compile[entry]
@@ -290,7 +270,7 @@ local function write_build_file(context, config, options)
                                  test = paths_of(module_test),
                                  plugin = {} },
                                { release = string_key(config, "release", nil),
-                                 main = string_key(block, "main", nil),
+                                 main = string_key(block, "main", nil, scope .. "main"),
                                  plugins = bare and {} or checked_plugins(config.plugins),
                                  configure = configure,
                                  requires = declared[index].requires,
