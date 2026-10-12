@@ -60,7 +60,7 @@ run_case() {
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
-         "$sandbox/expect-file.txt"
+         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt"
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -93,6 +93,26 @@ run_case() {
 
   if [ -d "$case_dir/expected" ]; then
     compare_expected "$case_dir" "$sandbox" "$name" || return
+  fi
+
+  # One literal per line the run's own output must carry. It is how a case
+  # asserts that a value the manifest names reached the TOOL rather than the
+  # renderer: "provisioning gradle 9.6.0" is daukle's own line, and nothing
+  # else in a build names the Gradle that ran. Both cases named after Gradle 9
+  # were green on Gradle 8.13 from the day they were written, because the
+  # manifest's version reached generate and no check looked at the task.
+  if [ -f "$case_dir/expect-output.txt" ]; then
+    if ! grep -q . "$case_dir/expect-output.txt"; then
+      fail "$name" "expect-output.txt is empty, so this case asserts nothing"
+      return
+    fi
+    while IFS= read -r clause || [ -n "$clause" ]; do
+      [ -n "$clause" ] || continue
+      if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
+        fail "$name" "output does not carry: $clause"
+        return
+      fi
+    done < "$case_dir/expect-output.txt"
   fi
 
   # One path per line that the TOOL must have produced. The text of a generated

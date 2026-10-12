@@ -66,6 +66,17 @@ local function string_key(config, key, fallback)
   return value
 end
 
+--- @implNote core keeps a toolchain's `version` in the config a GENERATE callback
+--- sees and drops it from a TASK's, exposing it as context.toolchain.version
+--- instead. Reading only `config.version` therefore found a version at generate
+--- time, refused an unpinned one correctly, and then provisioned the DEFAULT
+--- Gradle in every task. `jdk` is unaffected: core reserves `version` and
+--- `dependencies` and passes every other key through both callbacks.
+local function gradle_version_of(context)
+  return (context.toolchain ~= nil and context.toolchain.version)
+         or config_of(context).version
+end
+
 local function jdk_version_of(config)
   return string_key(config, "jdk", DEFAULT_JDK)
 end
@@ -151,7 +162,7 @@ end
 
 --- Everything `generate` can check without starting a process or fetching.
 local function validated(context, config)
-  distributions.for_version(config.version)
+  distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
   checked_classpath(config.classpath, "classpath")
@@ -245,7 +256,7 @@ end
 --- unnecessary: Gradle reports the daemon JVM as "no JDK specified, using
 --- current Java home", which is the one daukle provisioned.
 local function run_gradle(context, config, arguments, options)
-  local pick = distributions.for_version(config.version)
+  local pick = distributions.for_version(gradle_version_of(context))
   local jdk = jdk_for(context, config)
 
   local gradle_root = daukle.provision{ url = pick.url, sha256 = pick.sha256,

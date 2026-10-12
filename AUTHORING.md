@@ -118,6 +118,25 @@ by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, 
 `discover`. A duplicate task name is fatal on **every** command in a project, so it is refused where
 the name is read rather than where it is used.
 
+## `version` lives in TWO places, and reading one of them shipped the wrong Gradle
+
+**Core builds the config a callback sees differently for a generate callback and for a task.** For
+`generate` it drops `dependencies` and keeps `version`, because a generated file may legitimately
+depend on the requested version. For a TASK it drops **both** and exposes the value as
+`context.toolchain.version` instead. `src/config/config_dispatch.c` does both and says so.
+
+So `config_of(context).version` is a string at generate time and `nil` in every task, and
+`distributions.for_version(nil)` answers the DEFAULT. That is `D-115`: every task in this plugin ran
+Gradle 8.13 whatever the manifest said, through a released `1.2.0`. `gradle_version_of(context)`
+reads both places, which is the idiom `java`, `c`, `node` and `cmake` already had.
+
+**Nothing caught it because the version reaches generate**, so an unpinned version was still refused
+by name, and because every fixture but two declared `8.13`, which is also the default. The two that
+did not were the cases named after Gradle 9. **`expect-output.txt` is the check that was missing**:
+one literal per line that the run's own output must carry, and `provisioning gradle <v>` is the only
+line that names the Gradle that ran. `jdk` is unaffected: core reserves `version` and
+`dependencies` and passes every other key through both callbacks.
+
 ## Third-party Gradle plugins
 
 **The generated build still declares no `repositories {}`.** A plugin is applied from a jar daukle
