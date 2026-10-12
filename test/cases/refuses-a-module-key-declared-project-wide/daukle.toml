@@ -1,0 +1,12 @@
+schema = 1
+project = "example/wide"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+sourceRoot = "alpha/src/main/java"

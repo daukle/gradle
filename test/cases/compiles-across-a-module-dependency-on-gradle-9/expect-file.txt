@@ -1,0 +1,2 @@
+build/daukle/gradle/lib/build/classes/java/main/com/example/Greeter.class
+build/daukle/gradle/app/build/classes/java/main/com/example/App.class

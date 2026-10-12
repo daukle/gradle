@@ -1,0 +1,2 @@
+build/daukle/gradle/alpha/build/test-results/test/TEST-alpha.AlphaTest.xml tests="2"
+build/daukle/gradle/alpha/build/test-results/test/TEST-alpha.AlphaTest.xml failures="0"

@@ -1,0 +1,13 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+
+[[toolchains.gradle.modules.alpha.classpath]]
+url = "https://example.invalid/thing.jar"

@@ -13,7 +13,7 @@
 daukle.plugin{
   api = 1,
   uses = { "provision", "artifact", "exec", "write", "read", "parse" },
-  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery" },
+  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules" },
   --[[ Core scrubs every credential it knows from a child it starts unless the
        plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
        unset and a generated `System.getenv(...) ?: ''` would hand the build an
@@ -39,6 +39,7 @@ local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
 local junit = daukle.require("lib/junit")
 local discovery = daukle.require("lib/discovery")
+local module_graph = daukle.require("lib/modules")
 local jdks = daukle.require("java:lib/jdks")
 
 local DEFAULT_JDK = "17"
@@ -46,25 +47,37 @@ local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
 local REPORT_FILE = "discovered.txt"
 
-local DEFAULT_LAYOUT = {
-  sourceRoot = "src/main/java",
-  resourceRoot = "src/main/resources",
-  testSourceRoot = "src/test/java",
-  testResourceRoot = "src/test/resources",
-}
+--[[ Gated on the manifest being DECLARATIVE: core accepts a project whose only
+     manifest is daukle.lua by falling back to the overlay, and daukle.parse
+     refuses to run one. There is no pcall in the sandbox, so an unguarded parse
+     is fatal on every command rather than only where the document is wanted,
+     which is what daukle/cmake@1.4.0 shipped. ]]
+local function declarative_manifest()
+  if string.match(daukle.manifest, "%.toml$") == nil then return nil end
+  return daukle.parse(daukle.read(daukle.manifest), daukle.manifest)
+end
+
+local MANIFEST = declarative_manifest()
+
+--- Whether the manifest ITSELF declares modules, which is the one question a
+--- core too old to publish its module list cannot be asked.
+---
+--- @implNote read from the parsed manifest rather than from a context, because
+--- the context is exactly what such a core leaves out. A project whose manifest
+--- is daukle.lua cannot be read at all, so this is false there and nothing is
+--- refused, which is what every overlay project already gets.
+local function manifest_declares_modules(document)
+  local declared = document ~= nil and document.modules or nil
+  return type(declared) == "table" and next(declared) ~= nil
+end
+
+local MANIFEST_DECLARES_MODULES = manifest_declares_modules(MANIFEST)
 
 local function config_of(context)
   return context.toolchain ~= nil and context.toolchain.config or context.config
 end
 
-local function string_key(config, key, fallback)
-  local value = config[key]
-  if value == nil then return fallback end
-  if type(value) ~= "string" then
-    error('"' .. key .. '" must be a string, not a ' .. type(value), 0)
-  end
-  return value
-end
+local string_key = module_graph.string_key
 
 --- @implNote core keeps a toolchain's `version` in the config a GENERATE callback
 --- sees and drops it from a TASK's, exposing it as context.toolchain.version
@@ -86,6 +99,10 @@ local function jdk_for(context, config)
                         version = jdk_version_of(config) }
 end
 
+local function layout_of(config)
+  return module_graph.layout_of(nil, config)
+end
+
 local function checked_classpath(entries, key)
   if entries == nil then return {} end
   if type(entries) ~= "table" then
@@ -102,17 +119,32 @@ local function checked_classpath(entries, key)
   return entries
 end
 
-local function layout_of(config)
-  return {
-    main = {
-      java = { string_key(config, "sourceRoot", DEFAULT_LAYOUT.sourceRoot) },
-      resources = { string_key(config, "resourceRoot", DEFAULT_LAYOUT.resourceRoot) },
-    },
-    test = {
-      java = { string_key(config, "testSourceRoot", DEFAULT_LAYOUT.testSourceRoot) },
-      resources = { string_key(config, "testResourceRoot", DEFAULT_LAYOUT.testResourceRoot) },
-    },
-  }
+--- Every declared module with its own block read and shape-checked.
+---
+--- @implNote `validated` runs this and throws the result away, so a module's
+--- classpath is refused by `daukle sync` and not only by the task that would
+--- have written its file. One function rather than a second loop beside the
+--- writer's: two loops over the same blocks would drift.
+local function checked_modules(config, declared)
+  local blocks = module_graph.blocks_of(config, declared)
+  local checked = {}
+  for index = 1, #declared do
+    local name = declared[index].name
+    --[[ A module fault labelled "classpath" would name a key the manifest does
+         not hold and that this plugin refuses project-wide. ]]
+    local scope = "modules." .. name .. "."
+    local block = blocks[name] or {}
+    checked[index] = {
+      name = name,
+      requires = declared[index].requires,
+      layout = module_graph.layout_of(name, block),
+      main = string_key(block, "main", nil, scope .. "main"),
+      compile = checked_classpath(block.classpath, scope .. "classpath"),
+      test = checked_classpath(block.testClasspath, scope .. "testClasspath"),
+    }
+  end
+  module_graph.refuse_two_mains(checked)
+  return checked
 end
 
 local function project_name(context)
@@ -160,11 +192,34 @@ local function refuse_a_version_no_pin_carries(plugins, pins)
   end
 end
 
+--- @implNote core publishes `context.modules` as a table, empty when the
+--- project declares none, so an ABSENT one is a core too old to publish the
+--- list at all rather than a project without modules. Refused because nothing
+--- downstream can tell the difference: the single-project file would be
+--- rendered against source roots a module-shaped repository does not have, and
+--- Gradle would report BUILD SUCCESSFUL having compiled nothing.
+local function refuse_a_core_that_publishes_no_modules(context)
+  if MANIFEST_DECLARES_MODULES and context.modules == nil then
+    error('this project declares modules and the daukle running it is too old to publish the'
+          .. ' module list, so every module in "[modules]" would be silently ignored: upgrade'
+          .. ' daukle, or take the modules back out of the manifest', 0)
+  end
+end
+
 --- Everything `generate` can check without starting a process or fetching.
+---
+--- @implNote the module checks live here rather than beside the writer so that
+--- `daukle sync` refuses a bad graph. A project that declares modules reaches
+--- generate and no task, so a check only the writer ran would be one a user
+--- never meets until the first build.
 local function validated(context, config)
+  refuse_a_core_that_publishes_no_modules(context)
   distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
+  local declared = module_graph.declared(context)
+  module_graph.refuse_a_module_key_project_wide(config, declared)
+  checked_modules(config, declared)
   checked_classpath(config.classpath, "classpath")
   checked_classpath(config.testClasspath, "testClasspath")
   string_key(config, "release", nil)
@@ -196,7 +251,8 @@ daukle.toolchain{
   generate = function(context)
     local config = config_of(context)
     validated(context, config)
-    return { [SETTINGS_FILE] = build_file.settings(project_name(context)) }
+    return { [SETTINGS_FILE] = build_file.settings(project_name(context),
+                                                   module_graph.declared(context)) }
   end,
 }
 
@@ -210,11 +266,42 @@ local function paths_of(entries)
   return paths
 end
 
---[[ `options` is how a discovery run differs from an ordinary one: it may
-     suppress the apply lines and the configure blocks, and it names the marker
-     the generated listing task prints with. Everything else about the two files
-     is identical on purpose, so the difference between their task lists is what
-     the plugins contributed and nothing else. ]]
+--- @implNote the test side of the classpath is the compile side FOLLOWED BY the
+--- test-only entries, which is the testImplementation/implementation separation
+--- daukle/maven writes against.
+local function test_reachable(compile, test)
+  local reachable = {}
+  for index = 1, #compile do reachable[#reachable + 1] = compile[index] end
+  for index = 1, #test do reachable[#reachable + 1] = test[index] end
+  return reachable
+end
+
+--- @implNote per module, because a module carries its own testClasspath: a
+--- project-wide check would pass while one module's test runtime held a
+--- platform engine and no launcher, which is the declaration that passes on
+--- Gradle 8 and dies on the next major.
+local function refuse_a_module_missing_launcher(module)
+  junit.refuse_a_missing_launcher(test_reachable(module.compile, module.test))
+end
+
+--- Every build file Gradle reads, written into the derived directory.
+---
+--- `options` is how a discovery run differs from an ordinary one: it may
+--- suppress the apply lines and the configure blocks, and it names the marker
+--- the generated listing task prints with. Everything else about the two files
+--- is identical on purpose, so the difference between their task lists is what
+--- the plugins contributed and nothing else.
+---
+--- @implNote `release`, `plugins` and `configure` are project-wide and are
+--- rendered into EVERY module rather than into an `allprojects {}` block: the
+--- renderer is the only writer, so the duplication costs a reader nothing and
+--- there is no second configuration mechanism to learn.
+--- @implNote the root file is written on every multi-project run, carrying only
+--- its header when there is no plugin classpath. A task's write is not in
+--- core's generate ledger and core prunes nothing, so a single-project build
+--- file an earlier build left at the derived root would otherwise stay the root
+--- project of this one, with its own source roots, its own jar and its own
+--- daukleRun.
 local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
@@ -226,27 +313,48 @@ local function write_build_file(context, config, options)
   if bare then configure = nil end
   local compile = checked_classpath(config.classpath, "classpath")
   local test = checked_classpath(config.testClasspath, "testClasspath")
-  --[[ The test side of the classpath is the compile side FOLLOWED BY the
-       test-only entries, which is the testImplementation/implementation
-       separation daukle/maven writes against. ]]
-  local test_reachable = {}
-  for index = 1, #compile do test_reachable[#test_reachable + 1] = compile[index] end
-  for index = 1, #test do test_reachable[#test_reachable + 1] = test[index] end
-  junit.refuse_a_missing_launcher(test_reachable)
+  junit.refuse_a_missing_launcher(test_reachable(compile, test))
 
-  return daukle.write{
-    path = BUILD_FILE,
-    text = build_file.render(layout_of(config),
-                             { compile = paths_of(compile), test = paths_of(test),
-                               plugin = bare and {}
-                                        or paths_of(checked_classpath(config.pluginClasspath,
-                                                                      "pluginClasspath")) },
-                             { release = string_key(config, "release", nil),
-                               main = string_key(config, "main", nil),
-                               plugins = bare and {} or checked_plugins(config.plugins),
-                               configure = configure,
-                               discover = options ~= nil and options.discover or nil }),
-  }
+  --[[ One expression for both paths: a project-wide key added to one of two
+       copies is a key half the projects get. ]]
+  local plugin_jars = bare and {}
+                      or paths_of(checked_classpath(config.pluginClasspath, "pluginClasspath"))
+
+  local declared = module_graph.declared(context)
+  if #declared == 0 then
+    return daukle.write{
+      path = BUILD_FILE,
+      text = build_file.render(layout_of(config),
+                               { compile = paths_of(compile), test = paths_of(test),
+                                 plugin = plugin_jars },
+                               { release = string_key(config, "release", nil),
+                                 main = string_key(config, "main", nil),
+                                 plugins = bare and {} or checked_plugins(config.plugins),
+                                 configure = configure,
+                                 discover = options ~= nil and options.discover or nil }),
+    }
+  end
+
+  daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
+
+  local modules = checked_modules(config, declared)
+  for index = 1, #modules do
+    local module = modules[index]
+    refuse_a_module_missing_launcher(module)
+    daukle.write{
+      path = module.name .. "/" .. BUILD_FILE,
+      text = build_file.module(module.layout,
+                               { compile = paths_of(module.compile),
+                                 test = paths_of(module.test),
+                                 plugin = {} },
+                               { release = string_key(config, "release", nil),
+                                 main = module.main,
+                                 plugins = bare and {} or checked_plugins(config.plugins),
+                                 configure = configure,
+                                 requires = module.requires,
+                                 discover = options ~= nil and options.discover or nil }),
+    }
+  end
 end
 
 --- @implNote the launcher jar rather than `bin/gradle`, because that is a POSIX
@@ -355,11 +463,7 @@ daukle.task{
 }
 
 --[[ One daukle task per name the project asked for, read from the manifest by
-     the name daukle was started from. Gated on the manifest being DECLARATIVE:
-     core accepts a project whose only manifest is daukle.lua by falling back to
-     the overlay, and daukle.parse refuses to run one. There is no pcall in the
-     sandbox, so an unguarded parse is fatal on every command rather than only
-     on these tasks, which is what daukle/cmake@1.4.0 shipped.
+     the name daukle was started from.
 
      The names come from daukle.toml and NOT from a file gradle:discover wrote,
      and that reversal is this design's correction to its own spec. A generated
@@ -368,15 +472,9 @@ daukle.task{
      the discovery itself. Reading the manifest also leaves the project with one
      committed file instead of two, which is the file-location rule's third
      clause: if we can do without the file, we should. ]]
-local function declarative_manifest()
-  if string.match(daukle.manifest, "%.toml$") == nil then return nil end
-  return daukle.parse(daukle.read(daukle.manifest), daukle.manifest)
-end
-
 local function declared_tasks()
-  local document = declarative_manifest()
-  local gradle = document ~= nil and document.toolchains ~= nil
-                 and document.toolchains.gradle or nil
+  local gradle = MANIFEST ~= nil and MANIFEST.toolchains ~= nil
+                 and MANIFEST.toolchains.gradle or nil
   return discovery.mapped(gradle ~= nil and gradle.tasks or nil)
 end
 

@@ -1,0 +1,15 @@
+schema = 1
+project = "example/cycle"
+version = "1.0.0"
+
+[modules.alpha]
+requires = ["beta"]
+
+[modules.beta]
+requires = ["alpha"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"

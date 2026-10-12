@@ -1,0 +1,15 @@
+schema = 1
+project = "example/migrated"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+# The derived root already carries the build file a SINGLE-project build left
+# there, which is what a project holds the moment it adds "[modules]". A task's
+# write is not in core's generate ledger and core prunes nothing, so the root
+# project of the multi-project build is whatever is already on disk.
+[toolchains.gradle]
+version = "8.13"

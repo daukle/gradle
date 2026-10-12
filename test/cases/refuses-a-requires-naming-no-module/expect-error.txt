@@ -1,0 +1,1 @@
+"ghost", which this project does not declare
