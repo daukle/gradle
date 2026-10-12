@@ -1,0 +1,35 @@
+schema = 1
+project = "example/fat-jar"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# The whole of D-114: a real shadow plugin from the Portal packages this
+# project's classes together with a dependency's, relocates the result and runs
+# it, with no repository in the generated build and no Gradle in the project.
+#
+# daukle/maven resolved both closures and is NOT staged here, because the
+# harness stages one plugin: daukle/maven/classpath.lua is its committed output,
+# which is where a real project keeps it too. It carries shadow's 19-module
+# plugin closure and commons-lang3 as the one compile dependency, 20 pinned
+# entries, and daukle.lua includes it.
+[toolchains.gradle]
+version = "9.6.0"
+main = "com.example.Main"
+tasks = ["shadowJar", "runShadow"]
+
+[[toolchains.gradle.plugins]]
+id = "com.gradleup.shadow"
+version = "9.3.2"
+
+# `enableAutoRelocation` and not shadow 8.x's `enableRelocation`, which this
+# version answers with "Could not set unknown property". Both are Gradle
+# Property types, which is the only reason a relocation is expressible at all:
+# shadow's other spelling is `relocate 'a', 'b'`, a two-argument METHOD, and
+# `configure` renders blocks and assignments and no call.
+[toolchains.gradle.configure.shadowJar]
+enableAutoRelocation = true
+relocationPrefix = "com.example.shaded"

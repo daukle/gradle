@@ -57,7 +57,7 @@ daukle gradle:discover           # what your applied plugins contribute
 | `testSourceRoot` | defaults to `src/test/java` |
 | `testResourceRoot` | defaults to `src/test/resources` |
 | `release` | Java source and target level, e.g. `"8"` |
-| `main` | the class `gradle:run` runs |
+| `main` | the class `gradle:run` runs, and the reason `application` is applied |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven` |
 | `plugins` | a list of `{ id, version }`, one `apply plugin:` line each |
 | `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
@@ -117,6 +117,73 @@ is `publishGithub` against a Gradle task literally named `publish-github`, and t
 by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, `version` or
 `discover`. A duplicate task name is fatal on **every** command in a project, so it is refused where
 the name is read rather than where it is used.
+
+## `version` lives in TWO places, and reading one of them shipped the wrong Gradle
+
+**Core builds the config a callback sees differently for a generate callback and for a task.** For
+`generate` it drops `dependencies` and keeps `version`, because a generated file may legitimately
+depend on the requested version. For a TASK it drops **both** and exposes the value as
+`context.toolchain.version` instead. `src/config/config_dispatch.c` does both and says so.
+
+So `config_of(context).version` is a string at generate time and `nil` in every task, and
+`distributions.for_version(nil)` answers the DEFAULT. That is `D-115`: every task in this plugin ran
+Gradle 8.13 whatever the manifest said, through a released `1.2.0`. `gradle_version_of(context)`
+reads both places, which is the idiom `java`, `c`, `node` and `cmake` already had.
+
+**Nothing caught it because the version reaches generate**, so an unpinned version was still refused
+by name, and because every fixture but two declared `8.13`, which is also the default. The two that
+did not were the cases named after Gradle 9. **`expect-output.txt` is the check that was missing**:
+one literal per line that the run's own output must carry, and `provisioning gradle <v>` is the only
+line that names the Gradle that ran. `jdk` is unaffected: core reserves `version` and
+`dependencies` and passes every other key through both callbacks.
+
+## A fat jar is an ADOPTION, and `main` is what makes it runnable
+
+**`D-114`. Nothing here knows what a fat jar is**, and that is the point: a packaging plugin is a
+third-party plugin like any other, so `daukle/maven` resolves shadow's 19-module closure into
+`pluginClasspath`, `plugins` applies it and `tasks = ["shadowJar"]` surfaces it as
+`gradle:shadow-jar`. **`shadowJar` decides what to bundle from `files(...)` paths**, which was the
+one thing expected to fail, and the generated build still declares no repository.
+
+**`main` applies `application` as well as `java`, and that is not cosmetic.** Shadow reads
+`Main-Class` from the application EXTENSION, so a build applying only `java` produced a fat jar with
+no entry point. Setting it from `configure` instead is not expressible: `manifest { attributes(...) }`
+is a method taking a MAP and the renderer emits blocks and assignments. Applying `application` is a
+block of generator and gives shadow somewhere to read from, and **7 of the 62 shadow users in this
+tree set `Main-Class` by hand anyway**, so the map problem is real for them regardless.
+
+**`daukleRun` is kept beside the `run` that `application` contributes.** `gradle:run` is a published
+surface two examples exercise, and a task this plugin registers cannot be renamed by a plugin the
+project applies.
+
+**A relocation is expressible and the obvious spelling is not.** `relocate 'a', 'b'` is a
+two-argument method; `enableAutoRelocation` and `relocationPrefix` are Gradle `Property` types and
+render as assignments. Shadow 8.x called the first `enableRelocation`, which 9.3.2 answers with
+"Could not set unknown property", so **read a property name out of the pinned jar with `javap`**
+rather than from a tutorial.
+
+**The case asserts the jar's CONTENTS, through `expect-contains.txt`.** A zip stores entry names
+uncompressed, so a relocated name is greppable with no `unzip` on the runner; contents are deflated,
+which is why `Main-Class` is proved by RUNNING the jar. **Measured as necessary rather than assumed:
+dropping the relocation leaves a build that exits 0 and a jar that still runs and still prints the
+expected line**, so output alone catches nothing and only the jar assertion reddens.
+
+## `daukle tasks` does not run generate-time validation
+
+A manifest `daukle check` refuses still LISTS its tasks: a `plugins` entry with a version no pin
+carries lists nine tasks happily. That reads like a validation hole and is not one. `tasks` is a
+listing; the check belongs to generate, and `check` and `sync` both refuse with the right message.
+
+## Three phases to a first build, and the refusal cannot be followed in order
+
+A manifest that declares `[[toolchains.gradle.plugins]]` while `pluginClasspath` is empty is refused
+at generate time, and **every command generates**, so even `maven:resolve` is refused. The refusal's
+advice, resolve the marker first, is correct and cannot be done in that order. The working sequence
+is: resolve with no `plugins` block; add the `daukle.include`, which must be second because
+`include` raises on a file that is not there; then add the `plugins` block. Nothing is
+unrecoverable, and a first-time user cannot start without being told. Recorded in `D-114`; the
+candidate fixes are a refusal that names the three phases, or letting the check tolerate an empty
+`pluginClasspath` when a `maven.resolve` targets it, which couples two plugins.
 
 ## Third-party Gradle plugins
 

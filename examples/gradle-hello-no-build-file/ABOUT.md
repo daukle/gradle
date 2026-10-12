@@ -57,8 +57,10 @@ so a given plugin version always provisions the same two tools. A version the pl
 refused by name, because a version it does not pin is a version it cannot verify.
 
 **`main` is a class name, not a path**, and it is what makes `gradle:run` exist: the generated build
-registers a `JavaExec` task against `sourceSets.main.runtimeClasspath`. Leave it out and the other
-four tasks still work.
+registers a `JavaExec` task against `sourceSets.main.runtimeClasspath`. It also applies Gradle's
+`application` plugin, which costs this example nothing and is what lets a packaging plugin find a
+`Main-Class`: that is what makes a fat jar built through this toolchain runnable. Leave `main` out
+and the other four tasks still work.
 
 **The generated build declares no `repositories {}` block at all, and that is the point rather than
 an omission.** A dependency reaches Gradle as an absolute path into daukle's artifact cache, pinned

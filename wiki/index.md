@@ -30,13 +30,18 @@ release = "8"
 | `version` | which Gradle to provision, defaulting to `8.13` |
 | `jdk` | which JDK, through `daukle/java`'s table, defaulting to `17` |
 | `release` | the Java source and target level |
-| `main` | the class `gradle:run` runs |
+| `main` | the class `gradle:run` runs. It also applies Gradle's `application` plugin, which is where a packaging plugin reads `Main-Class` from |
 | `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven` |
+| `plugins` | third-party Gradle plugins to apply, each a `{ id, version }` |
+| `pluginClasspath` | the pinned jars those plugins are applied FROM, normally written by `daukle/maven` |
+| `configure` | one block per extension a plugin registers |
+| `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
 
 ## Tasks
 
-`gradle:classes`, `gradle:test`, `gradle:jar`, `gradle:run`, `gradle:version`.
+`gradle:classes`, `gradle:test`, `gradle:jar`, `gradle:run`, `gradle:version` and
+`gradle:discover`, plus one for every name in `tasks`: `shadowJar` becomes `gradle:shadow-jar`.
 
 ## Gradle resolves nothing
 
@@ -58,9 +63,43 @@ launcher, and names the coordinate and the version to add. It pins no launcher o
 launcher against a 1.10.1 engine dies outright, so a launcher is not forward compatible with an
 older engine and one default would be wrong for every project not on that platform.
 
+## A fat jar, with no repository and no Gradle
+
+A third-party packaging plugin is applied from a jar daukle pinned, so a fat jar needs no new
+mechanism and no `repositories {}`:
+
+```toml
+[[toolchains.maven.resolve]]
+repository  = "https://plugins.gradle.org/m2"
+for         = "gradle"
+into        = "pluginClasspath"
+coordinates = ["com.gradleup.shadow:shadow-gradle-plugin:9.3.2"]
+
+[toolchains.gradle]
+main  = "com.example.Main"
+tasks = ["shadowJar"]
+
+[[toolchains.gradle.plugins]]
+id      = "com.gradleup.shadow"
+version = "9.3.2"
+
+[toolchains.gradle.configure.shadowJar]
+enableAutoRelocation = true
+relocationPrefix     = "com.example.shaded"
+```
+
+`daukle gradle:shadow-jar` then writes a jar carrying your classes, every dependency's classes
+relocated under that prefix, and a `Main-Class` the `application` plugin supplied, which `java -jar`
+runs. `maven:resolve` must run **before** the `plugins` block is added, because a plugin is applied
+from a pinned jar and there is nothing to apply until one exists.
+
 ## What it does not do
 
-A project with real build logic is not modellable: the generated build applies
-`plugins { id 'java' }` and nothing else, so a third-party Gradle plugin, a shared preset or a
-custom task does not survive. A raw Groovy escape hatch is **refused by name**, because it readmits
-`build.gradle` through the back door with you editing Groovy inside a TOML string.
+Build logic written as CODE is not modellable: a task with a body, a `tasks.withType(...)` that
+computes something, an `if` over a project property. A third-party plugin, a shared preset and an
+extension block are all fine, because each of those is data. A raw Groovy escape hatch is
+**refused by name**, because it readmits `build.gradle` through the back door with you editing
+Groovy inside a TOML string.
+
+A multi-project build is not modelled: the generated `settings.gradle` names one root project and
+nothing here answers an `include ':app'`.

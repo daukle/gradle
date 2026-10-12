@@ -60,7 +60,7 @@ run_case() {
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
-         "$sandbox/expect-file.txt"
+         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt"
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -95,6 +95,26 @@ run_case() {
     compare_expected "$case_dir" "$sandbox" "$name" || return
   fi
 
+  # One literal per line the run's own output must carry. It is how a case
+  # asserts that a value the manifest names reached the TOOL rather than the
+  # renderer: "provisioning gradle 9.6.0" is daukle's own line, and nothing
+  # else in a build names the Gradle that ran. Both cases named after Gradle 9
+  # were green on Gradle 8.13 from the day they were written, because the
+  # manifest's version reached generate and no check looked at the task.
+  if [ -f "$case_dir/expect-output.txt" ]; then
+    if ! grep -q . "$case_dir/expect-output.txt"; then
+      fail "$name" "expect-output.txt is empty, so this case asserts nothing"
+      return
+    fi
+    while IFS= read -r clause || [ -n "$clause" ]; do
+      [ -n "$clause" ] || continue
+      if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
+        fail "$name" "output does not carry: $clause"
+        return
+      fi
+    done < "$case_dir/expect-output.txt"
+  fi
+
   # One path per line that the TOOL must have produced. The text of a generated
   # file proves what daukle wrote; only a file Gradle made proves Gradle read it,
   # and a value rendered into a name is the cheapest thing to look at.
@@ -106,6 +126,32 @@ run_case() {
         return
       fi
     done < "$case_dir/expect-file.txt"
+  fi
+
+  # "<path> <literal>" per line, for an assertion about what is INSIDE a file
+  # the tool produced. A zip stores its entry NAMES uncompressed in the central
+  # directory, so grepping a jar for an entry name needs no unzip on the runner;
+  # its entry CONTENTS are deflated and are not greppable, which is why nothing
+  # here asserts a jar MANIFEST and why the fat-jar case proves its Main-Class
+  # by RUNNING the jar instead. Measured both ways in daukle/java, D-81.
+  if [ -f "$case_dir/expect-contains.txt" ]; then
+    if ! grep -q . "$case_dir/expect-contains.txt"; then
+      fail "$name" "expect-contains.txt is empty, so this case asserts nothing"
+      return
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      target=${line%% *}
+      literal=${line#* }
+      if [ ! -f "$sandbox/$target" ]; then
+        fail "$name" "expected $target, which the build did not produce"
+        return
+      fi
+      if ! grep -qF "$literal" "$sandbox/$target"; then
+        fail "$name" "$target does not carry: $literal"
+        return
+      fi
+    done < "$case_dir/expect-contains.txt"
   fi
 
   # A case that ran a task asserts on what the TOOL produced, never on the text
