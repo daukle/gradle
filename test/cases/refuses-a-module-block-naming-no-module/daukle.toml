@@ -1,0 +1,14 @@
+schema = 1
+project = "example/typo"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+[toolchains.gradle.modules.alfa]
+main = "alpha.Alpha"

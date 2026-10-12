@@ -162,10 +162,18 @@ local function refuse_a_version_no_pin_carries(plugins, pins)
 end
 
 --- Everything `generate` can check without starting a process or fetching.
+---
+--- @implNote the module checks live here rather than beside the writer so that
+--- `daukle sync` refuses a bad graph. A project that declares modules reaches
+--- generate and no task, so a check only the writer ran would be one a user
+--- never meets until the first build.
 local function validated(context, config)
   distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
+  local declared = module_graph.declared(context)
+  module_graph.refuse_a_module_key_project_wide(config, declared)
+  module_graph.blocks_of(config, declared)
   checked_classpath(config.classpath, "classpath")
   checked_classpath(config.testClasspath, "testClasspath")
   string_key(config, "release", nil)
@@ -236,19 +244,59 @@ local function write_build_file(context, config, options)
   for index = 1, #test do test_reachable[#test_reachable + 1] = test[index] end
   junit.refuse_a_missing_launcher(test_reachable)
 
-  return daukle.write{
-    path = BUILD_FILE,
-    text = build_file.render(layout_of(config),
-                             { compile = paths_of(compile), test = paths_of(test),
-                               plugin = bare and {}
-                                        or paths_of(checked_classpath(config.pluginClasspath,
-                                                                      "pluginClasspath")) },
-                             { release = string_key(config, "release", nil),
-                               main = string_key(config, "main", nil),
-                               plugins = bare and {} or checked_plugins(config.plugins),
-                               configure = configure,
-                               discover = options ~= nil and options.discover or nil }),
-  }
+  local declared = module_graph.declared(context)
+  if #declared == 0 then
+    return daukle.write{
+      path = BUILD_FILE,
+      text = build_file.render(layout_of(config),
+                               { compile = paths_of(compile), test = paths_of(test),
+                                 plugin = bare and {}
+                                          or paths_of(checked_classpath(config.pluginClasspath,
+                                                                        "pluginClasspath")) },
+                               { release = string_key(config, "release", nil),
+                                 main = string_key(config, "main", nil),
+                                 plugins = bare and {} or checked_plugins(config.plugins),
+                                 configure = configure,
+                                 discover = options ~= nil and options.discover or nil }),
+    }
+  end
+
+  --[[ `release`, `plugins` and `configure` are project-wide and are rendered
+       into EVERY module rather than into an `allprojects {}` block: the
+       renderer is the only writer, so the duplication costs a reader nothing
+       and there is no second configuration mechanism to learn. ]]
+  local blocks = module_graph.blocks_of(config, declared)
+  for index = 1, #declared do
+    local name = declared[index].name
+    local block = blocks[name] or {}
+    local module_compile = checked_classpath(block.classpath, "classpath")
+    local module_test = checked_classpath(block.testClasspath, "testClasspath")
+    local module_reachable = {}
+    for entry = 1, #module_compile do
+      module_reachable[#module_reachable + 1] = module_compile[entry]
+    end
+    for entry = 1, #module_test do
+      module_reachable[#module_reachable + 1] = module_test[entry]
+    end
+    --[[ Per module, because a module carries its own testClasspath: a
+         project-wide check would pass while one module's test runtime held a
+         platform engine and no launcher, which is the declaration that passes
+         on Gradle 8 and dies on the next major. ]]
+    junit.refuse_a_missing_launcher(module_reachable)
+    daukle.write{
+      path = name .. "/" .. BUILD_FILE,
+      text = build_file.module(module_graph.layout_of(name, block),
+                               { compile = paths_of(module_compile),
+                                 test = paths_of(module_test),
+                                 plugin = {} },
+                               { release = string_key(config, "release", nil),
+                                 main = string_key(block, "main", nil),
+                                 plugins = bare and {} or checked_plugins(config.plugins),
+                                 configure = configure,
+                                 requires = declared[index].requires,
+                                 discover = options ~= nil and options.discover or nil }),
+    }
+  end
 end
 
 --- @implNote the launcher jar rather than `bin/gradle`, because that is a POSIX

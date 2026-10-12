@@ -40,4 +40,76 @@ function modules.declared(context)
   return out
 end
 
+local DEFAULT_SUFFIX = {
+  sourceRoot = "src/main/java",
+  resourceRoot = "src/main/resources",
+  testSourceRoot = "src/test/java",
+  testResourceRoot = "src/test/resources",
+}
+
+local function string_key(block, key, fallback)
+  local value = block[key]
+  if value == nil then return fallback end
+  if type(value) ~= "string" then
+    error('"' .. key .. '" must be a string, not a ' .. type(value), 0)
+  end
+  return value
+end
+
+--- @implNote a module's roots default to its own name, which is the shape 117
+--- of this tree's 185 subproject build files rely on: they declare nothing and
+--- take the convention.
+function modules.layout_of(name, block)
+  block = block or {}
+  return {
+    main = {
+      java = { string_key(block, "sourceRoot", name .. "/" .. DEFAULT_SUFFIX.sourceRoot) },
+      resources = { string_key(block, "resourceRoot",
+                               name .. "/" .. DEFAULT_SUFFIX.resourceRoot) },
+    },
+    test = {
+      java = { string_key(block, "testSourceRoot",
+                          name .. "/" .. DEFAULT_SUFFIX.testSourceRoot) },
+      resources = { string_key(block, "testResourceRoot",
+                               name .. "/" .. DEFAULT_SUFFIX.testResourceRoot) },
+    },
+  }
+end
+
+local MODULE_KEYS = {
+  sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
+  main = true, classpath = true, testClasspath = true,
+}
+
+--- The toolchain's own per-module blocks, checked against the graph.
+function modules.blocks_of(config, declared)
+  local blocks = config.modules
+  if blocks == nil then return {} end
+  if type(blocks) ~= "table" then
+    error('"modules" must be a table of per-module blocks, not a ' .. type(blocks), 0)
+  end
+  local known = {}
+  for index = 1, #declared do known[declared[index].name] = true end
+  for name in pairs(blocks) do
+    if known[name] == nil then
+      error('"modules.' .. tostring(name) .. '" names no module this project declares: a'
+            .. ' module is declared in "[modules]" and configured here', 0)
+    end
+  end
+  return blocks
+end
+
+--- @implNote a module key left at the top level would apply to every module at
+--- once, silently. Same rule and same reason as daukle/cmake's "targets".
+function modules.refuse_a_module_key_project_wide(config, declared)
+  if #declared == 0 then return end
+  for key in pairs(MODULE_KEYS) do
+    if config[key] ~= nil then
+      error('"' .. key .. '" belongs to a module and this project declares modules, so it has'
+            .. ' to live in "[toolchains.gradle.modules.<name>]": a project-wide "' .. key
+            .. '" would apply to every module at once', 0)
+    end
+  end
+end
+
 return modules
