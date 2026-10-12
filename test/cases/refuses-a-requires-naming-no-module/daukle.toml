@@ -1,0 +1,12 @@
+schema = 1
+project = "example/dangling"
+version = "1.0.0"
+
+[modules.alpha]
+requires = ["ghost"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"

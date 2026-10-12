@@ -23,6 +23,40 @@ local function refuse_a_nested_name(name)
   end
 end
 
+local function refuse_an_unknown_requires(declared)
+  local known = {}
+  for index = 1, #declared do known[declared[index].name] = true end
+  for index = 1, #declared do
+    local entry = declared[index]
+    for edge = 1, #entry.requires do
+      if known[entry.requires[edge]] == nil then
+        error('the module "' .. entry.name .. '" requires "' .. entry.requires[edge]
+              .. '", which this project does not declare', 0)
+      end
+    end
+  end
+end
+
+--- @implNote catches two modules requiring each other, the shape a user
+--- writes, and nothing longer: a longer cycle is left to Gradle to name.
+--- Refused here because this check needs no Gradle and so runs on every host.
+local function refuse_a_two_module_cycle(declared)
+  local requires_of = {}
+  for index = 1, #declared do requires_of[declared[index].name] = declared[index].requires end
+  for index = 1, #declared do
+    local name = declared[index].name
+    for edge = 1, #declared[index].requires do
+      local other = declared[index].requires[edge]
+      for back = 1, #requires_of[other] do
+        if requires_of[other][back] == name then
+          error('the modules "' .. name .. '" and "' .. other .. '" cannot depend on each other',
+                0)
+        end
+      end
+    end
+  end
+end
+
 --- @implNote core publishes `{ name, requires }` per module in both the
 --- generate and the task context, and `requires` is always a list. A project
 --- with no `[modules]` yields an empty list, which is what keeps the
@@ -37,7 +71,25 @@ function modules.declared(context)
     refuse_a_nested_name(entry.name)
     out[#out + 1] = { name = entry.name, requires = entry.requires }
   end
+  refuse_an_unknown_requires(out)
+  refuse_a_two_module_cycle(out)
   return out
+end
+
+--- @implNote a daukle task takes no arguments, so `gradle:run` cannot name a
+--- module. Running every runnable module instead is nobody's intent.
+--- @param checked the records `checked_modules` builds, each with `name` and `main`
+function modules.refuse_two_mains(checked)
+  local found = nil
+  for index = 1, #checked do
+    if checked[index].main ~= nil then
+      if found ~= nil then
+        error('the modules "' .. found .. '" and "' .. checked[index].name .. '" both declare'
+              .. ' "main", and "gradle:run" cannot name which one it means', 0)
+      end
+      found = checked[index].name
+    end
+  end
 end
 
 local DEFAULT_SUFFIX = {

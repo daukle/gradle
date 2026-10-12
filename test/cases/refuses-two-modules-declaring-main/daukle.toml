@@ -1,0 +1,19 @@
+schema = 1
+project = "example/ambiguous"
+version = "1.0.0"
+
+[modules.alpha]
+
+[modules.beta]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+[toolchains.gradle.modules.alpha]
+main = "alpha.Alpha"
+
+[toolchains.gradle.modules.beta]
+main = "beta.Beta"

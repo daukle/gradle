@@ -117,6 +117,7 @@ local function checked_modules(config, declared)
       test = checked_classpath(block.testClasspath, scope .. "testClasspath"),
     }
   end
+  module_graph.refuse_two_mains(checked)
   return checked
 end
 

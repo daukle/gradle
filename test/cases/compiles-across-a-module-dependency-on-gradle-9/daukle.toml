@@ -1,0 +1,17 @@
+schema = 1
+project = "example/linked"
+version = "1.0.0"
+
+[modules.lib]
+
+[modules.app]
+requires = ["lib"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.modules.app]
+main = "com.example.App"
