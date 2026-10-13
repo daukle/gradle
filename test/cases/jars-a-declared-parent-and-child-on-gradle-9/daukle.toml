@@ -1,0 +1,16 @@
+schema = 1
+project = "example/parent"
+version = "1.0.0"
+
+[modules.core]
+
+[modules.tools]
+
+[modules."tools/core"]
+requires = ["tools", "core"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "9.6.0"
