@@ -61,7 +61,8 @@ daukle gradle:discover           # what your applied plugins contribute
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`. They render `implementation` and `testImplementation`, and they keep these names rather than the configuration's because they are released |
 | `compileOnly`, `runtimeOnly` | pinned entries rendering the Gradle configuration of the same name. `compileOnly` is **not** on the runtime classpath and `runtimeOnly` is **not** on the compile classpath, which is the whole reason they are separate keys |
 | `testCompileOnly`, `testRuntimeOnly` | the same two for tests. **A JUnit launcher belongs in `testRuntimeOnly`**, which is where Gradle's own documentation puts it, and the launcher check looks there |
-| `annotationProcessor`, `testAnnotationProcessor` | pinned entries for javac's `-processorpath`, which is a different path from the compile classpath. A processor normally wants its annotations on `compileOnly` as well, and **declaring the same jar in both keys is correct rather than redundant** |
+| `annotationProcessor`, `testAnnotationProcessor` | pinned entries for javac's `-processorpath`, which is a different path from the compile classpath. A processor normally wants its annotations on `compileOnly` as well, and **declaring the same jar in both keys is correct rather than redundant**: with the `annotationProcessor` block deleted and `compileOnly` left alone, lombok's generated method is simply absent and the build fails on it |
+| `api`, `compileOnlyApi` | the two configurations **`java-library`** provides. Declaring either switches that file's base plugin from `java` to `java-library`, **for that module alone**, because `java-library` splits `compileClasspath` and applying it everywhere would change what compiles for projects that never asked. `api` is carried to a module that `requires` this one; `classpath` is not |
 | `plugins` | a list of `{ id, version }`, one `apply plugin:` line each |
 | `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
 | `configure` | a free-form tree, one Groovy block per extension |
@@ -367,10 +368,8 @@ project-wide check would pass on the strength of a sibling.
 - **`gradle:discover` on a multi-project build.** Discovery renders the build file twice and
   diffs the task lists; nothing has measured what that reports when the names come from several
   modules at once.
-- **`api` and `compileOnlyApi`.** They are configurations the **`java-library`** plugin adds and
-  this generator applies `java`, so they are a plugin away rather than a key away. The other eight
-  configurations are served. **Nothing here silently maps `api` onto `implementation`**, which
-  would quietly change what a consumer of a published library sees.
+- **`compileOnlyApi` is rendered and never exercised.** It shares every line of its path with `api`
+  except its row in `lib/configurations.lua`, and no case declares one.
 - **NESTED module names.** A `[modules]` key holding a `:` is refused, and this is the limit most
   likely to be met by a large real build rather than a hypothetical one. **Measured 2026-10-13**:
   the largest Gradle build in the tree this plugin was written against declares **34 modules, of
