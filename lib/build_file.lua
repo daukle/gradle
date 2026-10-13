@@ -9,6 +9,8 @@
 local build_file = {}
 
 local configurations = daukle.require("lib/configurations")
+local groovy = daukle.require("lib/groovy")
+local extensions = daukle.require("lib/extensions")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -21,16 +23,12 @@ local ROOT = "../../.."
      same arithmetic needs one more hop. Same silent failure when wrong. ]]
 local MODULE_ROOT = "../../../.."
 
-local function groovy_string(text)
-  return "'" .. text:gsub("\\", "/"):gsub("'", "\\'") .. "'"
-end
-
 local function src_dirs(paths, depth)
   if #paths == 0 then return "[]" end
   local rendered = {}
   for index = 1, #paths do
-    rendered[index] = "new File(file(" .. groovy_string(depth) .. "), "
-                      .. groovy_string(paths[index]) .. ")"
+    rendered[index] = "new File(file(" .. groovy.quoted(depth) .. "), "
+                      .. groovy.quoted(paths[index]) .. ")"
   end
   return "[" .. table.concat(rendered, ", ") .. "]"
 end
@@ -38,7 +36,7 @@ end
 local function file_list(paths, indent)
   local rendered = {}
   for index = 1, #paths do
-    rendered[index] = indent .. groovy_string(paths[index])
+    rendered[index] = indent .. groovy.quoted(paths[index])
   end
   return table.concat(rendered, ",\n")
 end
@@ -50,176 +48,13 @@ local function source_set(name, java_dirs, resource_dirs, depth)
          .. "  }"
 end
 
---[[ A value that cannot be spelled by its Lua type, written as a one-key table
-     rather than a magic prefix inside a string, because a prefix is a thing a
-     real value will one day collide with. Every spelling below was run on
-     Gradle 8.13 and 9.6.0 before it was written down.
-
-     `file` and `buildOutput` exist as a PAIR because a path in a hand-written
-     build means one of two things and daukle moved the project directory out
-     from under both: `file('assets')` meant the project root, which the derived
-     directory sits three levels below and a module's directory four, and
-     `file('build/libs/x.jar')` meant the build directory, which Gradle still
-     owns. Measured across this tree's build files, roughly half of each, so
-     collapsing them into one marker is silently wrong for the other half.
-
-     `file` therefore takes the same depth the source roots do: a project-wide
-     configure block is rendered into every module's file, so a marker that
-     carried the derived root's own depth would resolve one directory too high
-     in every one of them. ]]
-local MARKERS = {
-  file = function(text, depth)
-    return "new File(file(" .. groovy_string(depth) .. "), " .. groovy_string(text) .. ")"
-  end,
-  buildOutput = function(text)
-    return "layout.buildDirectory.file(" .. groovy_string(text) .. ").get().asFile"
-  end,
-  env = function(text)
-    return "System.getenv(" .. groovy_string(text) .. ") ?: ''"
-  end,
-}
-
-local MARKER_NAMES = '"file", "buildOutput" or "env"'
-
---[[ daukle's own token is the one core credential this plugin does not declare,
-     so core scrubs it from Gradle's environment and the rendered `?: ''` would
-     hand the build an empty string with nothing saying why. Refused by name
-     instead. GITHUB_TOKEN is declared and does reach Gradle; see AUTHORING.md. ]]
-local REFUSED_ENV = { DAUKLE_TOKEN = true }
-
-local function is_list(value)
-  return #value > 0
-end
-
---[[ Core carries the manifest through JSON and pushes every number as a Lua
-     float, so a plugin cannot tell the TOML `7` from the TOML `7.0`: both
-     arrive as 7.0, and `tostring` would write a Groovy BigDecimal where a
-     Gradle property almost always wants an int. An integral value is therefore
-     written as an integer, which is right for the one of the two spellings
-     anybody uses and wrong for a property that genuinely wants 7.0. ]]
-local function groovy_number(value)
-  if value % 1 == 0 and value >= -9007199254740992 and value <= 9007199254740992 then
-    return string.format("%d", value)
-  end
-  return tostring(value)
-end
-
---- The marker key of a one-key table, or nil when the table is a nested block.
-local function marker_of(value, path)
-  local found, keys = nil, 0
-  for key in pairs(value) do
-    keys = keys + 1
-    if MARKERS[key] ~= nil then found = key end
-  end
-  if found == nil then return nil end
-  if keys > 1 then
-    error('"' .. path .. '" mixes the marker "' .. found .. '" with other keys: a marker holds'
-          .. ' exactly one of ' .. MARKER_NAMES, 0)
-  end
-  if type(value[found]) ~= "string" then
-    error('"' .. path .. "." .. found .. '" must be a string, not a ' .. type(value[found]), 0)
-  end
-  if found == "env" and REFUSED_ENV[value[found]] then
-    error('"' .. path .. '" names ' .. value[found] .. ", which daukle keeps to itself: it is"
-          .. " daukle's own credential and no build input", 0)
-  end
-  return found
-end
-
-local render_body
-
-local function render_block(lines, indent, name, body, path, depth)
-  if type(body) ~= "table" then
-    error('"' .. path .. '" must be a block or a value, not a ' .. type(body), 0)
-  end
-  lines[#lines + 1] = indent .. name .. " {"
-  render_body(lines, indent .. "  ", body, path, depth)
-  lines[#lines + 1] = indent .. "}"
-end
-
-local function render_assignment(lines, indent, key, value, path, depth)
-  local kind = type(value)
-  if kind == "string" then
-    lines[#lines + 1] = indent .. key .. " = " .. groovy_string(value)
-  elseif kind == "number" then
-    lines[#lines + 1] = indent .. key .. " = " .. groovy_number(value)
-  elseif kind == "boolean" then
-    lines[#lines + 1] = indent .. key .. " = " .. tostring(value)
-  elseif kind == "table" then
-    local marker = marker_of(value, path)
-    lines[#lines + 1] = indent .. key .. " = " .. MARKERS[marker](value[marker], depth)
-  else
-    error('"' .. path .. '" is a ' .. kind .. ", which no Gradle value can be spelled as", 0)
-  end
-end
-
---[[ Keys are emitted sorted, values before blocks, because Lua's pairs order is
-     undefined and a generated file a test compares byte for byte may not depend
-     on it. Values first is not only cosmetic: a nested closure that reads a
-     property of its own extension sees one that was already set. ]]
-function render_body(lines, indent, body, path, depth)
-  if is_list(body) then
-    error('"' .. path .. '" is a list where a block was expected', 0)
-  end
-  local values, blocks = {}, {}
-  for key in pairs(body) do
-    if type(key) ~= "string" then
-      error('"' .. path .. '" mixes list entries with named keys', 0)
-    end
-    local value = body[key]
-    if type(value) == "table" and marker_of(value, path .. "." .. key) == nil then
-      blocks[#blocks + 1] = key
-    else
-      values[#values + 1] = key
-    end
-  end
-  table.sort(values)
-  table.sort(blocks)
-
-  for index = 1, #values do
-    local key = values[index]
-    render_assignment(lines, indent, key, body[key], path .. "." .. key, depth)
-  end
-  for index = 1, #blocks do
-    local key = blocks[index]
-    local value = body[key]
-    if is_list(value) then
-      for entry = 1, #value do
-        render_block(lines, indent, key, value[entry], path .. "." .. key .. "[" .. entry .. "]",
-                     depth)
-      end
-    else
-      render_block(lines, indent, key, value, path .. "." .. key, depth)
-    end
-  end
-end
-
 --- Every `configure` block, as Groovy text. Pure, so `generate` can run it to
 --- refuse a bad tree before anything is acquired.
 ---
 --- @param depth the `file` marker's prefix, defaulting to the derived root's,
 --- so a caller that only validates a tree needs to know nothing about depth
 function build_file.configuration(configure, depth)
-  depth = depth or ROOT
-  if configure == nil then return {} end
-  if type(configure) ~= "table" then
-    error('"configure" must be a table of extension blocks, not a ' .. type(configure), 0)
-  end
-  local lines = {}
-  for key in pairs(configure) do
-    if type(key) ~= "string" then
-      error('"configure" is a list where a table of extension blocks was expected', 0)
-    end
-    --[[ A bare value here would land at the top level of the build file, where
-         Groovy reads it as a project property and Gradle fails with a name that
-         is nobody's: "configure" names an extension, so its entries are blocks. ]]
-    if type(configure[key]) ~= "table" or marker_of(configure[key], "configure." .. key) ~= nil then
-      error('"configure.' .. key .. '" must be a block: configure names the extension a plugin'
-            .. " registered, and its keys are what that extension takes", 0)
-    end
-  end
-  render_body(lines, "", configure, "configure", depth)
-  return lines
+  return extensions.configuration(configure, depth or ROOT)
 end
 
 --- @param layout   { main = {java, resources}, test = {java, resources} }
@@ -262,16 +97,16 @@ local function render_project(layout, jars, options, depth)
   local base = configurations.needs_java_library(jars) and "java-library" or "java"
   if options.main ~= nil then
     lines[#lines + 1] = "plugins {"
-    lines[#lines + 1] = "  id " .. groovy_string(base)
+    lines[#lines + 1] = "  id " .. groovy.quoted(base)
     lines[#lines + 1] = "  id 'application'"
     lines[#lines + 1] = "}"
   else
-    lines[#lines + 1] = "plugins { id " .. groovy_string(base) .. " }"
+    lines[#lines + 1] = "plugins { id " .. groovy.quoted(base) .. " }"
   end
   lines[#lines + 1] = ""
 
   for index = 1, #options.plugins do
-    lines[#lines + 1] = "apply plugin: " .. groovy_string(options.plugins[index].id)
+    lines[#lines + 1] = "apply plugin: " .. groovy.quoted(options.plugins[index].id)
   end
   if #options.plugins > 0 then lines[#lines + 1] = "" end
 
@@ -282,7 +117,7 @@ local function render_project(layout, jars, options, depth)
   lines[#lines + 1] = ""
   lines[#lines + 1] = "dependencies {"
   for index = 1, #requires do
-    lines[#lines + 1] = "  implementation project(" .. groovy_string(":" .. requires[index]) .. ")"
+    lines[#lines + 1] = "  implementation project(" .. groovy.quoted(":" .. requires[index]) .. ")"
   end
   for index = 1, #configurations.all do
     local row = configurations.all[index]
@@ -297,9 +132,9 @@ local function render_project(layout, jars, options, depth)
   if options.release ~= nil then
     lines[#lines + 1] = "java {"
     lines[#lines + 1] = "  sourceCompatibility = JavaVersion.toVersion("
-                        .. groovy_string(options.release) .. ")"
+                        .. groovy.quoted(options.release) .. ")"
     lines[#lines + 1] = "  targetCompatibility = JavaVersion.toVersion("
-                        .. groovy_string(options.release) .. ")"
+                        .. groovy.quoted(options.release) .. ")"
     lines[#lines + 1] = "}"
     lines[#lines + 1] = ""
   end
@@ -335,7 +170,7 @@ local function render_project(layout, jars, options, depth)
     lines[#lines + 1] = "tasks.register('daukleTasks') {"
     lines[#lines + 1] = "  doLast {"
     lines[#lines + 1] = "    project.tasks.names.each { println "
-                        .. groovy_string(options.discover) .. " + it }"
+                        .. groovy.quoted(options.discover) .. " + it }"
     lines[#lines + 1] = "  }"
     lines[#lines + 1] = "}"
   end
@@ -347,12 +182,12 @@ local function render_project(layout, jars, options, depth)
   if options.main ~= nil then
     lines[#lines + 1] = ""
     lines[#lines + 1] = "application {"
-    lines[#lines + 1] = "  mainClass = " .. groovy_string(options.main)
+    lines[#lines + 1] = "  mainClass = " .. groovy.quoted(options.main)
     lines[#lines + 1] = "}"
     lines[#lines + 1] = ""
     lines[#lines + 1] = "tasks.register('daukleRun', JavaExec) {"
     lines[#lines + 1] = "  classpath = sourceSets.main.runtimeClasspath"
-    lines[#lines + 1] = "  mainClass = " .. groovy_string(options.main)
+    lines[#lines + 1] = "  mainClass = " .. groovy.quoted(options.main)
     lines[#lines + 1] = "}"
   end
 
@@ -405,12 +240,12 @@ end
 function build_file.settings(name, modules)
   local lines = {
     "// Generated by daukle/gradle. Do not edit.",
-    "rootProject.name = " .. groovy_string(name),
+    "rootProject.name = " .. groovy.quoted(name),
   }
   if modules ~= nil and #modules > 0 then
     lines[#lines + 1] = ""
     for index = 1, #modules do
-      lines[#lines + 1] = "include " .. groovy_string(":" .. modules[index].name)
+      lines[#lines + 1] = "include " .. groovy.quoted(":" .. modules[index].name)
     end
   end
   return table.concat(lines, "\n") .. "\n"
