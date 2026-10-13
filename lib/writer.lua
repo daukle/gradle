@@ -71,7 +71,9 @@ end
 --- core's generate ledger and core prunes nothing, so a single-project build
 --- file an earlier build left at the derived root would otherwise stay the root
 --- project of this one, with its own source roots, its own jar and its own
---- daukleRun.
+--- daukleRun. An undeclared parent of a nested module gets a header-only file
+--- for the same reason: it was a module once, and Gradle would read what that
+--- run left in its directory.
 local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
@@ -120,6 +122,11 @@ local function write_build_file(context, config, options)
                                         { main = module.main,
                                           requires = module.requires })),
     }
+  end
+
+  local parents = module_graph.undeclared_parents(declared)
+  for index = 1, #parents do
+    daukle.write{ path = parents[index] .. "/" .. BUILD_FILE, text = build_file.empty_project() }
   end
 end
 

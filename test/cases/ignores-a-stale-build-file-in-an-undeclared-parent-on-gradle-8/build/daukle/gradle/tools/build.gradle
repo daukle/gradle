@@ -1,0 +1,2 @@
+// What an earlier run wrote while `tools` was still a declared module.
+throw new GradleException("a stale build file in an undeclared parent was read")

@@ -240,6 +240,12 @@ function build_file.buildscript(plugin_jars)
   return table.concat(lines, "\n")
 end
 
+--- An implicit parent project's file: the header and nothing else, so a build
+--- file an earlier run left in its directory is overwritten rather than read.
+function build_file.empty_project()
+  return build_file.buildscript({})
+end
+
 --- Without this Gradle names the project after its directory, which would be
 --- "gradle".
 ---

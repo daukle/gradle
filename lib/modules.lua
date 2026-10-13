@@ -118,6 +118,29 @@ function modules.declared(context)
   return out
 end
 
+--- Every ancestor of a declared module that is not itself declared, in the
+--- order first met. Gradle makes each one an implicit project and reads any
+--- build file already in its directory.
+--- @return { string }
+function modules.undeclared_parents(declared)
+  local known = {}
+  for index = 1, #declared do known[declared[index].name] = true end
+  local parents = {}
+  for index = 1, #declared do
+    local name = declared[index].name
+    local cut = string.find(name, "/", 1, true)
+    while cut ~= nil do
+      local parent = string.sub(name, 1, cut - 1)
+      if known[parent] == nil then
+        known[parent] = true
+        parents[#parents + 1] = parent
+      end
+      cut = string.find(name, "/", cut + 1, true)
+    end
+  end
+  return parents
+end
+
 --- @implNote a daukle task takes no arguments, so `gradle:run` cannot name a
 --- module. Running every runnable module instead is nobody's intent.
 --- @param checked the records `checked_modules` builds, each with `name` and `main`

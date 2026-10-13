@@ -8,7 +8,7 @@ local groovy = daukle.require("lib/groovy")
      `file` and `buildOutput` exist as a PAIR because a path in a hand-written
      build means one of two things and daukle moved the project directory out
      from under both: `file('assets')` meant the project root, which the derived
-     directory sits three levels below and a module's directory four, and
+     directory sits three levels below and a module's directory at least four, and
      `file('build/libs/x.jar')` meant the build directory, which Gradle still
      owns. Measured across this tree's build files, roughly half of each, so
      collapsing them into one marker is silently wrong for the other half.
