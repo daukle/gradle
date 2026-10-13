@@ -114,7 +114,7 @@ local function write_build_file(context, config, options)
     refuse_a_module_missing_launcher(module)
     daukle.write{
       path = module.name .. "/" .. BUILD_FILE,
-      text = build_file.module(module.layout,
+      text = build_file.module(module.name, module.layout,
                                jars_of(module.entries, {}),
                                extended(project_wide,
                                         { main = module.main,

@@ -1,0 +1,20 @@
+schema = 1
+project = "example/deep"
+version = "1.0.0"
+
+[modules.core]
+
+[modules."tools/maven/plugin"]
+requires = ["core"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.configure.ext]
+daukleProbeFile = { file = "notes.txt" }
+
+  [toolchains.gradle.modules."tools/maven/plugin"]
+  main = "com.example.App"

@@ -19,9 +19,13 @@ local extensions = daukle.require("lib/extensions")
      is why the tests assert on compiled output and never on this text. ]]
 local ROOT = "../../.."
 
---[[ A module's projectDir sits one level deeper than the derived root, so the
-     same arithmetic needs one more hop. Same silent failure when wrong. ]]
-local MODULE_ROOT = "../../../.."
+--- A module's projectDir sits one level deeper than the derived root per
+--- component of its name, so the climb back to the project root grows with it.
+--- Same silent failure as ROOT when wrong.
+local function root_of(name)
+  local _, separators = string.gsub(name, "/", "")
+  return ROOT .. string.rep("/..", separators + 1)
+end
 
 local function src_dirs(paths, depth)
   if #paths == 0 then return "[]" end
@@ -202,10 +206,9 @@ local function render_project(layout, jars, options, depth)
   return table.concat(lines, "\n")
 end
 
---- One module's build file. Four levels up rather than three, because a
---- module's projectDir sits one deeper than the derived root.
-function build_file.module(layout, jars, options)
-  return render_project(layout, jars, options, MODULE_ROOT)
+--- One module's build file, its source roots climbing back from its own depth.
+function build_file.module(name, layout, jars, options)
+  return render_project(layout, jars, options, root_of(name))
 end
 
 function build_file.render(layout, jars, options)
