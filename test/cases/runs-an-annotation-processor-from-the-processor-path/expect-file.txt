@@ -1,0 +1,2 @@
+build/daukle/gradle/build/classes/java/main/example/Holder.class
+build/daukle/gradle/build/classes/java/main/example/Caller.class

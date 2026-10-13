@@ -58,12 +58,15 @@ daukle gradle:discover           # what your applied plugins contribute
 | `testResourceRoot` | defaults to `src/test/resources` |
 | `release` | Java source and target level, e.g. `"8"` |
 | `main` | the class `gradle:run` runs, and the reason `application` is applied |
-| `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven` |
+| `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`. They render `implementation` and `testImplementation`, and they keep these names rather than the configuration's because they are released |
+| `compileOnly`, `runtimeOnly` | pinned entries rendering the Gradle configuration of the same name. `compileOnly` is **not** on the runtime classpath and `runtimeOnly` is **not** on the compile classpath, which is the whole reason they are separate keys |
+| `testCompileOnly`, `testRuntimeOnly` | the same two for tests. **A JUnit launcher belongs in `testRuntimeOnly`**, which is where Gradle's own documentation puts it, and the launcher check looks there |
+| `annotationProcessor`, `testAnnotationProcessor` | pinned entries for javac's `-processorpath`, which is a different path from the compile classpath. A processor normally wants its annotations on `compileOnly` as well, and **declaring the same jar in both keys is correct rather than redundant** |
 | `plugins` | a list of `{ id, version }`, one `apply plugin:` line each |
 | `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
 | `configure` | a free-form tree, one Groovy block per extension |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `classpath` and `testClasspath`, and when the project declares modules these are REFUSED project-wide rather than applied to all of them |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them |
 
 ## The tasks a plugin contributes
 
@@ -364,6 +367,10 @@ project-wide check would pass on the strength of a sibling.
 - **`gradle:discover` on a multi-project build.** Discovery renders the build file twice and
   diffs the task lists; nothing has measured what that reports when the names come from several
   modules at once.
+- **`api` and `compileOnlyApi`.** They are configurations the **`java-library`** plugin adds and
+  this generator applies `java`, so they are a plugin away rather than a key away. The other eight
+  configurations are served. **Nothing here silently maps `api` onto `implementation`**, which
+  would quietly change what a consumer of a published library sees.
 - **NESTED module names.** A `[modules]` key holding a `:` is refused, and this is the limit most
   likely to be met by a large real build rather than a hypothetical one. **Measured 2026-10-13**:
   the largest Gradle build in the tree this plugin was written against declares **34 modules, of

@@ -3,6 +3,8 @@
 
 local modules = {}
 
+local configurations = daukle.require("lib/configurations")
+
 local REFUSED_SUBSTRINGS = { ":", "/", "\\" }
 local REFUSED_NAMES = { [""] = true, ["."] = true, [".."] = true }
 local CONTROL_CHARACTER = "%c"
@@ -158,8 +160,12 @@ end
 
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
-  main = true, classpath = true, testClasspath = true,
+  main = true,
 }
+
+for index = 1, #configurations.all do
+  MODULE_KEYS[configurations.all[index].key] = true
+end
 
 --- The toolchain's own per-module blocks, checked against the graph.
 function modules.blocks_of(config, declared)
