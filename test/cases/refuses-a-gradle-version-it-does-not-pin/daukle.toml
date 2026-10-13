@@ -8,4 +8,4 @@ version = "1.0.0"
 gradle = "./plugins"
 
 [toolchains.gradle]
-version = "7.6.4"
+version = "8.9"
