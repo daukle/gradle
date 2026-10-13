@@ -117,7 +117,9 @@ main = "com.example.App"
 ```
 
 `daukle gradle:run` compiles `greeting` first, puts it on `app`'s compile classpath as
-`implementation project(':greeting')` and runs `app`. A module needs no toolchain block at all
+`implementation project(':greeting')` and runs `app`. A module name is its directory, with `/`
+between components: `[modules."tools/core"]` is Gradle's `:tools:core`, and a name written with
+`:` is refused with the `/` form to use instead. A module needs no toolchain block at all
 unless it overrides something: its sources default to `<name>/src/main/java` and its tests to
 `<name>/src/test/java`. Once a project declares modules, `main`, a source root and a classpath
 belong to a module and are **refused project-wide**, because applying them to every module at once
@@ -135,6 +137,5 @@ extension block are all fine, because each of those is data. A raw Groovy escape
 **refused by name**, because it readmits `build.gradle` through the back door with you editing
 Groovy inside a TOML string.
 
-A module name is one flat directory, so `include 'a:b'` has no spelling: a nested module is refused
-by name. `includeBuild`, which is a composite build rather than a multi-project one, is not
-modelled either, and a module's plugins and `configure` tree are the project's rather than its own.
+`includeBuild`, which is a composite build rather than a multi-project one, is not modelled, and a
+module's plugins and `configure` tree are the project's rather than its own.

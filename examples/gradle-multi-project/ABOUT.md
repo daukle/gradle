@@ -57,11 +57,6 @@ build file resolve against the project root regardless.
 
 ## What this example cannot show
 
-**A nested module.** A module name is one flat directory: `greeting` is legal and
-`greeting/core` is refused by name, because the generated layout gives each module a sibling
-directory under the derived root and a name holding a separator would escape it. A real Gradle
-`include 'a:b'` has no spelling here.
-
 **`includeBuild`, which is a composite build and not a multi-project one.** Gradle treats the two
 as different mechanisms, and nothing in `[modules]` reaches the first.
 
