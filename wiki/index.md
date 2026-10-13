@@ -39,6 +39,7 @@ release = "8"
 | `plugins` | third-party Gradle plugins to apply, each a `{ id, version }` |
 | `pluginClasspath` | the pinned jars those plugins are applied FROM, normally written by `daukle/maven` |
 | `configure` | one block per extension a plugin registers |
+| `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for plugins applied to `Settings`, such as a toolchain resolver convention. The classpath is normally written by `daukle/maven` with `into = "settingsPluginClasspath"` |
 | `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
 | `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main` and **every dependency configuration above** belong here once a project has modules |
 

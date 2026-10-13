@@ -46,6 +46,20 @@ local function jars_of(entries, plugin_jars)
   return jars
 end
 
+--- @implNote written before anything that can return early, the bare discovery
+--- render included: settings.gradle applies this file whenever the manifest
+--- declares settings plugins or settings configure blocks, so every run that
+--- starts Gradle needs it.
+local function write_settings_plugins(config)
+  local declared = validation.settings_plugins_of(config)
+  if declared == nil then return end
+  daukle.write{
+    path = build_file.SETTINGS_SCRIPT,
+    text = build_file.settings_plugins(paths_of(declared.entries), declared.plugins,
+                                       declared.configure),
+  }
+end
+
 --- @implNote per module, because a module carries its own testClasspath: a
 --- project-wide check would pass while one module's test runtime held a
 --- platform engine and no launcher, which is the declaration that passes on
@@ -78,6 +92,7 @@ local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
   validation.validated(context, config)
+  write_settings_plugins(config)
   local bare = options ~= nil and options.bare or false
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]

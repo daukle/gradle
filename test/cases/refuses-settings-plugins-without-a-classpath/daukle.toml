@@ -1,0 +1,12 @@
+schema = 1
+project = "example/settings"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+settingsPlugins = [{ id = "org.gradle.toolchains.foojay-resolver-convention", version = "1.0.0" }]

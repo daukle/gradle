@@ -1,0 +1,18 @@
+schema = 1
+project = "example/settings"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+settingsPlugins = [{ id = "org.gradle.toolchains.foojay-resolver-convention", version = "1.0.0" }]
+
+[[toolchains.gradle.settingsPluginClasspath]]
+url = "https://plugins.gradle.org/m2/org/gradle/toolchains/foojay-resolver/1.0.0/foojay-resolver-1.0.0.jar"
+sha256 = "78b86a47dfdf7697c9bd15da78983fd80da7247d6e02fc106bdf07e0388b60a8"
+
+[toolchains.gradle.settingsConfigure.toolchainManagement.jvm.javaRepositories]
