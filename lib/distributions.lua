@@ -84,6 +84,19 @@ local function oldest()
   return ascending()[1]
 end
 
+--- Why the range stops where it does, appended when a refused version is below
+--- the oldest pin.
+---
+--- @implNote deliberately NOT "an older Gradle cannot run on JDK 17", which is
+--- false of 7.3 through 7.6.3: those run on 17 and are unpinned only because
+--- nothing asked for them. 6.7 is what was measured. The number is
+--- daukle/java's table, so an older JDK row there lowers this floor and changes
+--- this sentence with it.
+local function why_the_range_stops(floor)
+  return ". Nothing below " .. floor .. " is pinned: Gradle 6.7 cannot run on JDK 17, the oldest"
+         .. " daukle/java provisions, and the versions in between are pinnable and simply unmeasured"
+end
+
 local function for_version(version)
   version = version or DEFAULT
   if type(version) ~= "string" then
@@ -91,17 +104,8 @@ local function for_version(version)
   end
   local digest = DIGESTS[version]
   if digest == nil then
-    --[[ Deliberately NOT "an older Gradle cannot run on JDK 17", which is false
-         of 7.3 through 7.6.3: those run on 17 and are unpinned only because
-         nothing asked for them. What was measured is 6.7, and the clause says
-         exactly that much. The number is daukle/java's table, so an older JDK
-         row there lowers this floor and this sentence changes with it. ]]
     local floor = oldest()
-    local why = precedes(version, floor)
-        and (". Nothing below " .. floor .. " is pinned: Gradle 6.7 cannot run on JDK 17, the"
-             .. " oldest daukle/java provisions, and the versions in between are pinnable and"
-             .. " simply unmeasured")
-        or ""
+    local why = precedes(version, floor) and why_the_range_stops(floor) or ""
     error('no pinned Gradle "' .. version .. '". This plugin pins ' .. known()
           .. ', and a version it does not pin is a version it cannot verify' .. why, 0)
   end
