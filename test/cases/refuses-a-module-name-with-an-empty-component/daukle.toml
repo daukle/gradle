@@ -1,0 +1,11 @@
+schema = 1
+project = "example/multi"
+version = "1.0.0"
+
+[modules."tools//core"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"

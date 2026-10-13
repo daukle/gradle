@@ -5,29 +5,43 @@ local modules = {}
 
 local configurations = daukle.require("lib/configurations")
 
-local REFUSED_SUBSTRINGS = { ":", "/", "\\" }
-local REFUSED_NAMES = { [""] = true, ["."] = true, [".."] = true }
-local CONTROL_CHARACTER = "%c"
-
-local function cannot_be_modelled(name)
-  if REFUSED_NAMES[name] ~= nil then return true end
-  if string.find(name, CONTROL_CHARACTER) ~= nil then return true end
-  for _, substring in ipairs(REFUSED_SUBSTRINGS) do
-    if string.find(name, substring, 1, true) ~= nil then return true end
-  end
-  return false
+local function slash_form(name)
+  local trimmed = string.gsub(name, "^:", "")
+  return (string.gsub(trimmed, ":", "/"))
 end
 
---- @implNote a backslash is refused because the renderer turns every backslash
---- into a slash, which would smuggle a nested include past the guard. "." is
---- refused because it renders `include ':.'` and writes the module's build file
---- OVER the root's, and ".." because core refuses it only at write time, which
---- names a climb-out rather than the module the name came from.
+local function component_problem(component)
+  if component == "" then return "holds an empty path component" end
+  if component == "." or component == ".." then
+    return 'holds a "' .. component .. '" path component'
+  end
+  return nil
+end
+
+--- @implNote a backslash is refused because the renderer would turn it into a
+--- separator and smuggle a nesting past this guard. "." is refused because it
+--- renders a path that writes a build file over its parent's, and ".." because
+--- core refuses it only at write time, in words that name a path rather than
+--- the module the name came from.
+local function problem_of(name)
+  if name == "" then return "is empty" end
+  if string.find(name, "%c") ~= nil then return "holds a control character" end
+  if string.find(name, "\\", 1, true) ~= nil then return 'holds a "\\"' end
+  if string.find(name, ":", 1, true) ~= nil then
+    return 'holds a ":", which is Gradle\'s spelling: write "' .. slash_form(name) .. '"'
+  end
+  for component in string.gmatch(name .. "/", "([^/]*)/") do
+    local problem = component_problem(component)
+    if problem ~= nil then return problem end
+  end
+  return nil
+end
+
 local function refuse_a_name_this_toolchain_cannot_model(name)
-  if cannot_be_modelled(name) then
-    error('the module "' .. name .. '" is not a name this toolchain can model: it models a flat'
-          .. ' list of one directory per module, so ":", "/", "\\", ".", "..", an empty name and'
-          .. ' a control character are all refused', 0)
+  local problem = problem_of(name)
+  if problem ~= nil then
+    error('the module "' .. name .. '" ' .. problem .. '. A module name is its directory, with'
+          .. ' "/" between components', 0)
   end
 end
 

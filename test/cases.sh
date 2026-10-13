@@ -227,6 +227,9 @@ compare_expected() {
 rm -rf "$work"
 for case_dir in "$root"/test/cases/*/; do
   [ -d "$case_dir" ] || continue
+  if [ -n "${DAUKLE_CASE:-}" ] && [ "$(basename "$case_dir")" != "$DAUKLE_CASE" ]; then
+    continue
+  fi
   run_case "${case_dir%/}"
 done
 

@@ -1,1 +1,1 @@
-the module "."
+the module "." holds a "." path component
