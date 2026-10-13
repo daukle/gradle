@@ -40,6 +40,7 @@ local build_file = daukle.require("lib/build_file")
 local junit = daukle.require("lib/junit")
 local discovery = daukle.require("lib/discovery")
 local module_graph = daukle.require("lib/modules")
+local configurations = daukle.require("lib/configurations")
 local jdks = daukle.require("java:lib/jdks")
 
 local DEFAULT_JDK = "17"
@@ -119,6 +120,20 @@ local function checked_classpath(entries, key)
   return entries
 end
 
+--- Every pinned entry a configuration holds, keyed by its manifest name.
+---
+--- @implNote read through one list rather than key by key, so a configuration
+--- added to lib/configurations reaches the reader, the renderer, the launcher
+--- check and the module key set at once.
+local function entries_of_configurations(block, scope)
+  local entries = {}
+  for index = 1, #configurations.all do
+    local key = configurations.all[index].key
+    entries[key] = checked_classpath(block[key], scope .. key)
+  end
+  return entries
+end
+
 --- Every declared module with its own block read and shape-checked.
 ---
 --- @implNote `validated` runs this and throws the result away, so a module's
@@ -139,8 +154,7 @@ local function checked_modules(config, declared)
       requires = declared[index].requires,
       layout = module_graph.layout_of(name, block),
       main = string_key(block, "main", nil, scope .. "main"),
-      compile = checked_classpath(block.classpath, scope .. "classpath"),
-      test = checked_classpath(block.testClasspath, scope .. "testClasspath"),
+      entries = entries_of_configurations(block, scope),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -222,8 +236,7 @@ local function validated(context, config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   checked_modules(config, declared)
-  checked_classpath(config.classpath, "classpath")
-  checked_classpath(config.testClasspath, "testClasspath")
+  entries_of_configurations(config, "")
   string_key(config, "release", nil)
   string_key(config, "main", nil)
 
@@ -279,14 +292,24 @@ local function paths_of(entries)
   return paths
 end
 
---- @implNote the test side of the classpath is the compile side FOLLOWED BY the
---- test-only entries, which is the testImplementation/implementation separation
---- daukle/maven writes against.
-local function test_reachable(compile, test)
-  local reachable = {}
-  for index = 1, #compile do reachable[#reachable + 1] = compile[index] end
-  for index = 1, #test do reachable[#reachable + 1] = test[index] end
-  return reachable
+--- Every entry a test run can load, in declaration order.
+---
+--- @implNote it spans the configurations that reach the test RUNTIME classpath,
+--- because that is where a JUnit launcher has to be to be loaded. compileOnly
+--- and testCompileOnly are excluded for that reason rather than by omission, so
+--- a launcher declared in either is still refused.
+local function test_reachable(entries)
+  return configurations.test_reachable(function(key) return entries[key] end)
+end
+
+--- The cache paths per configuration, which is the shape the renderer takes.
+local function jars_of(entries, plugin_jars)
+  local jars = { plugin = plugin_jars }
+  for index = 1, #configurations.all do
+    local key = configurations.all[index].key
+    jars[key] = paths_of(entries[key])
+  end
+  return jars
 end
 
 --- @implNote per module, because a module carries its own testClasspath: a
@@ -294,7 +317,7 @@ end
 --- platform engine and no launcher, which is the declaration that passes on
 --- Gradle 8 and dies on the next major.
 local function refuse_a_module_missing_launcher(module)
-  junit.refuse_a_missing_launcher(test_reachable(module.compile, module.test))
+  junit.refuse_a_missing_launcher(test_reachable(module.entries))
 end
 
 --- Every build file Gradle reads, written into the derived directory.
@@ -324,9 +347,8 @@ local function write_build_file(context, config, options)
        for both values of bare, because nil is false. ]]
   local configure = config.configure
   if bare then configure = nil end
-  local compile = checked_classpath(config.classpath, "classpath")
-  local test = checked_classpath(config.testClasspath, "testClasspath")
-  junit.refuse_a_missing_launcher(test_reachable(compile, test))
+  local entries = entries_of_configurations(config, "")
+  junit.refuse_a_missing_launcher(test_reachable(entries))
 
   --[[ Built once and extended per file rather than spelled once per branch: a
        project-wide key added to one of two copies is a key half the projects
@@ -343,8 +365,7 @@ local function write_build_file(context, config, options)
     return daukle.write{
       path = BUILD_FILE,
       text = build_file.render(layout_of(config),
-                               { compile = paths_of(compile), test = paths_of(test),
-                                 plugin = plugin_jars },
+                               jars_of(entries, plugin_jars),
                                extended(project_wide,
                                         { main = string_key(config, "main", nil) })),
     }
@@ -359,9 +380,7 @@ local function write_build_file(context, config, options)
     daukle.write{
       path = module.name .. "/" .. BUILD_FILE,
       text = build_file.module(module.layout,
-                               { compile = paths_of(module.compile),
-                                 test = paths_of(module.test),
-                                 plugin = {} },
+                               jars_of(module.entries, {}),
                                extended(project_wide,
                                         { main = module.main,
                                           requires = module.requires })),
