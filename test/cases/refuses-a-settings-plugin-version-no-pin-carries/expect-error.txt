@@ -1,0 +1,1 @@
+"settingsPlugins[1]" applies org.gradle.toolchains.foojay-resolver-convention 9.9.9, and no entry in "settingsPluginClasspath" names that version

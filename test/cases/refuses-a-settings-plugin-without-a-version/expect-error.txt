@@ -1,0 +1,1 @@
+"settingsPlugins[1]" needs an "id" and a "version"
