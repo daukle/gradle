@@ -1,0 +1,22 @@
+schema = 1
+project = "example/processor"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "17"
+version = "9.6.0"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/projectlombok/lombok/1.18.34/lombok-1.18.34.jar"
+sha256 = "c27d6b2aff56241d1b07fcbcc6b183709e6b432c80f7374eeb1d823e86d4b81a"
+as = "lombok 1.18.34"
+
+[[toolchains.gradle.annotationProcessor]]
+url = "https://repo1.maven.org/maven2/org/projectlombok/lombok/1.18.34/lombok-1.18.34.jar"
+sha256 = "c27d6b2aff56241d1b07fcbcc6b183709e6b432c80f7374eeb1d823e86d4b81a"
+as = "lombok 1.18.34"

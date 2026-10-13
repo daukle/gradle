@@ -1,0 +1,17 @@
+schema = 1
+project = "example/module-compile-only"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+
+[[toolchains.gradle.modules.alpha.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/opentest4j/opentest4j/1.3.0/opentest4j-1.3.0.jar"
+sha256 = "48e2df636cab6563ced64dcdff8abb2355627cb236ef0bf37598682ddf742f1b"
+as = "opentest4j 1.3.0"

@@ -8,6 +8,8 @@
 
 local build_file = {}
 
+local configurations = daukle.require("lib/configurations")
+
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
      sourceSets block removed, Gradle resolves src/main/java against the project
@@ -257,13 +259,14 @@ local function render_project(layout, jars, options, depth)
        only `java` produced a fat jar whose manifest named no entry point and
        which nothing could run. Both are built into Gradle, so naming them here
        resolves nothing and the no-repository property is untouched. ]]
+  local base = configurations.needs_java_library(jars) and "java-library" or "java"
   if options.main ~= nil then
     lines[#lines + 1] = "plugins {"
-    lines[#lines + 1] = "  id 'java'"
+    lines[#lines + 1] = "  id " .. groovy_string(base)
     lines[#lines + 1] = "  id 'application'"
     lines[#lines + 1] = "}"
   else
-    lines[#lines + 1] = "plugins { id 'java' }"
+    lines[#lines + 1] = "plugins { id " .. groovy_string(base) .. " }"
   end
   lines[#lines + 1] = ""
 
@@ -281,11 +284,12 @@ local function render_project(layout, jars, options, depth)
   for index = 1, #requires do
     lines[#lines + 1] = "  implementation project(" .. groovy_string(":" .. requires[index]) .. ")"
   end
-  if #jars.compile > 0 then
-    lines[#lines + 1] = "  implementation files(\n" .. file_list(jars.compile, "    ") .. "\n  )"
-  end
-  if #jars.test > 0 then
-    lines[#lines + 1] = "  testImplementation files(\n" .. file_list(jars.test, "    ") .. "\n  )"
+  for index = 1, #configurations.all do
+    local row = configurations.all[index]
+    local paths = jars[row.key]
+    if paths ~= nil and #paths > 0 then
+      lines[#lines + 1] = "  " .. row.render .. " files(\n" .. file_list(paths, "    ") .. "\n  )"
+    end
   end
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
