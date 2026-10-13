@@ -50,8 +50,9 @@ reason is a migration this feature invites: a single-project project that has be
 already has a full build file at that path, and adding `[modules]` would otherwise leave it in
 place as the root project, compiling everything a second time at exit 0.
 
-**Paths are one level deeper than a single-project build**, which is why the generated redirect is
-four levels rather than three. Module output lands at
+**Paths are one level deeper than a single-project build for a flat module like these two**, which
+is why the generated redirect is four levels rather than three; a nested module climbs one more per
+component. Module output lands at
 `build/daukle/gradle/<module>/build/classes/java/main/`, and `{ file = ... }` markers in a module's
 build file resolve against the project root regardless.
 
