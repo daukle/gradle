@@ -338,6 +338,10 @@ carries only its header when there is no classpath.
 Gradle fails at task-graph build with *"Circular dependency between the following tasks"* and names
 them, so reproducing it here would mean a graph walk to re-derive a diagnostic that already exists.
 
+**A module requiring ITSELF has its own refusal**, because one module is not two: the cycle check
+would answer with the same name twice, which reads as a defect in the refusal rather than in the
+manifest.
+
 **`gradle:run` is refused when two modules declare `main`**, by name and naming both. The
 alternative is picking one, which is right half the time and silent the other half.
 

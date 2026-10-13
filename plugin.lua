@@ -256,6 +256,16 @@ daukle.toolchain{
   end,
 }
 
+--- A copy of `base` carrying `extra` as well, so one table of project-wide
+--- options can serve a root file and every module file without being spelled
+--- again per caller.
+local function extended(base, extra)
+  local out = {}
+  for key, value in pairs(base) do out[key] = value end
+  for key, value in pairs(extra) do out[key] = value end
+  return out
+end
+
 local function paths_of(entries)
   local paths = {}
   for index = 1, #entries do
@@ -315,10 +325,15 @@ local function write_build_file(context, config, options)
   local test = checked_classpath(config.testClasspath, "testClasspath")
   junit.refuse_a_missing_launcher(test_reachable(compile, test))
 
-  --[[ One expression for both paths: a project-wide key added to one of two
-       copies is a key half the projects get. ]]
+  --[[ Built once and extended per file rather than spelled once per branch: a
+       project-wide key added to one of two copies is a key half the projects
+       get, and `plugins` was also revalidated once per module. ]]
   local plugin_jars = bare and {}
                       or paths_of(checked_classpath(config.pluginClasspath, "pluginClasspath"))
+  local project_wide = { release = string_key(config, "release", nil),
+                         plugins = bare and {} or checked_plugins(config.plugins),
+                         configure = configure,
+                         discover = options ~= nil and options.discover or nil }
 
   local declared = module_graph.declared(context)
   if #declared == 0 then
@@ -327,11 +342,8 @@ local function write_build_file(context, config, options)
       text = build_file.render(layout_of(config),
                                { compile = paths_of(compile), test = paths_of(test),
                                  plugin = plugin_jars },
-                               { release = string_key(config, "release", nil),
-                                 main = string_key(config, "main", nil),
-                                 plugins = bare and {} or checked_plugins(config.plugins),
-                                 configure = configure,
-                                 discover = options ~= nil and options.discover or nil }),
+                               extended(project_wide,
+                                        { main = string_key(config, "main", nil) })),
     }
   end
 
@@ -347,12 +359,9 @@ local function write_build_file(context, config, options)
                                { compile = paths_of(module.compile),
                                  test = paths_of(module.test),
                                  plugin = {} },
-                               { release = string_key(config, "release", nil),
-                                 main = module.main,
-                                 plugins = bare and {} or checked_plugins(config.plugins),
-                                 configure = configure,
-                                 requires = module.requires,
-                                 discover = options ~= nil and options.discover or nil }),
+                               extended(project_wide,
+                                        { main = module.main,
+                                          requires = module.requires })),
     }
   end
 end

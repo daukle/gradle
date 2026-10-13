@@ -119,7 +119,7 @@ unless it overrides something: its sources default to `<name>/src/main/java` and
 `<name>/src/test/java`. Once a project declares modules, `main`, a source root and a classpath
 belong to a module and are **refused project-wide**, because applying them to every module at once
 is the silent version. Two modules declaring `main` is refused by name, and so is a `requires`
-naming no module, or two modules requiring each other.
+naming no module, two modules requiring each other, or a module requiring itself.
 
 **This needs daukle 0.7.0.** An older daukle does not publish the module list to a plugin at all,
 so the plugin refuses rather than quietly building only the root.
