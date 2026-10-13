@@ -29,7 +29,7 @@ Against `intisy/libs/java-utils`, a real library with twenty resolved dependenci
 | files at the project root | **`daukle.toml` and `daukle.lua`** |
 | `gradle:classes` | **39 class files, equal to Gradle's own build of the same sources** |
 | `gradle:test` | **6 tests, 0 failures**, equal to Gradle's own and to `daukle/java`'s |
-| Gradle versions | **8.13 and 9.6.0, both green**, and the suite runs on both |
+| Gradle versions | **sixteen pinned, 7.6.4 to 9.6.0**, covering 157 of the 158 versions this tree declares; the suite runs both edges |
 | installed Gradle | none. Nor an installed JDK |
 
 Everything Gradle produces, including its own `.gradle/` state directory, lands under
