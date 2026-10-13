@@ -36,9 +36,6 @@ the runtime classpath of `gradle:run` without colliding.
 **`includeBuild`, a composite build.** It is a different Gradle mechanism, and nothing in
 `[modules]` reaches it.
 
-**A settings-level `plugins {}` block.** A third-party plugin is applied from the root buildscript
-classpath, as `gradle-third-party-plugin` shows, and not from `settings.gradle`.
-
 **A project directory that differs from the module name.** Gradle lets `settings.gradle` move a
 project anywhere; here the name IS the directory, which is what keeps one spelling for every
 `requires`.
