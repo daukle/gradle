@@ -144,25 +144,28 @@ function render_body(lines, indent, body, path, depth)
   end
 end
 
-local function configuration(configure, depth)
+--- @param label the manifest key the tree came from, so a refusal names the key
+--- the user wrote: "configure" for a project, "settingsConfigure" for settings
+local function configuration(configure, depth, label)
+  label = label or "configure"
   if configure == nil then return {} end
   if type(configure) ~= "table" then
-    error('"configure" must be a table of extension blocks, not a ' .. type(configure), 0)
+    error('"' .. label .. '" must be a table of extension blocks, not a ' .. type(configure), 0)
   end
   local lines = {}
   for key in pairs(configure) do
     if type(key) ~= "string" then
-      error('"configure" is a list where a table of extension blocks was expected', 0)
+      error('"' .. label .. '" is a list where a table of extension blocks was expected', 0)
     end
     --[[ A bare value here would land at the top level of the build file, where
          Groovy reads it as a project property and Gradle fails with a name that
          is nobody's: "configure" names an extension, so its entries are blocks. ]]
-    if type(configure[key]) ~= "table" or marker_of(configure[key], "configure." .. key) ~= nil then
-      error('"configure.' .. key .. '" must be a block: configure names the extension a plugin'
-            .. " registered, and its keys are what that extension takes", 0)
+    if type(configure[key]) ~= "table" or marker_of(configure[key], label .. "." .. key) ~= nil then
+      error('"' .. label .. '.' .. key .. '" must be a block: ' .. label .. ' names the extension a'
+            .. " plugin registered, and its keys are what that extension takes", 0)
     end
   end
-  render_body(lines, "", configure, "configure", depth)
+  render_body(lines, "", configure, label, depth)
   return lines
 end
 

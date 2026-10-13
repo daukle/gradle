@@ -58,7 +58,8 @@ daukle.toolchain{
     local config = validation.config_of(context)
     validation.validated(context, config)
     return { [SETTINGS_FILE] = build_file.settings(validation.project_name(context),
-                                                   module_graph.declared(context)) }
+                                                   module_graph.declared(context),
+                                                   validation.settings_plugins_of(config) ~= nil) }
   end,
 }
 

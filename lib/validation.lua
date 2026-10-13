@@ -124,15 +124,16 @@ local function project_name(context)
   return (name:match("([^/]+)$") or name)
 end
 
-local function checked_plugins(entries)
+local function checked_plugins(entries, key)
+  key = key or "plugins"
   if entries == nil then return {} end
   if type(entries) ~= "table" then
-    error('"plugins" must be a list of entries, not a ' .. type(entries), 0)
+    error('"' .. key .. '" must be a list of entries, not a ' .. type(entries), 0)
   end
   for index = 1, #entries do
     local entry = entries[index]
     if type(entry) ~= "table" or type(entry.id) ~= "string" or type(entry.version) ~= "string" then
-      error('"plugins[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
+      error('"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
             .. " applies and the version is what the pinned jars are checked against", 0)
     end
   end
@@ -145,7 +146,7 @@ end
      applies whatever jar it was handed. The version has to appear in some
      pinned entry, which the Maven layout puts in the url and which a
      hand-written pin can carry in "as". ]]
-local function refuse_a_version_no_pin_carries(plugins, pins)
+local function refuse_a_version_no_pin_carries(plugins, pins, plugins_key, classpath_key)
   for index = 1, #plugins do
     local version = plugins[index].version
     local pinned = false
@@ -157,13 +158,30 @@ local function refuse_a_version_no_pin_carries(plugins, pins)
       end
     end
     if not pinned then
-      error('"plugins[' .. index .. ']" applies ' .. plugins[index].id .. " " .. version
-            .. ', and no entry in "pluginClasspath" names that version. This check runs on'
-            .. ' every command, so "maven:resolve" cannot fix it in place: remove this entry,'
+      error('"' .. plugins_key .. '[' .. index .. ']" applies ' .. plugins[index].id .. " "
+            .. version .. ', and no entry in "' .. classpath_key .. '" names that version.'
+            .. ' This check runs on every command, so "maven:resolve" cannot fix it in place:'
+            .. ' remove this entry,'
             .. " resolve the marker at that version, then put it back. Or correct the version"
             .. " here", 0)
     end
   end
+end
+
+--- One plugin list and the classpath it is applied from, checked together:
+--- the project's `plugins` and `pluginClasspath`, or the settings twins.
+--- @return the plugin entries and the pinned classpath entries
+local function checked_plugin_set(config, plugins_key, classpath_key)
+  local plugins = checked_plugins(config[plugins_key], plugins_key)
+  local jars = checked_classpath(config[classpath_key], classpath_key)
+  if #plugins > 0 and #jars == 0 then
+    error('"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
+          .. '" is empty: a plugin is applied from a jar daukle pinned. This check runs on every'
+          .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
+          .. plugins_key .. '" block in the manifest, then add the block', 0)
+  end
+  refuse_a_version_no_pin_carries(plugins, jars, plugins_key, classpath_key)
+  return plugins, jars
 end
 
 --- @implNote core publishes `context.modules` as a table, empty when the
@@ -198,19 +216,22 @@ local function validated(context, config)
   string_key(config, "release", nil)
   string_key(config, "main", nil)
 
-  local plugins = checked_plugins(config.plugins)
-  local plugin_jars = checked_classpath(config.pluginClasspath, "pluginClasspath")
-  if #plugins > 0 and #plugin_jars == 0 then
-    error('"plugins" names ' .. #plugins .. " plugin(s) and \"pluginClasspath\" is empty: a"
-          .. " plugin is applied from a jar daukle pinned. This check runs on every command, so"
-          .. ' "maven:resolve" cannot fix it in place: resolve the marker with no "plugins"'
-          .. " block in the manifest, then add the block", 0)
-  end
-  refuse_a_version_no_pin_carries(plugins, plugin_jars)
+  checked_plugin_set(config, "plugins", "pluginClasspath")
+  checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath")
   --[[ Rendered and thrown away, so a tree this refuses is refused by `daukle
        check` rather than by the task that would have written it. Running the
        real renderer is what stops the refusal drifting from the writer. ]]
   build_file.configuration(config.configure)
+  build_file.configuration(config.settingsConfigure, nil, "settingsConfigure")
+end
+
+--- The settings plugins the manifest declares, checked, or nil when it declares
+--- none, which is also what decides whether settings.gradle applies the script.
+--- @return { plugins = table, entries = table, configure = table|nil }|nil
+local function settings_plugins_of(config)
+  local plugins, entries = checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath")
+  if #plugins == 0 then return nil end
+  return { plugins = plugins, entries = entries, configure = config.settingsConfigure }
 end
 
 return {
@@ -225,5 +246,6 @@ return {
   checked_modules = checked_modules,
   project_name = project_name,
   checked_plugins = checked_plugins,
+  settings_plugins_of = settings_plugins_of,
   validated = validated,
 }
