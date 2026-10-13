@@ -9,6 +9,7 @@
 local build_file = {}
 
 local configurations = daukle.require("lib/configurations")
+local groovy = daukle.require("lib/groovy")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -21,16 +22,12 @@ local ROOT = "../../.."
      same arithmetic needs one more hop. Same silent failure when wrong. ]]
 local MODULE_ROOT = "../../../.."
 
-local function groovy_string(text)
-  return "'" .. text:gsub("\\", "/"):gsub("'", "\\'") .. "'"
-end
-
 local function src_dirs(paths, depth)
   if #paths == 0 then return "[]" end
   local rendered = {}
   for index = 1, #paths do
-    rendered[index] = "new File(file(" .. groovy_string(depth) .. "), "
-                      .. groovy_string(paths[index]) .. ")"
+    rendered[index] = "new File(file(" .. groovy.quoted(depth) .. "), "
+                      .. groovy.quoted(paths[index]) .. ")"
   end
   return "[" .. table.concat(rendered, ", ") .. "]"
 end
@@ -38,7 +35,7 @@ end
 local function file_list(paths, indent)
   local rendered = {}
   for index = 1, #paths do
-    rendered[index] = indent .. groovy_string(paths[index])
+    rendered[index] = indent .. groovy.quoted(paths[index])
   end
   return table.concat(rendered, ",\n")
 end
@@ -69,13 +66,13 @@ end
      in every one of them. ]]
 local MARKERS = {
   file = function(text, depth)
-    return "new File(file(" .. groovy_string(depth) .. "), " .. groovy_string(text) .. ")"
+    return "new File(file(" .. groovy.quoted(depth) .. "), " .. groovy.quoted(text) .. ")"
   end,
   buildOutput = function(text)
-    return "layout.buildDirectory.file(" .. groovy_string(text) .. ").get().asFile"
+    return "layout.buildDirectory.file(" .. groovy.quoted(text) .. ").get().asFile"
   end,
   env = function(text)
-    return "System.getenv(" .. groovy_string(text) .. ") ?: ''"
+    return "System.getenv(" .. groovy.quoted(text) .. ") ?: ''"
   end,
 }
 
@@ -140,7 +137,7 @@ end
 local function render_assignment(lines, indent, key, value, path, depth)
   local kind = type(value)
   if kind == "string" then
-    lines[#lines + 1] = indent .. key .. " = " .. groovy_string(value)
+    lines[#lines + 1] = indent .. key .. " = " .. groovy.quoted(value)
   elseif kind == "number" then
     lines[#lines + 1] = indent .. key .. " = " .. groovy_number(value)
   elseif kind == "boolean" then
@@ -262,16 +259,16 @@ local function render_project(layout, jars, options, depth)
   local base = configurations.needs_java_library(jars) and "java-library" or "java"
   if options.main ~= nil then
     lines[#lines + 1] = "plugins {"
-    lines[#lines + 1] = "  id " .. groovy_string(base)
+    lines[#lines + 1] = "  id " .. groovy.quoted(base)
     lines[#lines + 1] = "  id 'application'"
     lines[#lines + 1] = "}"
   else
-    lines[#lines + 1] = "plugins { id " .. groovy_string(base) .. " }"
+    lines[#lines + 1] = "plugins { id " .. groovy.quoted(base) .. " }"
   end
   lines[#lines + 1] = ""
 
   for index = 1, #options.plugins do
-    lines[#lines + 1] = "apply plugin: " .. groovy_string(options.plugins[index].id)
+    lines[#lines + 1] = "apply plugin: " .. groovy.quoted(options.plugins[index].id)
   end
   if #options.plugins > 0 then lines[#lines + 1] = "" end
 
@@ -282,7 +279,7 @@ local function render_project(layout, jars, options, depth)
   lines[#lines + 1] = ""
   lines[#lines + 1] = "dependencies {"
   for index = 1, #requires do
-    lines[#lines + 1] = "  implementation project(" .. groovy_string(":" .. requires[index]) .. ")"
+    lines[#lines + 1] = "  implementation project(" .. groovy.quoted(":" .. requires[index]) .. ")"
   end
   for index = 1, #configurations.all do
     local row = configurations.all[index]
@@ -297,9 +294,9 @@ local function render_project(layout, jars, options, depth)
   if options.release ~= nil then
     lines[#lines + 1] = "java {"
     lines[#lines + 1] = "  sourceCompatibility = JavaVersion.toVersion("
-                        .. groovy_string(options.release) .. ")"
+                        .. groovy.quoted(options.release) .. ")"
     lines[#lines + 1] = "  targetCompatibility = JavaVersion.toVersion("
-                        .. groovy_string(options.release) .. ")"
+                        .. groovy.quoted(options.release) .. ")"
     lines[#lines + 1] = "}"
     lines[#lines + 1] = ""
   end
@@ -335,7 +332,7 @@ local function render_project(layout, jars, options, depth)
     lines[#lines + 1] = "tasks.register('daukleTasks') {"
     lines[#lines + 1] = "  doLast {"
     lines[#lines + 1] = "    project.tasks.names.each { println "
-                        .. groovy_string(options.discover) .. " + it }"
+                        .. groovy.quoted(options.discover) .. " + it }"
     lines[#lines + 1] = "  }"
     lines[#lines + 1] = "}"
   end
@@ -347,12 +344,12 @@ local function render_project(layout, jars, options, depth)
   if options.main ~= nil then
     lines[#lines + 1] = ""
     lines[#lines + 1] = "application {"
-    lines[#lines + 1] = "  mainClass = " .. groovy_string(options.main)
+    lines[#lines + 1] = "  mainClass = " .. groovy.quoted(options.main)
     lines[#lines + 1] = "}"
     lines[#lines + 1] = ""
     lines[#lines + 1] = "tasks.register('daukleRun', JavaExec) {"
     lines[#lines + 1] = "  classpath = sourceSets.main.runtimeClasspath"
-    lines[#lines + 1] = "  mainClass = " .. groovy_string(options.main)
+    lines[#lines + 1] = "  mainClass = " .. groovy.quoted(options.main)
     lines[#lines + 1] = "}"
   end
 
@@ -405,12 +402,12 @@ end
 function build_file.settings(name, modules)
   local lines = {
     "// Generated by daukle/gradle. Do not edit.",
-    "rootProject.name = " .. groovy_string(name),
+    "rootProject.name = " .. groovy.quoted(name),
   }
   if modules ~= nil and #modules > 0 then
     lines[#lines + 1] = ""
     for index = 1, #modules do
-      lines[#lines + 1] = "include " .. groovy_string(":" .. modules[index].name)
+      lines[#lines + 1] = "include " .. groovy.quoted(":" .. modules[index].name)
     end
   end
   return table.concat(lines, "\n") .. "\n"
