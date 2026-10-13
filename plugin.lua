@@ -186,8 +186,10 @@ local function refuse_a_version_no_pin_carries(plugins, pins)
     end
     if not pinned then
       error('"plugins[' .. index .. ']" applies ' .. plugins[index].id .. " " .. version
-            .. ', and no entry in "pluginClasspath" names that version: resolve the plugin'
-            .. " marker at that version, or correct the one here", 0)
+            .. ', and no entry in "pluginClasspath" names that version. This check runs on'
+            .. ' every command, so "maven:resolve" cannot fix it in place: remove this entry,'
+            .. " resolve the marker at that version, then put it back. Or correct the version"
+            .. " here", 0)
     end
   end
 end
@@ -229,8 +231,9 @@ local function validated(context, config)
   local plugin_jars = checked_classpath(config.pluginClasspath, "pluginClasspath")
   if #plugins > 0 and #plugin_jars == 0 then
     error('"plugins" names ' .. #plugins .. " plugin(s) and \"pluginClasspath\" is empty: a"
-          .. " plugin is applied from a jar daukle pinned, so resolve its marker into"
-          .. ' "pluginClasspath" first', 0)
+          .. " plugin is applied from a jar daukle pinned. This check runs on every command, so"
+          .. ' "maven:resolve" cannot fix it in place: resolve the marker with no "plugins"'
+          .. " block in the manifest, then add the block", 0)
   end
   refuse_a_version_no_pin_carries(plugins, plugin_jars)
   --[[ Rendered and thrown away, so a tree this refuses is refused by `daukle

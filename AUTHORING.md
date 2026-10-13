@@ -178,13 +178,23 @@ listing; the check belongs to generate, and `check` and `sync` both refuse with 
 ## Three phases to a first build, and the refusal cannot be followed in order
 
 A manifest that declares `[[toolchains.gradle.plugins]]` while `pluginClasspath` is empty is refused
-at generate time, and **every command generates**, so even `maven:resolve` is refused. The refusal's
-advice, resolve the marker first, is correct and cannot be done in that order. The working sequence
-is: resolve with no `plugins` block; add the `daukle.include`, which must be second because
+at generate time, and **every command generates**, so even `maven:resolve` is refused. The working
+sequence is: resolve with no `plugins` block; add the `daukle.include`, which must be second because
 `include` raises on a file that is not there; then add the `plugins` block. Nothing is
-unrecoverable, and a first-time user cannot start without being told. Recorded in `D-114`; the
-candidate fixes are a refusal that names the three phases, or letting the check tolerate an empty
-`pluginClasspath` when a `maven.resolve` targets it, which couples two plugins.
+unrecoverable. Recorded in `D-114`.
+
+**Both refusals now NAME that order**, which is `D-118` and the reason this section no longer says
+the advice cannot be followed. They also say why: *"this check runs on every command, so
+`maven:resolve` cannot fix it in place"*. **There are two of them and they differ**, because the
+recovery does: an empty `pluginClasspath` means resolve with no `plugins` block at all, while a
+version no pinned entry carries, the shape a SECOND plugin hits, means remove that one entry,
+resolve, and put it back. A case asserts each ordering clause, and neither clause appears in the
+other's message.
+
+**The structural fix was NOT taken**, and `D-118` records why: moving the check out of `generate`
+and into the task that writes the apply line would let `maven:resolve` run untouched, at the cost of
+`daukle check` no longer catching an unpinned plugin, which is the thing `generate`-time rendering
+exists for.
 
 ## Third-party Gradle plugins
 
