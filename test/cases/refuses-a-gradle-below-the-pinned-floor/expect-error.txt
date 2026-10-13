@@ -1,0 +1,1 @@
+Nothing below 7.6.4 is pinned: Gradle 6.7 cannot run on JDK 17, the oldest daukle/java provisions, and the versions in between are pinnable and simply unmeasured

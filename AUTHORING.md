@@ -50,7 +50,7 @@ daukle gradle:discover           # what your applied plugins contribute
 
 | key | meaning |
 | --- | --- |
-| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`8.13`, `8.14`, `8.14.4`, `9.3.1`, `9.6.0`**, and a version not in that set is refused by name rather than fetched |
+| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`7.6.4`, `8.4`, `8.8`, `8.10`, `8.10.2`, `8.11.1`, `8.13`, `8.14`, `8.14.3`, `8.14.4`, `9.0.0`, `9.1.0`, `9.2.0`, `9.3.1`, `9.5.0`, `9.6.0`**, and a version not in that set is refused by name rather than fetched. **`7.6.4` is the floor and the refusal says why**: `6.7` cannot run on JDK 17, and 7.3 to 7.6.3 are pinnable and unmeasured |
 | `jdk` | which JDK to provision, through `daukle/java`'s table. Defaults to `17` |
 | `sourceRoot` | defaults to `src/main/java` |
 | `resourceRoot` | defaults to `src/main/resources` |
@@ -394,15 +394,34 @@ this plugin. **No new core verb and no `--resolve`.**
 ### Which versions the table carries, and why it is not just the newest
 
 **A project's Gradle version is the project's decision, not daukle's**, so the table covers a RANGE.
-Measured 2026-10-06 over the 190 `gradle-wrapper.properties` files under `F:/Documents/GitHub`:
-**18 distinct versions, 6.7 through 9.3.1**, with `9.3.1` (79) and `8.14` (59) dominating and 8.x
-still the majority at 106 against 84. **Pinning only the newest would have served none of them**,
-because nothing in the tree declares `9.6.0`.
+Re-measured 2026-10-13 over the **158** `gradle-wrapper.properties` files under
+`F:/Documents/GitHub` that are not in `archived` or `sandbox`: **16 distinct versions, 6.7 through
+9.5.0**, with `9.3.1` (79) and `8.14` (50) dominating. **Pinning only the newest would have served
+none of them**, because nothing in the tree declares `9.6.0`.
+
+**Sixteen rows cover 157 of the 158**, and the one left is `6.7`. **It is not a missing digest and
+pinning it would be a lie**: gradle.org publishes its `.sha256` like every other, and Gradle 6.7
+then dies on `Unsupported class file major version 61` because its Groovy cannot read JDK 17 class
+files and 17 is the oldest JDK `daukle/java` pins. So the floor belongs to the JDK table rather
+than to this one, serving it means adding a JDK of 15 or less in the other plugin, and until then
+the refusal says all of that rather than only listing what is pinned. Measured by running it,
+2026-10-13.
+
+**The refusal deliberately does NOT say "an older Gradle cannot run on JDK 17"**, which is false of
+7.3 through 7.6.3: those run on 17 and are unpinned only because nothing in this tree declares one,
+so they are pinnable and merely unmeasured. The first draft of this feature said the broader thing
+and would have shipped a refusal that was wrong about four minor versions.
+
+**Every other row was measured the same way rather than transcribed and hoped for**: eleven
+versions were each run through the real compile-and-test case against a provisioned Gradle and JDK
+before being pinned, and **a version that had failed would not have been pinned**. A row is a claim
+that this plugin can drive that Gradle, and `D-115` is what an unasserted claim costs here.
 
 **A row is a url and a digest, so rows are cheap and CI is not.** The e2e cases therefore run one
-version at each EDGE of the range, `8.13` and `9.6.0`, which is not decoration: the same build that
+version at each EDGE of the range, `7.6.4` and `9.6.0`, which is not decoration: the same build that
 works on 8 fails outright on 9 for want of a `junit-platform-launcher` that is in no POM graph.
-A single-major suite would have shipped that.
+A single-major suite would have shipped that. **The 8 line is still exercised** by the three other
+cases that pin `8.13` and by every example, so moving the lower edge off it lost nothing.
 
 **The rows in between are covered by `test/pins.sh`**, which checks every pinned digest against the
 `.sha256` gradle.org publishes. It costs one small GET per row, it fails on a wrong digest, and it
