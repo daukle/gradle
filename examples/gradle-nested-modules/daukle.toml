@@ -1,0 +1,26 @@
+schema = 1
+project = "daukle/example-gradle-nested-modules"
+version = "1.0.0"
+
+[resolvers.github]
+url = "https://raw.githubusercontent.com/daukle/daukle/1f515141e06d16eace718a45944a39933611fa39/plugins/github-releases.lua"
+sha256 = "3789865c266eb53fafcf7300d77a24461170c615195d92d0ddf88078c556e23e"
+
+[plugins]
+gradle = { resolver = "github", coordinate = "daukle/gradle@^1.7.0" }
+
+[modules.core]
+
+[modules."interop/core"]
+
+[modules."tools/core"]
+requires = ["core"]
+
+[modules."tools/maven/plugin"]
+requires = ["tools/core", "interop/core"]
+
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.modules."tools/maven/plugin"]
+main = "com.example.plugin.App"
