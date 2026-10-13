@@ -312,7 +312,9 @@ Every step was measured on Gradle 8.13 and 9.6.0:
 - **`settings.gradle` cannot hold the classpath.** It is born in `generate`, where
   `daukle.artifact` is refused, so no jar path exists yet. A task rewriting it would make every
   later sync report it as changed outside daukle. So `generate` writes one `apply from:` line, and
-  only when the manifest declares settings plugins; every task writes the script.
+  only when the manifest declares settings plugins or a `settingsConfigure` block; every task
+  writes the script. **A configure block needs no plugin**: `buildCache` and `toolchainManagement`
+  are Gradle's own, and the first version of this dropped such a block silently.
 - **Applying BY ID from an applied script fails**, *"Plugin with id ... not found"*: Gradle looks
   the id up on the target's classloader, not the script's. The script therefore resolves each id
   itself through `META-INF/gradle-plugins/<id>.properties` on its own classloader, which is
@@ -328,7 +330,10 @@ Every step was measured on Gradle 8.13 and 9.6.0:
 **A stale script is harmless**: removing every settings plugin removes the `apply from:` line, so
 an old `settings-plugins.gradle` left in the derived directory is never read.
 
-**Not measured**: Gradle 7.6.4, and the same jar on both the settings and the root classpath.
+**Not measured**: Gradle 7.6.4; the same jar on both the settings and the root classpath; and a
+`{ file = ... }` marker inside `settingsConfigure`, which renders against the derived root.
+**And `gradle:discover` cannot see a task a settings plugin contributes**: the plugin is applied in
+both of its runs, so whatever it adds cancels out of the difference.
 
 ## What the generation does, and the one number in it that is load bearing
 
