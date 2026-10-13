@@ -225,13 +225,17 @@ local function validated(context, config)
   build_file.configuration(config.settingsConfigure, nil, "settingsConfigure")
 end
 
---- The settings plugins the manifest declares, checked, or nil when it declares
---- none, which is also what decides whether settings.gradle applies the script.
+--- The settings plugins and settings configure blocks the manifest declares,
+--- or nil when it declares neither, which is also what decides whether
+--- settings.gradle applies the script. A configure block needs no plugin:
+--- `buildCache` and `toolchainManagement` are Gradle's own.
 --- @return { plugins = table, entries = table, configure = table|nil }|nil
 local function settings_plugins_of(config)
   local plugins, entries = checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath")
-  if #plugins == 0 then return nil end
-  return { plugins = plugins, entries = entries, configure = config.settingsConfigure }
+  local configure = config.settingsConfigure
+  local configures = type(configure) == "table" and next(configure) ~= nil
+  if #plugins == 0 and not configures then return nil end
+  return { plugins = plugins, entries = entries, configure = configure }
 end
 
 return {

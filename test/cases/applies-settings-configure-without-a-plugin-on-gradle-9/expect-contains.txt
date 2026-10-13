@@ -1,0 +1,2 @@
+build/daukle/gradle/settings.gradle apply from: 'settings-plugins.gradle'
+build/daukle/gradle/settings-plugins.gradle enabled = false

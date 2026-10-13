@@ -46,13 +46,10 @@ local function jars_of(entries, plugin_jars)
   return jars
 end
 
---- @implNote per module, because a module carries its own testClasspath: a
---- project-wide check would pass while one module's test runtime held a
---- platform engine and no launcher, which is the declaration that passes on
---- Gradle 8 and dies on the next major.
 --- @implNote written before anything that can return early, the bare discovery
 --- render included: settings.gradle applies this file whenever the manifest
---- declares settings plugins, so every run that starts Gradle needs it.
+--- declares settings plugins or settings configure blocks, so every run that
+--- starts Gradle needs it.
 local function write_settings_plugins(config)
   local declared = validation.settings_plugins_of(config)
   if declared == nil then return end
@@ -63,6 +60,10 @@ local function write_settings_plugins(config)
   }
 end
 
+--- @implNote per module, because a module carries its own testClasspath: a
+--- project-wide check would pass while one module's test runtime held a
+--- platform engine and no launcher, which is the declaration that passes on
+--- Gradle 8 and dies on the next major.
 local function refuse_a_module_missing_launcher(module)
   junit.refuse_a_missing_launcher(test_reachable(module.entries))
 end
