@@ -43,6 +43,20 @@ local function refuse_an_unknown_requires(declared)
   end
 end
 
+--- @implNote separate from the two-module cycle below because a self-require
+--- is one module and not two: that check would answer with the same name
+--- twice, which reads as a defect in the refusal rather than in the manifest.
+local function refuse_a_self_require(declared)
+  for index = 1, #declared do
+    local entry = declared[index]
+    for edge = 1, #entry.requires do
+      if entry.requires[edge] == entry.name then
+        error('the module "' .. entry.name .. '" cannot require itself', 0)
+      end
+    end
+  end
+end
+
 --- @implNote catches two modules requiring each other, the shape a user
 --- writes, and nothing longer: a longer cycle is left to Gradle to name.
 --- Refused here because this check needs no Gradle and so runs on every host.
@@ -67,6 +81,11 @@ end
 --- generate and the task context, and `requires` is always a list. A project
 --- with no `[modules]` yields an empty list, which is what keeps the
 --- single-project rendering untouched.
+--- @implNote nothing here type-checks `context.modules` or an entry's
+--- `requires`, because neither can arrive malformed and a guard would be
+--- unreachable: core's `push_modules` builds both tables itself, and
+--- `fr_json_object` refuses a `modules` that is not an object before any
+--- callback runs.
 --- @param context a generate or task context
 --- @return { { name = string, requires = { string } } } in manifest order
 function modules.declared(context)
@@ -78,6 +97,7 @@ function modules.declared(context)
     out[#out + 1] = { name = entry.name, requires = entry.requires }
   end
   refuse_an_unknown_requires(out)
+  refuse_a_self_require(out)
   refuse_a_two_module_cycle(out)
   return out
 end
