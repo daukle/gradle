@@ -20,7 +20,7 @@ daukle.plugin{
        empty string with nothing saying why. 56 of this tree's 77 build files
        apply a plugin that takes one, which is what makes this the credential
        worth passing. DAUKLE_TOKEN is deliberately not here: see
-       REFUSED_ENV in lib/build_file.lua. D-32. ]]
+       REFUSED_ENV in lib/extensions.lua. D-32. ]]
   env = { "GITHUB_TOKEN" },
   --[[ The JDK table is daukle/java's and is read rather than copied: a second
        copy drifts, and a project using both toolchains would download two
