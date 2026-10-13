@@ -364,9 +364,17 @@ project-wide check would pass on the strength of a sibling.
 - **`gradle:discover` on a multi-project build.** Discovery renders the build file twice and
   diffs the task lists; nothing has measured what that reports when the names come from several
   modules at once.
-- **The 34-module project.** 35 generated files is under core's `FR_GENERATE_MAX_FILES` of 64, and
-  nothing has rendered that project. The cap does not apply to a module's build file in any case,
-  which is TASK-written and not part of generation.
+- **NESTED module names.** A `[modules]` key holding a `:` is refused, and this is the limit most
+  likely to be met by a large real build rather than a hypothetical one. **Measured 2026-10-13**:
+  the largest Gradle build in the tree this plugin was written against declares **34 modules, of
+  which only 5 are flat** - 23 are at depth two and 6 at depth three. **A flat list serves 5 of its
+  34.** That project also uses `includeBuild`, which this plugin does not model either.
+- **The 34-module project**, which is that same one. Nothing has rendered it. **Neither core cap is
+  what stops it**: `FR_GENERATE_MAX_FILES` bounds the table a generate callback returns and this
+  plugin's generate returns exactly one file, `settings.gradle`, whatever the module count. A
+  module's build file is TASK-written through `daukle.write`, which has no count cap. **So a
+  60-module project would not meet the cap and neither would a 600-module one**; the remaining
+  limit is the 512-byte path buffer in the write verb.
 - **A module whose source directory does not exist**, which **cannot** be a refusal. `pcall` is in
   the sandbox's `REMOVED` list and `daukle.read` raises, so a plugin cannot probe a path without
   dying on the project that lacks it. The mitigation is that every multi-project case asserts a
