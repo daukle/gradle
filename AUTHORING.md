@@ -275,7 +275,7 @@ others is refused, which is the mistake that shape invites.
 plugin starts unless that plugin declared it, so without the declaration the rendered
 `System.getenv('GITHUB_TOKEN') ?: ''` hands Gradle an empty string with nothing saying why. 56 of
 this tree's 77 build files apply a plugin that takes a token, which is what makes this the one
-worth passing. `DAUKLE_TOKEN` is refused by name in `lib/build_file.lua`: it is daukle's own
+worth passing. `DAUKLE_TOKEN` is refused by name in `lib/extensions.lua`: it is daukle's own
 credential, it is scrubbed, and a refusal is better than an empty string.
 
 **That declaration did nothing until 2026-10-07**, when the measurement below found core never
