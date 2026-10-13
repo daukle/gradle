@@ -323,9 +323,19 @@ matters more here than in a hand-written build, because the user cannot see this
 `[modules]` is core's surface, not this toolchain's, and declaring one switches the writer from one
 build file to a `settings.gradle` that includes every module plus a build file each.
 
-**The redirect is FOUR levels in a module file and three in a single-project one.** A module's
-build file lives at `build/daukle/gradle/<name>/build.gradle`, one directory deeper than the
-derived root, so its source roots are `new File(file('../../../..'), ...)`. The depth is threaded
+**A module name is its directory, with `/` between components**, and the renderer turns it into
+Gradle's project path: `[modules."tools/maven/plugin"]` becomes `include ':tools:maven:plugin'`
+and a `requires` on it becomes `project(':tools:maven:plugin')`. TOML needs the key quoted. **`:`
+is refused and the message names the `/` form**, because two spellings of one module are two names
+a `requires` can disagree about. An undeclared parent such as `tools` becomes an implicit Gradle
+project with no build file, and a declared parent and child are both served.
+
+**The redirect climbs back from each module's own depth.** A module's build file lives at
+`build/daukle/gradle/<name>/build.gradle`, so a flat module's source roots are
+`new File(file('../../../..'), ...)` and `tools/maven/plugin`'s climb six levels. `root_of` in
+`lib/build_file.lua` computes it, and **a wrong count fails silently**: Gradle compiles an empty
+source set at exit 0, which is why `compiles-a-module-three-levels-deep-on-gradle-9` asserts a
+class file and a printed line rather than the generated text. The depth is threaded
 rather than constant because a `{ file = ... }` marker takes the same prefix the source roots do: a
 project-wide `configure` carrying the derived root's own depth resolved to `<repo>/build`, which is
 the defect this cost before it was found.
@@ -370,12 +380,9 @@ project-wide check would pass on the strength of a sibling.
   modules at once.
 - **`compileOnlyApi` is rendered and never exercised.** It shares every line of its path with `api`
   except its row in `lib/configurations.lua`, and no case declares one.
-- **NESTED module names.** A `[modules]` key holding a `:` is refused, and this is the limit most
-  likely to be met by a large real build rather than a hypothetical one. **Measured 2026-10-13**:
-  the largest Gradle build in the tree this plugin was written against declares **34 modules, of
-  which only 5 are flat** - 23 are at depth two and 6 at depth three. **A flat list serves 5 of its
-  34.** That project also uses `includeBuild`, which this plugin does not model either.
-- **The 34-module project**, which is that same one. Nothing has rendered it. **Neither core cap is
+- **`includeBuild` and a settings-level `plugins {}` block.** The largest Gradle build in the tree
+  this plugin was written against uses both, and neither is modelled.
+- **A 34-module project**, that same build's size. Nothing has rendered one. **Neither core cap is
   what stops it**: `FR_GENERATE_MAX_FILES` bounds the table a generate callback returns and this
   plugin's generate returns exactly one file, `settings.gradle`, whatever the module count. A
   module's build file is TASK-written through `daukle.write`, which has no count cap. **So a

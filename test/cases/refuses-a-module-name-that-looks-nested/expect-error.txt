@@ -1,1 +1,1 @@
-the module "app:inner"
+the module "app:inner" holds a ":", which is Gradle's spelling: write "app/inner"

@@ -1,0 +1,14 @@
+schema = 1
+project = "example/stale"
+version = "1.0.0"
+
+[modules."tools/core"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+  [toolchains.gradle.modules."tools/core"]
+  main = "com.example.App"

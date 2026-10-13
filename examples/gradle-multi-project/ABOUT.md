@@ -50,17 +50,13 @@ reason is a migration this feature invites: a single-project project that has be
 already has a full build file at that path, and adding `[modules]` would otherwise leave it in
 place as the root project, compiling everything a second time at exit 0.
 
-**Paths are one level deeper than a single-project build**, which is why the generated redirect is
-four levels rather than three. Module output lands at
+**Paths are one level deeper than a single-project build for a flat module like these two**, which
+is why the generated redirect is four levels rather than three; a nested module climbs one more per
+component. Module output lands at
 `build/daukle/gradle/<module>/build/classes/java/main/`, and `{ file = ... }` markers in a module's
 build file resolve against the project root regardless.
 
 ## What this example cannot show
-
-**A nested module.** A module name is one flat directory: `greeting` is legal and
-`greeting/core` is refused by name, because the generated layout gives each module a sibling
-directory under the derived root and a name holding a separator would escape it. A real Gradle
-`include 'a:b'` has no spelling here.
 
 **`includeBuild`, which is a composite build and not a multi-project one.** Gradle treats the two
 as different mechanisms, and nothing in `[modules]` reaches the first.

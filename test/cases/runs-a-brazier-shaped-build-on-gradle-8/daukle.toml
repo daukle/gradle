@@ -1,0 +1,22 @@
+schema = 1
+project = "example/brazier"
+version = "1.0.0"
+
+[modules.core]
+
+[modules."interop/core"]
+
+[modules."tools/core"]
+requires = ["core"]
+
+[modules."tools/maven/plugin"]
+requires = ["tools/core", "interop/core"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+  [toolchains.gradle.modules."tools/maven/plugin"]
+  main = "com.example.plugin.App"

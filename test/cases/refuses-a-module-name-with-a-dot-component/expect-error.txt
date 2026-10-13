@@ -1,0 +1,1 @@
+the module "tools/./core" holds a "." path component
