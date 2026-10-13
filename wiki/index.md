@@ -32,12 +32,15 @@ release = "8"
 | `release` | the Java source and target level |
 | `main` | the class `gradle:run` runs. It also applies Gradle's `application` plugin, which is where a packaging plugin reads `Main-Class` from |
 | `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults |
-| `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven` |
+| `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`, rendering `implementation` and `testImplementation` |
+| `compileOnly`, `runtimeOnly`, `testCompileOnly`, `testRuntimeOnly` | the Gradle configurations of the same names. **`compileOnly` is not on the runtime classpath and `runtimeOnly` is not on the compile classpath**, which is why they are separate keys rather than one |
+| `annotationProcessor`, `testAnnotationProcessor` | javac's `-processorpath`, which is not the compile classpath. A processor usually wants its annotations on `compileOnly` too, and naming the same jar in both is correct |
+| `api`, `compileOnlyApi` | the two configurations `java-library` provides. Declaring either switches that file to `java-library`, **for that module alone**. `api` is carried to a module that `requires` this one; `classpath` is not |
 | `plugins` | third-party Gradle plugins to apply, each a `{ id, version }` |
 | `pluginClasspath` | the pinned jars those plugins are applied FROM, normally written by `daukle/maven` |
 | `configure` | one block per extension a plugin registers |
 | `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, a classpath and `main` belong here once a project has modules |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main` and **every dependency configuration above** belong here once a project has modules |
 
 ## Tasks
 
