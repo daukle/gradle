@@ -63,6 +63,7 @@ daukle gradle:discover           # what your applied plugins contribute
 | `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
 | `configure` | a free-form tree, one Groovy block per extension |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `classpath` and `testClasspath`, and when the project declares modules these are REFUSED project-wide rather than applied to all of them |
 
 ## The tasks a plugin contributes
 
@@ -302,6 +303,60 @@ roots against the wrong directory, finds nothing, compiles nothing and exits 0 o
 comment recording that Gradle 8.11.1 read its sources as Cp1252 on Windows where 7.6.4 read them as
 UTF-8, so an unpinned encoding makes the compiled bytes a property of whichever build ran. It
 matters more here than in a hand-written build, because the user cannot see this file.
+
+## A multi-project build
+
+`[modules]` is core's surface, not this toolchain's, and declaring one switches the writer from one
+build file to a `settings.gradle` that includes every module plus a build file each.
+
+**The redirect is FOUR levels in a module file and three in a single-project one.** A module's
+build file lives at `build/daukle/gradle/<name>/build.gradle`, one directory deeper than the
+derived root, so its source roots are `new File(file('../../../..'), ...)`. The depth is threaded
+rather than constant because a `{ file = ... }` marker takes the same prefix the source roots do: a
+project-wide `configure` carrying the derived root's own depth resolved to `<repo>/build`, which is
+the defect this cost before it was found.
+
+**A module usually needs no toolchain block at all.** It defaults to `<name>/src/main/java`,
+`<name>/src/main/resources`, `<name>/src/test/java` and `<name>/src/test/resources`, which is the
+shape **117 of this tree's 185 subproject build files** rely on: they declare nothing and take the
+convention.
+
+**Project-wide keys are rendered into EVERY module rather than into `allprojects {}`.** The
+duplication costs a reader nothing, because the renderer is the only writer, and it avoids a second
+configuration mechanism to learn. `allprojects {}` would also reach the root project, which has no
+sources and would gain a Java plugin and a source set for them.
+
+**The root build file exists to hold the buildscript classpath, and it is written on every run.**
+It was conditional first, and the measurement that changed it was the migration this feature
+invites: a single-project project already built once has a full build file at that path, and adding
+`[modules]` would leave it as the ROOT PROJECT of the new build, with its own source roots, its own
+jar and a stale `daukleRun`, all at exit 0. **No case can catch that**, because the harness wipes
+its sandbox per case and a two-run shape does not exist, so the file is written unconditionally and
+carries only its header when there is no classpath.
+
+**A two-module `requires` cycle is refused from the manifest; a longer one is Gradle's to name.**
+Gradle fails at task-graph build with *"Circular dependency between the following tasks"* and names
+them, so reproducing it here would mean a graph walk to re-derive a diagnostic that already exists.
+
+**`gradle:run` is refused when two modules declare `main`**, by name and naming both. The
+alternative is picking one, which is right half the time and silent the other half.
+
+**The launcher check runs per module, not once for the project.** A module carries its own
+`testClasspath`, so a missing `junit-platform-launcher` is a property of one module and a single
+project-wide check would pass on the strength of a sibling.
+
+### What this does not cover
+
+- **`gradle:discover` on a multi-project build.** Discovery renders the build file twice and
+  diffs the task lists; nothing has measured what that reports when the names come from several
+  modules at once.
+- **The 34-module project.** 35 generated files is under core's `FR_GENERATE_MAX_FILES` of 64, and
+  nothing has rendered that project. The cap does not apply to a module's build file in any case,
+  which is TASK-written and not part of generation.
+- **A module whose source directory does not exist**, which **cannot** be a refusal. `pcall` is in
+  the sandbox's `REMOVED` list and `daukle.read` raises, so a plugin cannot probe a path without
+  dying on the project that lacks it. The mitigation is that every multi-project case asserts a
+  per-module output file, and a module that compiled nothing produces none.
 
 ## Why the launcher jar rather than `bin/gradle`
 

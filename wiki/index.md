@@ -37,6 +37,7 @@ release = "8"
 | `pluginClasspath` | the pinned jars those plugins are applied FROM, normally written by `daukle/maven` |
 | `configure` | one block per extension a plugin registers |
 | `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, a classpath and `main` belong here once a project has modules |
 
 ## Tasks
 
@@ -93,6 +94,36 @@ relocated under that prefix, and a `Main-Class` the `application` plugin supplie
 runs. `maven:resolve` must run **before** the `plugins` block is added, because a plugin is applied
 from a pinned jar and there is nothing to apply until one exists.
 
+## Several modules, one depending on another
+
+`[modules]` is declared at the top level, because it is what a consumer resolves rather than
+anything a toolchain owns. Declaring one makes daukle write a `settings.gradle` including every
+module and a build file for each:
+
+```toml
+[modules.greeting]
+
+[modules.app]
+requires = ["greeting"]
+
+[toolchains.gradle]
+version = "8.13"
+
+[toolchains.gradle.modules.app]
+main = "com.example.App"
+```
+
+`daukle gradle:run` compiles `greeting` first, puts it on `app`'s compile classpath as
+`implementation project(':greeting')` and runs `app`. A module needs no toolchain block at all
+unless it overrides something: its sources default to `<name>/src/main/java` and its tests to
+`<name>/src/test/java`. Once a project declares modules, `main`, a source root and a classpath
+belong to a module and are **refused project-wide**, because applying them to every module at once
+is the silent version. Two modules declaring `main` is refused by name, and so is a `requires`
+naming no module, or two modules requiring each other.
+
+**This needs daukle 0.7.0.** An older daukle does not publish the module list to a plugin at all,
+so the plugin refuses rather than quietly building only the root.
+
 ## What it does not do
 
 Build logic written as CODE is not modellable: a task with a body, a `tasks.withType(...)` that
@@ -101,5 +132,6 @@ extension block are all fine, because each of those is data. A raw Groovy escape
 **refused by name**, because it readmits `build.gradle` through the back door with you editing
 Groovy inside a TOML string.
 
-A multi-project build is not modelled: the generated `settings.gradle` names one root project and
-nothing here answers an `include ':app'`.
+A module name is one flat directory, so `include 'a:b'` has no spelling: a nested module is refused
+by name. `includeBuild`, which is a composite build rather than a multi-project one, is not
+modelled either, and a module's plugins and `configure` tree are the project's rather than its own.
