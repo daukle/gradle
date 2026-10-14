@@ -37,6 +37,7 @@ daukle.plugin{
 
 local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
+local settings_file = daukle.require("lib/settings_file")
 local discovery = daukle.require("lib/discovery")
 local module_graph = daukle.require("lib/modules")
 local validation = daukle.require("lib/validation")
@@ -57,9 +58,9 @@ daukle.toolchain{
   generate = function(context)
     local config = validation.config_of(context)
     validation.validated(context, config)
-    return { [SETTINGS_FILE] = build_file.settings(validation.project_name(context),
-                                                   module_graph.declared(context),
-                                                   validation.settings_plugins_of(config) ~= nil) }
+    return { [SETTINGS_FILE] = settings_file.settings(validation.project_name(context),
+                                                    module_graph.declared(context),
+                                                    validation.settings_plugins_of(config) ~= nil) }
   end,
 }
 

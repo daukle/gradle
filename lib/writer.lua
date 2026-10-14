@@ -1,4 +1,5 @@
 local build_file = daukle.require("lib/build_file")
+local settings_file = daukle.require("lib/settings_file")
 local junit = daukle.require("lib/junit")
 local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
@@ -54,9 +55,9 @@ local function write_settings_plugins(config)
   local declared = validation.settings_plugins_of(config)
   if declared == nil then return end
   daukle.write{
-    path = build_file.SETTINGS_SCRIPT,
-    text = build_file.settings_plugins(paths_of(declared.entries), declared.plugins,
-                                       declared.configure),
+    path = settings_file.SCRIPT,
+    text = settings_file.settings_plugins(paths_of(declared.entries), declared.plugins,
+                                          declared.configure),
   }
 end
 
