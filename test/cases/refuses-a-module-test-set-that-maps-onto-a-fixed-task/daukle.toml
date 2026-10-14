@@ -1,0 +1,13 @@
+schema = 1
+project = "example/sets"
+version = "1.0.0"
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+
+[toolchains.gradle.modules.app.sourceSets.discover]
+test = true
