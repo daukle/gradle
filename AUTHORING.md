@@ -59,6 +59,7 @@ daukle gradle:discover           # what your applied plugins contribute
 | `release` | Java source and target level, e.g. `"8"` |
 | `main` | the class `gradle:run` runs, and the reason `application` is applied |
 | `sourcesJar` | `true` renders `java { withSourcesJar() }` into every project file, and `gradle:sources-jar` runs it. The task refuses by name while this is unset, because Gradle has no `sourcesJar` task to run until it is |
+| `sourceSets` | one block per source set, keyed by name: `test`, `sourceRoot`, `resourceRoot`, `classpath`, `compileOnly`, `runtimeOnly`, `annotationProcessor`. With `test = true` the set sees main the way `test` does and gets a `Test` task and a `gradle:<kebab-name>` daukle task. Not Gradle's `testing { suites {} }`, which adds a JUnit dependency no build here can resolve; see **Source sets** below |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`. They render `implementation` and `testImplementation`, and they keep these names rather than the configuration's because they are released |
 | `compileOnly`, `runtimeOnly` | pinned entries rendering the Gradle configuration of the same name. `compileOnly` is **not** on the runtime classpath and `runtimeOnly` is **not** on the compile classpath, which is the whole reason they are separate keys |
 | `testCompileOnly`, `testRuntimeOnly` | the same two for tests. **A JUnit launcher belongs in `testRuntimeOnly`**, which is where Gradle's own documentation puts it, and the launcher check looks there |
@@ -69,7 +70,7 @@ daukle gradle:discover           # what your applied plugins contribute
 | `configure` | a free-form tree, one Groovy block per extension |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for `Settings` rather than for a project: plugins applied in the settings phase, the pinned jars they come from, and their extension blocks. See **Settings plugins** below |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them. **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds`, `sourceSets` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them. **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
 | `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
 | `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
 
@@ -79,7 +80,8 @@ builds do not take it: they are separate builds with versions of their own. Sinc
 
 ## The tasks a plugin contributes
 
-`plugin.lua` declares seven tasks of its own and a Gradle plugin contributes its own. **The two
+`plugin.lua` declares seven tasks of its own, plus one per test set (see **Source sets**), and a
+Gradle plugin contributes its own. **The two
 halves are kept apart**, because only one of them needs Gradle:
 
 ```sh
@@ -434,6 +436,21 @@ project-wide check would pass on the strength of a sibling.
   the sandbox's `REMOVED` list and `daukle.read` raises, so a plugin cannot probe a path without
   dying on the project that lacks it. The mitigation is that every multi-project case asserts a
   per-module output file, and a module that compiled nothing produces none.
+
+## Source sets
+
+```toml
+[toolchains.gradle.sourceSets.integrationTest]
+test = true          # sees main, gets a Test task and `gradle:integration-test`
+```
+
+A set's roots default to `src/<name>/java` and `src/<name>/resources`, and its four dependency
+keys render `<name>Implementation` and its siblings. **Gradle's `testing { suites {} }` is not
+rendered**: every suite but the built-in one adds an external `junit-jupiter`, and on 8.13 and
+9.6.0 a launcher too, which a build with no repository cannot resolve, while a plain source set
+plus a registered `Test` task builds on 7.6.4, 8.13 and 9.6.0 alike. **A `daukle.lua`-only project
+gets the sets but no `gradle:<set>` task**, because the names are read from `daukle.toml`, as
+`tasks` is. Sets in an included build are refused.
 
 ## Included builds
 
