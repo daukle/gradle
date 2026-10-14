@@ -51,8 +51,8 @@ end
 --- render included: settings.gradle applies this file whenever the manifest
 --- declares settings plugins or settings configure blocks, so every run that
 --- starts Gradle needs it.
-local function write_settings_plugins(config)
-  local declared = validation.settings_plugins_of(config)
+local function write_settings_plugins(config, owners)
+  local declared = validation.settings_plugins_of(config, owners)
   if declared == nil then return end
   daukle.write{
     path = settings_file.SCRIPT,
@@ -93,7 +93,8 @@ local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
   validation.validated(context, config)
-  write_settings_plugins(config)
+  local composite = validation.composite_of(context, config)
+  write_settings_plugins(config, composite.owners)
   local bare = options ~= nil and options.bare or false
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]
@@ -109,7 +110,9 @@ local function write_build_file(context, config, options)
                       or paths_of(validation.checked_classpath(config.pluginClasspath,
                                                                "pluginClasspath"))
   local project_wide = { release = module_graph.string_key(config, "release", nil),
-                         plugins = bare and {} or validation.checked_plugins(config.plugins),
+                         plugins = bare and {}
+                                   or validation.checked_plugins(config.plugins, "plugins",
+                                                                 composite.owners),
                          configure = configure,
                          discover = options ~= nil and options.discover or nil }
 
@@ -126,7 +129,7 @@ local function write_build_file(context, config, options)
 
   daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
 
-  local modules = validation.checked_modules(config, declared)
+  local modules = validation.checked_modules(config, declared, composite.read)
   for index = 1, #modules do
     local module = modules[index]
     refuse_a_module_missing_launcher(module)

@@ -1,0 +1,1 @@
+the included builds "tools-logic" and "tools/logic" are both named "tools-logic" in Gradle

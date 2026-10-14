@@ -1,0 +1,1 @@
+"builds.logic.gradlePlugins[1]" needs an "id" and an "implementationClass"

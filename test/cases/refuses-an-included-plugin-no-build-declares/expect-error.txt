@@ -1,0 +1,1 @@
+"plugins[1]" needs an "id" and a "version": the id is what Gradle applies and the version is what the pinned jars are checked against, or name a plugin an included build declares in "gradlePlugins"

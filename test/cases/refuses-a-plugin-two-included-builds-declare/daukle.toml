@@ -1,0 +1,17 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+[toolchains.gradle.builds.a]
+gradlePlugins = [{ id = "example.hello", implementationClass = "example.Hello" }]
+
+[toolchains.gradle.builds.b]
+gradlePlugins = [{ id = "example.hello", implementationClass = "example.Hello" }]

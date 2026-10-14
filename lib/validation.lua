@@ -2,6 +2,7 @@ local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
 local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
+local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
 
 local DEFAULT_JDK = "17"
@@ -98,7 +99,7 @@ end
 --- classpath is refused by `daukle sync` and not only by the task that would
 --- have written its file. One function rather than a second loop beside the
 --- writer's: two loops over the same blocks would drift.
-local function checked_modules(config, declared)
+local function checked_modules(config, declared, read)
   local blocks = module_graph.blocks_of(config, declared)
   local checked = {}
   for index = 1, #declared do
@@ -113,6 +114,7 @@ local function checked_modules(config, declared)
       layout = module_graph.layout_of(name, block),
       main = string_key(block, "main", nil, scope .. "main"),
       entries = entries_of_configurations(block, scope),
+      required_builds = builds.required(block, scope .. "requiresBuilds", read),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -124,20 +126,43 @@ local function project_name(context)
   return (name:match("([^/]+)$") or name)
 end
 
-local function checked_plugins(entries, key)
+local function checked_builds(context, config)
+  local read = builds.read(config, module_graph.declared(context), project_name(context))
+  local release = string_key(config, "release", nil)
+  local checked = {}
+  for index = 1, #read do
+    local build = read[index]
+    local scope = "builds." .. build.name .. "."
+    checked[index] = { name = build.name, gradle_name = build.gradle_name,
+      plugin_build = #build.gradle_plugins > 0, gradle_plugins = build.gradle_plugins,
+      layout = module_graph.layout_of(build.name, build.block, "builds"),
+      release = string_key(build.block, "release", release, scope .. "release"),
+      entries = entries_of_configurations(build.block, scope) }
+  end
+  return checked, read
+end
+
+local function checked_plugins(entries, key, owners)
   key = key or "plugins"
-  if entries == nil then return {} end
+  if entries == nil then return {}, {} end
   if type(entries) ~= "table" then
     error('"' .. key .. '" must be a list of entries, not a ' .. type(entries), 0)
   end
+  local pinned, included = {}, {}
   for index = 1, #entries do
     local entry = entries[index]
-    if type(entry) ~= "table" or type(entry.id) ~= "string" or type(entry.version) ~= "string" then
+    local named = type(entry) == "table" and type(entry.id) == "string"
+    if named and type(entry.version) == "string" then
+      pinned[#pinned + 1] = entry
+    elseif named and entry.version == nil and owners and owners[entry.id] ~= nil then
+      included[#included + 1] = entry.id
+    else
       error('"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
-            .. " applies and the version is what the pinned jars are checked against", 0)
+            .. " applies and the version is what the pinned jars are checked against, or name a"
+            .. ' plugin an included build declares in "gradlePlugins"', 0)
     end
   end
-  return entries
+  return pinned, included
 end
 
 --[[ The jar a plugin is applied from is pinned somewhere else entirely, by
@@ -170,9 +195,9 @@ end
 
 --- One plugin list and the classpath it is applied from, checked together:
 --- the project's `plugins` and `pluginClasspath`, or the settings twins.
---- @return the plugin entries and the pinned classpath entries
-local function checked_plugin_set(config, plugins_key, classpath_key)
-  local plugins = checked_plugins(config[plugins_key], plugins_key)
+--- @return the pinned plugin entries, the pinned classpath entries and the included ids
+local function checked_plugin_set(config, plugins_key, classpath_key, owners)
+  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
   local jars = checked_classpath(config[classpath_key], classpath_key)
   if #plugins > 0 and #jars == 0 then
     error('"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
@@ -181,7 +206,23 @@ local function checked_plugin_set(config, plugins_key, classpath_key)
           .. plugins_key .. '" block in the manifest, then add the block', 0)
   end
   refuse_a_version_no_pin_carries(plugins, jars, plugins_key, classpath_key)
-  return plugins, jars
+  return plugins, jars, included
+end
+
+local function composite_of(context, config)
+  local checked, read = checked_builds(context, config)
+  local owners = builds.owners(read)
+  local plugin_builds, library_builds = {}, {}
+  for index = 1, #checked do
+    local list = checked[index].plugin_build and plugin_builds or library_builds
+    list[#list + 1] = checked[index].name
+  end
+  local _, _, settings_ids = checked_plugin_set(config, "settingsPlugins",
+                                                "settingsPluginClasspath", owners)
+  local _, _, project_ids = checked_plugin_set(config, "plugins", "pluginClasspath", owners)
+  return { builds = checked, read = read, owners = owners, plugin_builds = plugin_builds,
+           library_builds = library_builds, settings_ids = settings_ids,
+           project_ids = project_ids, required = builds.required(config, "requiresBuilds", read) }
 end
 
 --- @implNote core publishes `context.modules` as a table, empty when the
@@ -211,13 +252,14 @@ local function validated(context, config)
   layout_of(config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
-  checked_modules(config, declared)
+  local record = composite_of(context, config)
+  checked_modules(config, declared, record.read)
   entries_of_configurations(config, "")
   string_key(config, "release", nil)
   string_key(config, "main", nil)
 
-  checked_plugin_set(config, "plugins", "pluginClasspath")
-  checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath")
+  checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)
+  checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath", record.owners)
   --[[ Rendered and thrown away, so a tree this refuses is refused by `daukle
        check` rather than by the task that would have written it. Running the
        real renderer is what stops the refusal drifting from the writer. ]]
@@ -230,8 +272,9 @@ end
 --- settings.gradle applies the script. A configure block needs no plugin:
 --- `buildCache` and `toolchainManagement` are Gradle's own.
 --- @return { plugins = table, entries = table, configure = table|nil }|nil
-local function settings_plugins_of(config)
-  local plugins, entries = checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath")
+local function settings_plugins_of(config, owners)
+  local plugins, entries = checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath",
+                                              owners)
   local configure = config.settingsConfigure
   local configures = type(configure) == "table" and next(configure) ~= nil
   if #plugins == 0 and not configures then return nil end
@@ -248,6 +291,8 @@ return {
   checked_classpath = checked_classpath,
   entries_of_configurations = entries_of_configurations,
   checked_modules = checked_modules,
+  checked_builds = checked_builds,
+  composite_of = composite_of,
   project_name = project_name,
   checked_plugins = checked_plugins,
   settings_plugins_of = settings_plugins_of,

@@ -23,7 +23,7 @@ end
 --- renders a path that writes a build file over its parent's, and ".." because
 --- core refuses it only at write time, in words that name a path rather than
 --- the module the name came from.
-local function problem_of(name)
+function modules.problem_of(name)
   if name == "" then return "is empty" end
   if string.find(name, "%c") ~= nil then return "holds a control character" end
   if string.find(name, "\\", 1, true) ~= nil then return 'holds a "\\"' end
@@ -38,7 +38,7 @@ local function problem_of(name)
 end
 
 local function refuse_a_name_this_toolchain_cannot_model(name)
-  local problem = problem_of(name)
+  local problem = modules.problem_of(name)
   if problem ~= nil then
     error('the module "' .. name .. '" ' .. problem .. '. A module name is its directory, with'
           .. ' "/" between components', 0)
@@ -182,10 +182,11 @@ end
 --- of this tree's 185 subproject build files rely on: they declare nothing and
 --- take the convention. One function for both so the four defaults live in one
 --- table: a second copy drifts the first time a fifth root is added.
-function modules.layout_of(name, block)
+function modules.layout_of(name, block, kind)
   block = block or {}
+  kind = kind or "modules"
   local prefix = name ~= nil and (name .. "/") or ""
-  local scope = name ~= nil and ("modules." .. name .. ".") or ""
+  local scope = name ~= nil and (kind .. "." .. name .. ".") or ""
   local function dirs_for(key)
     return { modules.string_key(block, key, prefix .. DEFAULT_SUFFIX[key], scope .. key) }
   end
@@ -197,7 +198,7 @@ end
 
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
-  main = true,
+  main = true, requiresBuilds = true,
 }
 
 for index = 1, #configurations.all do

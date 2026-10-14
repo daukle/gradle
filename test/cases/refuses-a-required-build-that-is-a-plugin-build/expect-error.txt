@@ -1,0 +1,1 @@
+"requiresBuilds" names "logic", which is a plugin build: a plugin build is applied through "plugins", not depended on
