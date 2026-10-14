@@ -1,0 +1,16 @@
+schema = 1
+project = "example/sets"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+
+[toolchains.gradle.sourceSets.smokeIT]
+test = true
+
+[toolchains.gradle.sourceSets.smokeIt]
+test = true

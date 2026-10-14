@@ -145,11 +145,18 @@ end
 function source_sets.refuse_task_collisions(config, modules)
   local owners = { #modules == 0 and source_sets.read(config, nil) or {} }
   for _, module in ipairs(modules) do owners[#owners + 1] = module.source_sets end
-  local mapped = {}
+  local mapped, test_sets = {}, {}
   for _, entry in ipairs(discovery.mapped(config.tasks)) do mapped[entry.daukle] = entry.gradle end
   for _, sets in ipairs(owners) do
     for _, set in ipairs(sets) do
       local task = discovery.task_name(set.name)
+      local other = test_sets[task]
+      if set.test and other ~= nil and other ~= set.name then
+        error('"sourceSets.' .. other .. '" and "sourceSets.' .. set.name .. '" both run as'
+              .. ' "gradle:' .. task .. '", and a duplicate task name is fatal on every'
+              .. ' command in the project', 0)
+      end
+      if set.test then test_sets[task] = set.name end
       if set.test and discovery.STATIC[task] then
         error('"sourceSets.' .. set.name .. '" runs as "gradle:' .. task .. '", which this'
               .. ' toolchain declares itself', 0)
@@ -191,9 +198,13 @@ end
 
 --- One set's entry inside `sourceSets {}`. A test set sees main's classes the
 --- way Gradle's own `test` does; a plain set sees nothing.
+---
+--- @implNote the name is always a quoted string, never a bare identifier: a
+--- bare `native {` is a Groovy parse error, and a bare `all {` calls the
+--- container's own all(Closure) and re-points main instead of creating a set.
 function source_sets.entry(set, depth)
   local lines = {
-    "  " .. set.name .. " {",
+    "  create(" .. groovy.quoted(set.name) .. ") {",
     "    java      { srcDirs = " .. groovy.src_dirs(set.java, depth) .. " }",
     "    resources { srcDirs = " .. groovy.src_dirs(set.resources, depth) .. " }",
   }
@@ -243,8 +254,9 @@ function source_sets.test_task_lines(sets)
     if set.test then
       lines[#lines + 1] = ""
       lines[#lines + 1] = "tasks.register(" .. groovy.quoted(set.name) .. ", Test) {"
-      lines[#lines + 1] = "  testClassesDirs = sourceSets." .. set.name .. ".output.classesDirs"
-      lines[#lines + 1] = "  classpath = sourceSets." .. set.name .. ".runtimeClasspath"
+      local reference = "sourceSets[" .. groovy.quoted(set.name) .. "]"
+      lines[#lines + 1] = "  testClassesDirs = " .. reference .. ".output.classesDirs"
+      lines[#lines + 1] = "  classpath = " .. reference .. ".runtimeClasspath"
       lines[#lines + 1] = "  useJUnitPlatform()"
       lines[#lines + 1] = "}"
     end

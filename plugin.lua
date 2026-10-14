@@ -227,6 +227,7 @@ end
 for _, name in ipairs(source_sets.declared_test_names(manifest_gradle())) do
   local task = discovery.task_name(name)
   if not discovery.STATIC[task] and not registered[task] then
+    registered[task] = true
     daukle.task{ name = "gradle:" .. task, run = gradle_runner(name) }
   end
 end

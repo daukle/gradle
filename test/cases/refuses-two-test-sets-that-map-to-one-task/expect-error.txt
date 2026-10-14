@@ -1,0 +1,1 @@
+"sourceSets.smokeIT" and "sourceSets.smokeIt" both run as "gradle:smoke-it"
