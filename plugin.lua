@@ -59,11 +59,10 @@ daukle.toolchain{
     local config = validation.config_of(context)
     validation.validated(context, config)
     local record = validation.composite_of(context, config)
+    local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
     return { [SETTINGS_FILE] = settings_file.settings(validation.project_name(context),
                                                     module_graph.declared(context),
-                                                    validation.settings_plugins_of(config, record.owners)
-                                                    ~= nil,
-                                                    record) }
+                                                    applies_settings_plugins, record) }
   end,
 }
 
