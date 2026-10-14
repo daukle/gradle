@@ -450,7 +450,10 @@ rendered**: every suite but the built-in one adds an external `junit-jupiter`, a
 9.6.0 a launcher too, which a build with no repository cannot resolve, while a plain source set
 plus a registered `Test` task builds on 7.6.4, 8.13 and 9.6.0 alike. **A `daukle.lua`-only project
 gets the sets but no `gradle:<set>` task**, because the names are read from `daukle.toml`, as
-`tasks` is. Sets in an included build are refused.
+`tasks` is. Sets in an included build are refused. **A test set's JUnit launcher belongs in its
+own `runtimeOnly`**, the counterpart of `testRuntimeOnly`; one on main's `classpath`,
+`runtimeOnly` or `api` also reaches it, and the launcher check accepts all four. A set name is
+letters and digits, at most 64 of them.
 
 ## Included builds
 

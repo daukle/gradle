@@ -11,6 +11,8 @@ gradle = "./plugins"
 release = "8"
 version = "8.13"
 
+[toolchains.gradle.sourceSets.bench]
+
 [toolchains.gradle.sourceSets.integrationTest]
 test = true
 

@@ -1,0 +1,1 @@
+"sourceSets" must be a table of source set blocks keyed by name, not a number
