@@ -71,7 +71,7 @@ end
 --- @param layout   { main = {java, resources}, test = {java, resources} }
 --- @param jars     { compile = {path...}, test = {path...}, plugin = {path...} }
 --- @param options  { release, main, plugins, configure, requires, included_plugins,
----                   required_builds, gradle_plugins, group }
+---                   required_builds, gradle_plugins, group, version }
 --- @param depth    the `file('...')` prefix the source roots resolve against
 local function render_project(layout, jars, options, depth)
   local requires = options.requires or {}
@@ -115,6 +115,10 @@ local function render_project(layout, jars, options, depth)
   lines[#lines + 1] = ""
   if options.group ~= nil then
     lines[#lines + 1] = "group = " .. groovy.quoted(options.group)
+    lines[#lines + 1] = ""
+  end
+  if options.version ~= nil then
+    lines[#lines + 1] = "version = " .. groovy.quoted(options.version)
     lines[#lines + 1] = ""
   end
 

@@ -68,9 +68,13 @@ daukle gradle:discover           # what your applied plugins contribute
 | `configure` | a free-form tree, one Groovy block per extension |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for `Settings` rather than for a project: plugins applied in the settings phase, the pinned jars they come from, and their extension blocks. See **Settings plugins** below |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them. **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
 | `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
 | `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
+
+**The manifest's own `version` is rendered as Gradle's `version`** into every project file, so a
+jar is named `<name>-<version>.jar` exactly as a Gradle build that sets one names it. Included
+builds do not take it: they are separate builds with versions of their own. Since `1.11.0`.
 
 ## The tasks a plugin contributes
 

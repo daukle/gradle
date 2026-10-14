@@ -15,7 +15,7 @@ run**, so the output is evidence that the dependency was bundled and not merely 
 
 | task | what it does |
 | --- | --- |
-| `daukle gradle:shadow-jar` | writes `build/daukle/gradle/build/libs/example-gradle-fat-jar-all.jar` |
+| `daukle gradle:shadow-jar` | writes `build/daukle/gradle/build/libs/example-gradle-fat-jar-1.0.0-all.jar` |
 | `daukle gradle:run-shadow` | runs that jar |
 | `daukle gradle:jar` | the ordinary jar, with no dependency in it |
 | `daukle maven:resolve --resolve` | rewrites `daukle/maven/classpath.lua` from the coordinates |

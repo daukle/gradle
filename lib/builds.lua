@@ -58,20 +58,6 @@ local function gradle_plugins_of(name, block)
   return entries
 end
 
---- @implNote core reads only `requires` in its `[modules.<n>]` and hands every
---- other key on unread, so only this plugin can see a misplaced one there.
-local function refuse_requires_builds_in_core_modules(manifest)
-  local modules = manifest ~= nil and manifest.modules or nil
-  if type(modules) ~= "table" then return end
-  for name, block in pairs(modules) do
-    if type(block) == "table" and block.requiresBuilds ~= nil then
-      error('"modules.' .. name .. '.requiresBuilds" is in core\'s "[modules.' .. name .. ']",'
-            .. ' which this toolchain never reads: write it under "[toolchains.gradle.modules.'
-            .. name .. ']"', 0)
-    end
-  end
-end
-
 local function refuse_an_unknown_key(name, block)
   for key in pairs(block) do
     if KEYS[key] == nil then
@@ -90,7 +76,7 @@ end
 
 --- @param manifest the parsed manifest, nil for a daukle.lua project
 function builds.read(config, declared, project_name, manifest)
-  refuse_requires_builds_in_core_modules(manifest)
+  module_graph.refuse_toolchain_keys_in_core_modules(manifest)
   local blocks = config.builds
   if blocks == nil then return {} end
   if type(blocks) ~= "table" then

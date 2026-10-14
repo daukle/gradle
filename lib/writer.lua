@@ -131,6 +131,7 @@ local function write_build_file(context, config, options)
                       or paths_of(validation.checked_classpath(config.pluginClasspath,
                                                                "pluginClasspath"))
   local project_wide = { release = module_graph.string_key(config, "release", nil),
+                         version = context.version,
                          plugins = bare and {}
                                    or validation.checked_plugins(config.plugins, "plugins",
                                                                  composite_record.owners),

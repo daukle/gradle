@@ -1,0 +1,13 @@
+schema = 1
+project = "example/misplaced"
+version = "1.0.0"
+
+[modules.app]
+requires = []
+main = "app.Main"
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"

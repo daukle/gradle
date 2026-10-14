@@ -224,6 +224,26 @@ for index = 1, #configurations.all do
   MODULE_KEYS[configurations.all[index].key] = true
 end
 
+--- @implNote core reads only `requires` in its `[modules.<n>]` and hands every
+--- other key on unread, so a module key written there does nothing and only
+--- this plugin can see it (D-128). A daukle.lua project has no parsed manifest
+--- here and goes unchecked.
+function modules.refuse_toolchain_keys_in_core_modules(manifest)
+  local blocks = manifest ~= nil and manifest.modules or nil
+  if type(blocks) ~= "table" then return end
+  for name, block in pairs(blocks) do
+    if type(block) == "table" then
+      for key in pairs(block) do
+        if MODULE_KEYS[key] then
+          error('"modules.' .. name .. '.' .. key .. '" is in core\'s "[modules.' .. name .. ']",'
+                .. ' which this toolchain never reads: write it under'
+                .. ' "[toolchains.gradle.modules.' .. name .. ']"', 0)
+        end
+      end
+    end
+  end
+end
+
 --- The toolchain's own per-module blocks, checked against the graph.
 function modules.blocks_of(config, declared)
   local blocks = config.modules

@@ -7,6 +7,8 @@ plugins {
   id 'application'
 }
 
+version = '1.0.0'
+
 sourceSets {
   main {
     java      { srcDirs = [new File(file('../../../..'), 'alpha/java')] }

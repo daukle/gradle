@@ -1,0 +1,16 @@
+schema = 1
+project = "example/misplaced"
+version = "1.0.0"
+
+[modules.app]
+requires = []
+
+[[modules.app.classpath]]
+url = "https://repo1.maven.org/maven2/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.jar"
+sha256 = "7b96bf3ee68949abb5bc465559ac270e0551596fa34523fddf890ec418dde13c"
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"

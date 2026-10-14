@@ -45,6 +45,9 @@ release = "8"
 | `builds` | included builds, Gradle's composite builds, keyed by the build's directory. A build declaring `gradlePlugins`, each a `{ id, implementationClass }`, is a plugin build whose plugins a versionless `plugins` or `settingsPlugins` entry applies; one without is a library build. A block takes the source roots, `release` and every dependency configuration, and refuses any other key by name |
 | `requiresBuilds` | the library builds a project depends on, by name. With modules it goes in `[toolchains.gradle.modules.<name>]`, and core's `[modules.<name>]` refuses it |
 
+There is no key for the project's version: the `version` at the top of `daukle.toml` becomes
+Gradle's, so `gradle:jar` writes `<name>-<version>.jar` the way Gradle does when a build sets one.
+
 ## Tasks
 
 `gradle:classes`, `gradle:test`, `gradle:jar`, `gradle:run`, `gradle:version` and
