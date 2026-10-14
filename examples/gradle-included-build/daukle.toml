@@ -10,6 +10,7 @@ sha256 = "3789865c266eb53fafcf7300d77a24461170c615195d92d0ddf88078c556e23e"
 
 [plugins]
 gradle = { resolver = "github", coordinate = "daukle/gradle@^1.9.0" }
+maven  = { resolver = "github", coordinate = "daukle/maven@^1.2.0" }
 
 [toolchains.gradle]
 version = "9.6.0"
@@ -18,3 +19,10 @@ tasks = ["hello"]
 
 [toolchains.gradle.builds."build-logic"]
 gradlePlugins = [{ id = "example.hello", implementationClass = "com.example.logic.HelloPlugin" }]
+
+[toolchains.maven]
+for = "gradle"
+
+[[toolchains.maven.resolve]]
+coordinates = ["com.google.code.gson:gson:2.10.1"]
+into = ["builds", "build-logic", "classpath"]
