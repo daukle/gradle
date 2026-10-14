@@ -36,12 +36,14 @@ release = "8"
 | `compileOnly`, `runtimeOnly`, `testCompileOnly`, `testRuntimeOnly` | the Gradle configurations of the same names. **`compileOnly` is not on the runtime classpath and `runtimeOnly` is not on the compile classpath**, which is why they are separate keys rather than one |
 | `annotationProcessor`, `testAnnotationProcessor` | javac's `-processorpath`, which is not the compile classpath. A processor usually wants its annotations on `compileOnly` too, and naming the same jar in both is correct |
 | `api`, `compileOnlyApi` | the two configurations `java-library` provides. Declaring either switches that file to `java-library`, **for that module alone**. `api` is carried to a module that `requires` this one; `classpath` is not |
-| `plugins` | third-party Gradle plugins to apply, each a `{ id, version }` |
-| `pluginClasspath` | the pinned jars those plugins are applied FROM, normally written by `daukle/maven` |
+| `plugins` | third-party Gradle plugins to apply, each a `{ id, version }`. An entry with no `version` names a plugin an included build declares |
+| `pluginClasspath` | the pinned jars the versioned plugins are applied FROM, normally written by `daukle/maven` |
 | `configure` | one block per extension a plugin registers |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for plugins applied to `Settings`, such as a toolchain resolver convention. The classpath is normally written by `daukle/maven` with `into = "settingsPluginClasspath"` |
 | `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main` and **every dependency configuration above** belong here once a project has modules |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main`, `requiresBuilds` and **every dependency configuration above** belong here once a project has modules |
+| `builds` | included builds, Gradle's composite builds, keyed by the build's directory. A build declaring `gradlePlugins`, each a `{ id, implementationClass }`, is a plugin build whose plugins a versionless `plugins` or `settingsPlugins` entry applies; one without is a library build. A block takes the source roots, `release` and every dependency configuration, and refuses any other key by name |
+| `requiresBuilds` | the library builds a project depends on, by name. With modules it goes in `[toolchains.gradle.modules.<name>]`: written in core's `[modules.<name>]` beside `requires` it is silently ignored |
 
 ## Tasks
 
@@ -130,6 +132,24 @@ naming no module, two modules requiring each other, or a module requiring itself
 **This needs daukle 0.7.0.** An older daukle does not publish the module list to a plugin at all,
 so the plugin refuses rather than quietly building only the root.
 
+## A plugin built in this repository
+
+A `build-logic` directory holding a Gradle plugin is an included build. Describe it under `builds`
+and apply its plugin with no version:
+
+```toml
+[toolchains.gradle]
+plugins = [{ id = "example.hello" }]
+tasks   = ["hello"]
+
+[toolchains.gradle.builds."build-logic"]
+gradlePlugins = [{ id = "example.hello", implementationClass = "com.example.logic.HelloPlugin" }]
+```
+
+`daukle gradle:hello` builds `build-logic` from source and runs the task its plugin registers.
+Nothing is written into `build-logic/`: its Gradle files are generated under
+`build/daukle/gradle/included/`. **This needs `daukle/gradle` 1.9.0.**
+
 ## What it does not do
 
 Build logic written as CODE is not modellable: a task with a body, a `tasks.withType(...)` that
@@ -138,5 +158,6 @@ extension block are all fine, because each of those is data. A raw Groovy escape
 **refused by name**, because it readmits `build.gradle` through the back door with you editing
 Groovy inside a TOML string.
 
-`includeBuild`, which is a composite build rather than a multi-project one, is not modelled, and a
-module's plugins and `configure` tree are the project's rather than its own.
+A module's plugins and `configure` tree are the project's rather than its own. An included build is
+one project, never a set of modules, and a task that generates a source file, such as a
+`generateConfig` with a `doLast` body, is build logic written as code in an included build too.

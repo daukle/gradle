@@ -63,12 +63,14 @@ daukle gradle:discover           # what your applied plugins contribute
 | `testCompileOnly`, `testRuntimeOnly` | the same two for tests. **A JUnit launcher belongs in `testRuntimeOnly`**, which is where Gradle's own documentation puts it, and the launcher check looks there |
 | `annotationProcessor`, `testAnnotationProcessor` | pinned entries for javac's `-processorpath`, which is a different path from the compile classpath. A processor normally wants its annotations on `compileOnly` as well, and **declaring the same jar in both keys is correct rather than redundant**: with the `annotationProcessor` block deleted and `compileOnly` left alone, lombok's generated method is simply absent and the build fails on it |
 | `api`, `compileOnlyApi` | the two configurations **`java-library`** provides. Declaring either switches that file's base plugin from `java` to `java-library`, **for that module alone**, because `java-library` splits `compileClasspath` and applying it everywhere would change what compiles for projects that never asked. `api` is carried to a module that `requires` this one; `classpath` is not |
-| `plugins` | a list of `{ id, version }`, one `apply plugin:` line each |
-| `pluginClasspath` | pinned entries the plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
+| `plugins` | a list of `{ id, version }`, one `apply plugin:` line each. An entry with NO `version` names a plugin an included build declares and renders as `id '<x>'` in the `plugins {}` block instead. See **Included builds** below |
+| `pluginClasspath` | pinned entries the versioned plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
 | `configure` | a free-form tree, one Groovy block per extension |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for `Settings` rather than for a project: plugins applied in the settings phase, the pinned jars they come from, and their extension blocks. See **Settings plugins** below |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them |
+| `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
+| `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
 
 ## The tasks a plugin contributes
 
@@ -182,7 +184,7 @@ listing; the check belongs to generate, and `check` and `sync` both refuse with 
 
 ## Three phases to a first build, and the refusal cannot be followed in order
 
-A manifest that declares `[[toolchains.gradle.plugins]]` while `pluginClasspath` is empty is refused
+A manifest that declares a versioned `[[toolchains.gradle.plugins]]` entry while `pluginClasspath` is empty is refused
 at generate time, and **every command generates**, so even `maven:resolve` is refused. The working
 sequence is: resolve with no `plugins` block; add the `daukle.include`, which must be second because
 `include` raises on a file that is not there; then add the `plugins` block. Nothing is
@@ -291,8 +293,9 @@ cannot know which extensions a jar registers, and `configure.java` or `configure
 with no third-party plugin applied at all. Gradle's own failure names the block
 (`Could not find method noSuchExtension()`), measured on 8.13, which is most of what a check would
 have said. What IS refused here: a `configure` entry that is not a block, a mixed marker table, a
-marker whose value is not a string, `DAUKLE_TOKEN`, a `plugins` entry with no `id` or `version`, a
-`plugins` list with an empty `pluginClasspath`, and a plugin version no pinned entry carries.
+marker whose value is not a string, `DAUKLE_TOKEN`, a `plugins` entry with no `id`, one with no
+`version` that names no plugin an included build declares, versioned `plugins` with an empty
+`pluginClasspath`, and a plugin version no pinned entry carries.
 
 ### A TOML integer arrives as a float
 
@@ -416,8 +419,6 @@ project-wide check would pass on the strength of a sibling.
   modules at once.
 - **`compileOnlyApi` is rendered and never exercised.** It shares every line of its path with `api`
   except its row in `lib/configurations.lua`, and no case declares one.
-- **`includeBuild`.** The largest Gradle build in the tree this plugin was written against uses it,
-  and it is not modelled.
 - **A 34-module project**, that same build's size. Nothing has rendered one. **Neither core cap is
   what stops it**: `FR_GENERATE_MAX_FILES` bounds the table a generate callback returns and this
   plugin's generate returns exactly one file, `settings.gradle`, whatever the module count. A
@@ -428,6 +429,116 @@ project-wide check would pass on the strength of a sibling.
   the sandbox's `REMOVED` list and `daukle.read` raises, so a plugin cannot probe a path without
   dying on the project that lacks it. The mitigation is that every multi-project case asserts a
   per-module output file, and a module that compiled nothing produces none.
+
+## Included builds
+
+`includeBuild`, a composite build, served both ways Gradle uses it. **A PLUGIN build** contributes
+settings and project plugins built from source, which is what a `build-logic` directory is. **A
+LIBRARY build** contributes a project that substitutes for a dependency. The outer manifest
+describes every included build, so one manifest and one sync produce every file Gradle reads; an
+included build is not a second daukle project, because its own pins and its own generated files
+would be invisible to this one.
+
+```toml
+[toolchains.gradle]
+plugins         = [{ id = "example.hello" }]   # no version: an included build declares it
+settingsPlugins = [{ id = "example.mark" }]    # the same, applied to Settings
+requiresBuilds  = ["greeting"]                 # a library build, substituted
+
+[toolchains.gradle.builds."build-logic"]
+gradlePlugins = [
+  { id = "example.hello", implementationClass = "com.example.logic.HelloPlugin" },
+  { id = "example.mark",  implementationClass = "com.example.logic.MarkPlugin" },
+]
+release = "11"
+
+[toolchains.gradle.builds.greeting]
+```
+
+- **The key under `builds` is the build's directory**, with `/` between components, checked by the
+  same rules a module name is. Its source roots default to `<name>/src/main/java` and its siblings.
+- **A build block takes exactly** `gradlePlugins`, the four source roots, `release` and every
+  dependency configuration key. **Any other key is refused by name**, which is stricter than a
+  module block: a `main` or a `modules` written there would otherwise be accepted and do nothing.
+  `release` defaults to the project's, and is there because a plugin build often targets an older
+  Java than the build it serves.
+- **Declaring `gradlePlugins` is what makes a build a plugin build.** It is included under
+  `pluginManagement {}` only and its file applies `java-gradle-plugin` with one `gradlePlugin {}`
+  entry per plugin. A build without it is a library build, included at the top level only, with
+  `group = 'daukle.included'`.
+- **A `plugins` or `settingsPlugins` entry with no `version` comes from an included build** and must
+  name an id some build's `gradlePlugins` declares. A versioned entry is the pinned shape,
+  unchanged, and both can sit in one list. A list of nothing but included plugins needs no
+  classpath.
+- **`requiresBuilds` names library builds**, and each renders as
+  `implementation 'daukle.included:<gradle name>'`, which Gradle substitutes with the included
+  project. Naming a plugin build is refused: a plugin build is applied, not depended on.
+
+**In a project with modules, `requiresBuilds` goes in `[toolchains.gradle.modules.<name>]`, NOT in
+core's `[modules.<name>]` beside `requires`.** Core owns that table and passes this plugin only the
+module graph, so a `requiresBuilds` written there is silently ignored and the module then fails to
+compile against the library it never received. Written project-wide in a project with modules it is
+refused, like every other module key.
+
+### What gets generated
+
+`settings.gradle` is still written by `generate`, because every new line needs only the manifest,
+and in this order, which is the order Gradle 8.13 and 9.6.0 were measured to accept:
+`pluginManagement { includeBuild('included/<n>') }` per plugin build, `plugins { id '<x>' }` per
+versionless settings plugin, the existing `apply from: 'settings-plugins.gradle'`, one top-level
+`includeBuild('included/<n>')` per library build, then `rootProject.name` and the `include` lines.
+**With no `builds` declared, every generated file is byte for byte what it was before.**
+
+Each build gets `included/<n>/settings.gradle` and `included/<n>/build.gradle` in the derived
+directory, written by every task that writes build files, because a build file carries pinned jars
+and `generate` may not acquire one. They are written on the bare discovery render too, since
+`settings.gradle` includes every build on every run. **The source roots climb back from
+`included/<n>`, one level further than a module at the same name, and a wrong count fails
+silently**: `applies-a-plugin-from-a-nested-build-with-a-pinned-jar-on-gradle-8` exists for that.
+
+### A versionless plugin renders into `plugins {}`, because `apply plugin:` cannot find it
+
+**A project plugin from an included build applies ONLY through `plugins { id }`**, measured on
+8.13 and 9.6.0. `apply plugin: '<id>'` fails with *"Plugin with id '<id>' not found"*. The first
+probe of this passed and was wrong: the same included build also supplied a settings plugin, which
+had already put its jar on the settings classloader, the parent of every project classloader. **A
+plugin build that happens to supply a settings plugin makes `apply plugin:` look right**, so the
+case asserting the project half, `applies-a-plugin-from-an-included-build-on-gradle-9`, declares
+no settings plugin. A pinned plugin still renders as `apply plugin:`, because a `plugins {}` entry
+with a version resolves from a repository.
+
+`gradle:discover`'s bare render drops the versionless entries with the `apply plugin:` lines, so the
+tasks an included plugin registers count as contributed. It keeps the `pluginManagement` and
+settings lines, because the bare run must still be a build Gradle accepts.
+
+### The Gradle name, and the collision it can have
+
+**Gradle names an included build after its root project**, and daukle writes that name as the
+build's name with every `/` turned into `-`: `tools/logic` is `tools-logic`. Gradle refuses an
+included build named like a project of the main build, in words naming a path, so daukle refuses it
+first, naming the build. **That covers the project's own name and ANY component of any declared
+module**, not only the last, because an implicit parent such as `tools` in `tools/core` is a Gradle
+project too. Two builds sharing a Gradle name, which `tools/logic` and `tools-logic` would, are
+refused as well, and so is one plugin id declared by two builds.
+
+### What is outside it
+
+- **A build's own `classpath` cannot be filled by `daukle/maven` yet**, because `into` takes a flat
+  key name and this one sits inside the build's block. That is `D-127`; until it lands, a build's
+  pins are written inline or assigned from `daukle.lua`. A pinned jar there does reach the plugin
+  at run time.
+- **A `generateConfig`-style task**, a task with a `doLast` body that writes a source file, is build
+  logic written as code and outside the declarative boundary, whichever build it sits in. Turn its
+  output into a resource the plugin reads or a committed constant, or run the generator through
+  `run = { tool, args }`.
+- **Modules inside an included build.** A build is one project; a `modules` key in its block is
+  refused as unknown rather than ignored.
+- **A build that is both a plugin build and a library build.** Gradle allows one directory under
+  both; nothing here has measured it, and `gradlePlugins` decides which role a build has.
+- **`buildSrc`'s implicit form.** A `buildSrc` directory can be declared as a plugin build like any
+  other; nothing renders Gradle's implicit one.
+- **Not measured**: Gradle 7.6.4, and an included plugin build beside a PINNED settings plugin in
+  one manifest.
 
 ## Why the launcher jar rather than `bin/gradle`
 
