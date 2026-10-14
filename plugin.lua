@@ -39,6 +39,7 @@ local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
 local settings_file = daukle.require("lib/settings_file")
 local discovery = daukle.require("lib/discovery")
+local source_sets = daukle.require("lib/source_sets")
 local module_graph = daukle.require("lib/modules")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
@@ -194,22 +195,39 @@ daukle.task{
      the discovery itself. Reading the manifest also leaves the project with one
      committed file instead of two, which is the file-location rule's third
      clause: if we can do without the file, we should. ]]
+local function manifest_gradle()
+  return validation.MANIFEST ~= nil and validation.MANIFEST.toolchains ~= nil
+         and validation.MANIFEST.toolchains.gradle or nil
+end
+
 local function declared_tasks()
-  local gradle = validation.MANIFEST ~= nil and validation.MANIFEST.toolchains ~= nil
-                 and validation.MANIFEST.toolchains.gradle or nil
+  local gradle = manifest_gradle()
   return discovery.mapped(gradle ~= nil and gradle.tasks or nil)
 end
 
+--[[ Both spellings, because the mapping is lossy: core takes lowercase names
+     only, so publishGithub and publishgithub both become publish-github and
+     the reverse cannot be computed. ]]
+local function gradle_runner(gradle_name)
+  return function(context)
+    local config = validation.config_of(context)
+    writer.write_build_file(context, config)
+    run_gradle(context, config, { gradle_name })
+  end
+end
+
+local registered = {}
 for _, entry in ipairs(declared_tasks()) do
-  --[[ Both spellings, because the mapping is lossy: core takes lowercase names
-       only, so publishGithub and publishgithub both become publish-github and
-       the reverse cannot be computed. ]]
-  daukle.task{
-    name = "gradle:" .. entry.daukle,
-    run = function(context)
-      local config = validation.config_of(context)
-      writer.write_build_file(context, config)
-      run_gradle(context, config, { entry.gradle })
-    end,
-  }
+  registered[entry.daukle] = true
+  daukle.task{ name = "gradle:" .. entry.daukle, run = gradle_runner(entry.gradle) }
+end
+
+--[[ A colliding test set is left for `validated` to refuse by name: registering
+     a second task of one name here is fatal on every command, `sync` included. ]]
+for _, name in ipairs(source_sets.declared_test_names(manifest_gradle())) do
+  local task = discovery.task_name(name)
+  if not discovery.STATIC[task] and not registered[task] then
+    registered[task] = true
+    daukle.task{ name = "gradle:" .. task, run = gradle_runner(name) }
+  end
 end

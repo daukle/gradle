@@ -1,0 +1,17 @@
+schema = 1
+project = "example/sets"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+
+[toolchains.gradle.sourceSets.integrationTest]
+test = true
+
+[[toolchains.gradle.sourceSets.integrationTest.classpath]]
+url = "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-engine/1.10.1/junit-platform-engine-1.10.1.jar"
+sha256 = "baa48e470d6dee7369a0a8820c51da89c1463279eda6e13a304d11f45922c760"

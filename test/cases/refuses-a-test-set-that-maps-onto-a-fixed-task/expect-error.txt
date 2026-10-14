@@ -1,0 +1,1 @@
+"sourceSets.discover" runs as "gradle:discover", which this toolchain declares itself

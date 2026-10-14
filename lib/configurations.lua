@@ -59,4 +59,34 @@ function configurations.test_reachable(entries_of)
   return reachable
 end
 
+function configurations.checked_entries(entries, key)
+  if entries == nil then return {} end
+  if type(entries) ~= "table" then
+    error('"' .. key .. '" must be a list of pinned entries, not a ' .. type(entries), 0)
+  end
+  for index = 1, #entries do
+    local entry = entries[index]
+    if type(entry) ~= "table" or type(entry.url) ~= "string"
+       or type(entry.sha256) ~= "string" then
+      error('"' .. key .. '[' .. index .. ']" needs a url and a sha256: every dependency this'
+            .. ' toolchain gives Gradle is pinned before Gradle sees it', 0)
+    end
+  end
+  return entries
+end
+
+--- Every pinned entry a configuration holds, keyed by its manifest name.
+---
+--- @implNote read through one list rather than key by key, so a configuration
+--- added above reaches the reader, the renderer, the launcher check and the
+--- module key set at once.
+function configurations.entries_of(block, scope)
+  local entries = {}
+  for index = 1, #configurations.all do
+    local key = configurations.all[index].key
+    entries[key] = configurations.checked_entries(block[key], scope .. key)
+  end
+  return entries
+end
+
 return configurations

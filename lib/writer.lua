@@ -5,6 +5,7 @@ local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
 local validation = daukle.require("lib/validation")
 local composite = daukle.require("lib/composite")
+local source_sets = daukle.require("lib/source_sets")
 
 local BUILD_FILE = "build.gradle"
 
@@ -39,6 +40,14 @@ local function test_reachable(entries)
 end
 
 --- The cache paths per configuration, which is the shape the renderer takes.
+local function with_paths(sets)
+  for _, set in ipairs(sets) do
+    set.paths = {}
+    for key, entries in pairs(set.entries) do set.paths[key] = paths_of(entries) end
+  end
+  return sets
+end
+
 local function jars_of(entries, plugin_jars)
   local jars = { plugin = plugin_jars }
   for index = 1, #configurations.all do
@@ -149,7 +158,8 @@ local function write_build_file(context, config, options)
                                jars_of(entries, plugin_jars),
                                extended(project_wide,
                                         { main = project_options.main,
-                                          required_builds = composite_record.required })),
+                                          required_builds = composite_record.required,
+                                          source_sets = with_paths(source_sets.read(config, nil)) })),
     }
   end
 
@@ -166,7 +176,8 @@ local function write_build_file(context, config, options)
                                extended(project_wide,
                                         { main = module.main,
                                           requires = module.requires,
-                                          required_builds = module.required_builds })),
+                                          required_builds = module.required_builds,
+                                          source_sets = with_paths(module.source_sets) })),
     }
   end
 

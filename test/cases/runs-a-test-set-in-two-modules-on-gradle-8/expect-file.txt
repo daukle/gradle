@@ -1,0 +1,2 @@
+build/daukle/gradle/app/build/test-results/integrationTest/TEST-example.GreeterIT.xml
+build/daukle/gradle/lib/build/test-results/integrationTest/TEST-example.GreeterIT.xml

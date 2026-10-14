@@ -1,0 +1,1 @@
+"sourceSets.jar" is a test set, and Gradle already has a task named "jar"

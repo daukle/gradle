@@ -31,6 +31,7 @@ release = "8"
 | `jdk` | which JDK, through `daukle/java`'s table, defaulting to `17` |
 | `release` | the Java source and target level |
 | `sourcesJar` | `true` adds Gradle's sources jar, which `gradle:sources-jar` builds |
+| `sourceSets` | extra source sets, keyed by name, each with its own roots and dependency keys. `test = true` makes one a test set that sees main and runs as its own task. Gradle's `testing { suites {} }` is not used, because every suite but the built-in one adds a JUnit dependency a build with no repository cannot resolve |
 | `main` | the class `gradle:run` runs. It also applies Gradle's `application` plugin, which is where a packaging plugin reads `Main-Class` from |
 | `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults. Each takes one directory or a list of them, so generated sources can sit beside written ones |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`, rendering `implementation` and `testImplementation` |
@@ -42,7 +43,7 @@ release = "8"
 | `configure` | one block per extension a plugin registers |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for plugins applied to `Settings`, such as a toolchain resolver convention. The classpath is normally written by `daukle/maven` with `into = "settingsPluginClasspath"` |
 | `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main`, `requiresBuilds` and **every dependency configuration above** belong here once a project has modules |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main`, `requiresBuilds`, `sourceSets` and **every dependency configuration above** belong here once a project has modules |
 | `builds` | included builds, Gradle's composite builds, keyed by the build's directory. A build declaring `gradlePlugins`, each a `{ id, implementationClass }`, is a plugin build whose plugins a versionless `plugins` or `settingsPlugins` entry applies; one without is a library build. A block takes the source roots, `release` and every dependency configuration, and refuses any other key by name |
 | `requiresBuilds` | the library builds a project depends on, by name. With modules it goes in `[toolchains.gradle.modules.<name>]`, and core's `[modules.<name>]` refuses it |
 
@@ -52,7 +53,8 @@ Gradle's, so `gradle:jar` writes `<name>-<version>.jar` the way Gradle does when
 ## Tasks
 
 `gradle:classes`, `gradle:test`, `gradle:jar`, `gradle:run`, `gradle:sources-jar`, `gradle:version`
-and `gradle:discover`, plus one for every name in `tasks`: `shadowJar` becomes `gradle:shadow-jar`.
+and `gradle:discover`, plus one for every name in `tasks`: `shadowJar` becomes `gradle:shadow-jar`,
+plus one per test set: `integrationTest` becomes `gradle:integration-test`.
 
 ## Gradle resolves nothing
 
