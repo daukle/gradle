@@ -30,6 +30,7 @@ release = "8"
 | `version` | which Gradle to provision, defaulting to `8.13`. Sixteen are pinned, `7.6.4` to `9.6.0`, and one it does not pin is refused by name with the whole list. `7.6.4` is the floor, and asking for less says why: `6.7` cannot run on the oldest JDK available here, and the versions in between are pinnable and nobody has asked |
 | `jdk` | which JDK, through `daukle/java`'s table, defaulting to `17` |
 | `release` | the Java source and target level |
+| `sourcesJar` | `true` adds Gradle's sources jar, which `gradle:sources-jar` builds |
 | `main` | the class `gradle:run` runs. It also applies Gradle's `application` plugin, which is where a packaging plugin reads `Main-Class` from |
 | `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults. Each takes one directory or a list of them, so generated sources can sit beside written ones |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`, rendering `implementation` and `testImplementation` |
@@ -50,8 +51,8 @@ Gradle's, so `gradle:jar` writes `<name>-<version>.jar` the way Gradle does when
 
 ## Tasks
 
-`gradle:classes`, `gradle:test`, `gradle:jar`, `gradle:run`, `gradle:version` and
-`gradle:discover`, plus one for every name in `tasks`: `shadowJar` becomes `gradle:shadow-jar`.
+`gradle:classes`, `gradle:test`, `gradle:jar`, `gradle:run`, `gradle:sources-jar`, `gradle:version`
+and `gradle:discover`, plus one for every name in `tasks`: `shadowJar` becomes `gradle:shadow-jar`.
 
 ## Gradle resolves nothing
 

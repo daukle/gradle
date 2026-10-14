@@ -58,6 +58,7 @@ daukle gradle:discover           # what your applied plugins contribute
 | `testResourceRoot` | defaults to `src/test/resources` |
 | `release` | Java source and target level, e.g. `"8"` |
 | `main` | the class `gradle:run` runs, and the reason `application` is applied |
+| `sourcesJar` | `true` renders `java { withSourcesJar() }` into every project file, and `gradle:sources-jar` runs it. The task refuses by name while this is unset, because Gradle has no `sourcesJar` task to run until it is |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`. They render `implementation` and `testImplementation`, and they keep these names rather than the configuration's because they are released |
 | `compileOnly`, `runtimeOnly` | pinned entries rendering the Gradle configuration of the same name. `compileOnly` is **not** on the runtime classpath and `runtimeOnly` is **not** on the compile classpath, which is the whole reason they are separate keys |
 | `testCompileOnly`, `testRuntimeOnly` | the same two for tests. **A JUnit launcher belongs in `testRuntimeOnly`**, which is where Gradle's own documentation puts it, and the launcher check looks there |
@@ -78,7 +79,7 @@ builds do not take it: they are separate builds with versions of their own. Sinc
 
 ## The tasks a plugin contributes
 
-`plugin.lua` declares five tasks of its own and a Gradle plugin contributes its own. **The two
+`plugin.lua` declares seven tasks of its own and a Gradle plugin contributes its own. **The two
 halves are kept apart**, because only one of them needs Gradle:
 
 ```sh

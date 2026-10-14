@@ -71,7 +71,7 @@ end
 --- @param layout   { main = {java, resources}, test = {java, resources} }
 --- @param jars     { compile = {path...}, test = {path...}, plugin = {path...} }
 --- @param options  { release, main, plugins, configure, requires, included_plugins,
----                   required_builds, gradle_plugins, group, version }
+---                   required_builds, gradle_plugins, group, version, sources_jar }
 --- @param depth    the `file('...')` prefix the source roots resolve against
 local function render_project(layout, jars, options, depth)
   local requires = options.requires or {}
@@ -150,12 +150,15 @@ local function render_project(layout, jars, options, depth)
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
 
-  if options.release ~= nil then
+  if options.release ~= nil or options.sources_jar then
     lines[#lines + 1] = "java {"
-    lines[#lines + 1] = "  sourceCompatibility = JavaVersion.toVersion("
-                        .. groovy.quoted(options.release) .. ")"
-    lines[#lines + 1] = "  targetCompatibility = JavaVersion.toVersion("
-                        .. groovy.quoted(options.release) .. ")"
+    if options.release ~= nil then
+      lines[#lines + 1] = "  sourceCompatibility = JavaVersion.toVersion("
+                          .. groovy.quoted(options.release) .. ")"
+      lines[#lines + 1] = "  targetCompatibility = JavaVersion.toVersion("
+                          .. groovy.quoted(options.release) .. ")"
+    end
+    if options.sources_jar then lines[#lines + 1] = "  withSourcesJar()" end
     lines[#lines + 1] = "}"
     lines[#lines + 1] = ""
   end

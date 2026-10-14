@@ -120,6 +120,19 @@ gradle_task("jar", { "jar" })
 gradle_task("run", { "daukleRun" })
 
 daukle.task{
+  name = "gradle:sources-jar",
+  run = function(context)
+    local config = validation.config_of(context)
+    if config.sourcesJar ~= true then
+      error('"gradle:sources-jar" needs "sourcesJar = true" in [toolchains.gradle], which is'
+            .. ' what gives Gradle a sourcesJar task to run', 0)
+    end
+    writer.write_build_file(context, config)
+    run_gradle(context, config, { "sourcesJar" })
+  end,
+}
+
+daukle.task{
   name = "gradle:version",
   run = function(context)
     run_gradle(context, validation.config_of(context), { "--version" })
