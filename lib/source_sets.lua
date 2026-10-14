@@ -189,4 +189,67 @@ function source_sets.declared_test_names(config)
   return names
 end
 
+--- One set's entry inside `sourceSets {}`. A test set sees main's classes the
+--- way Gradle's own `test` does; a plain set sees nothing.
+function source_sets.entry(set, depth)
+  local lines = {
+    "  " .. set.name .. " {",
+    "    java      { srcDirs = " .. groovy.src_dirs(set.java, depth) .. " }",
+    "    resources { srcDirs = " .. groovy.src_dirs(set.resources, depth) .. " }",
+  }
+  if set.test then
+    lines[#lines + 1] = "    compileClasspath += sourceSets.main.output"
+    lines[#lines + 1] = "    runtimeClasspath += sourceSets.main.output"
+  end
+  lines[#lines + 1] = "  }"
+  return table.concat(lines, "\n")
+end
+
+--- @implNote follows `sourceSets {}`, which creates the configurations it
+--- names, and precedes `dependencies {}`: probe G's order, the only one
+--- measured (2026-10-14 source sets design, section 4).
+function source_sets.configurations_block(sets)
+  local lines = {}
+  for _, set in ipairs(sets) do
+    if set.test then
+      lines[#lines + 1] = "  " .. set.name .. "Implementation.extendsFrom implementation"
+      lines[#lines + 1] = "  " .. set.name .. "RuntimeOnly.extendsFrom runtimeOnly"
+    end
+  end
+  if #lines == 0 then return {} end
+  table.insert(lines, 1, "configurations {")
+  lines[#lines + 1] = "}"
+  lines[#lines + 1] = ""
+  return lines
+end
+
+function source_sets.dependency_lines(sets)
+  local lines = {}
+  for _, set in ipairs(sets) do
+    for _, row in ipairs(source_sets.CONFIGURATIONS) do
+      local paths = set.paths[row.key]
+      if #paths > 0 then
+        lines[#lines + 1] = "  " .. set.name .. row.suffix .. " files(\n"
+                            .. groovy.file_list(paths, "    ") .. "\n  )"
+      end
+    end
+  end
+  return lines
+end
+
+function source_sets.test_task_lines(sets)
+  local lines = {}
+  for _, set in ipairs(sets) do
+    if set.test then
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = "tasks.register(" .. groovy.quoted(set.name) .. ", Test) {"
+      lines[#lines + 1] = "  testClassesDirs = sourceSets." .. set.name .. ".output.classesDirs"
+      lines[#lines + 1] = "  classpath = sourceSets." .. set.name .. ".runtimeClasspath"
+      lines[#lines + 1] = "  useJUnitPlatform()"
+      lines[#lines + 1] = "}"
+    end
+  end
+  return lines
+end
+
 return source_sets
