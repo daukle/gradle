@@ -1,0 +1,4 @@
+build/daukle/gradle/build/classes/java/main/example/Greeter.class
+build/daukle/gradle/build/classes/java/main/example/Salutation.class
+build/daukle/gradle/build/resources/main/hand.txt
+build/daukle/gradle/build/resources/main/generated.txt

@@ -1,0 +1,13 @@
+schema = 1
+project = "example/roots"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+
+[toolchains.gradle.modules.alpha]
+testSourceRoot = ["alpha/test", 3]

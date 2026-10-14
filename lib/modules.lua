@@ -176,6 +176,25 @@ function modules.string_key(block, key, fallback, label)
   return value
 end
 
+--- One string or a list of them, always returned as a list: Gradle's `srcDirs`
+--- takes several roots, and an empty list is its way of declaring none.
+function modules.string_list_key(block, key, fallback, label)
+  local value = block[key]
+  if type(value) ~= "table" then return { modules.string_key(block, key, fallback, label) } end
+  local name = label or key
+  local keys = 0
+  for _ in pairs(value) do keys = keys + 1 end
+  if keys ~= #value then
+    error('"' .. name .. '" must be a string or a list of strings, not a table of keys', 0)
+  end
+  for index, entry in ipairs(value) do
+    if type(entry) ~= "string" then
+      error('"' .. name .. '[' .. index .. ']" must be a string, not a ' .. type(entry), 0)
+    end
+  end
+  return value
+end
+
 --- The source layout of one module, or of the project itself when `name` is nil.
 ---
 --- @implNote a module's roots default to its own name, which is the shape 117
@@ -188,7 +207,7 @@ function modules.layout_of(name, block, kind)
   local prefix = name ~= nil and (name .. "/") or ""
   local scope = name ~= nil and (kind .. "." .. name .. ".") or ""
   local function dirs_for(key)
-    return { modules.string_key(block, key, prefix .. DEFAULT_SUFFIX[key], scope .. key) }
+    return modules.string_list_key(block, key, prefix .. DEFAULT_SUFFIX[key], scope .. key)
   end
   return {
     main = { java = dirs_for("sourceRoot"), resources = dirs_for("resourceRoot") },

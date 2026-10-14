@@ -1,0 +1,16 @@
+schema = 1
+project = "example/roots"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# Greeter.java compiles only if Salutation.java, in the second root, is on the
+# same source set; each resource root contributes one file to the output.
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+sourceRoot = ["src/main/java", "generated/java"]
+resourceRoot = ["src/main/resources", "generated/resources"]
