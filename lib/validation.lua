@@ -174,8 +174,8 @@ end
 local function refuse_a_version_no_pin_carries(plugins, pins, plugins_key, classpath_key)
   for index = 1, #plugins do
     local version = plugins[index].version
-    local pinned = false
-    for pin = 1, #pins do
+    local pinned = version == nil
+    for pin = 1, pinned and 0 or #pins do
       local entry = pins[pin]
       if entry.url:find("/" .. version .. "/", 1, true) ~= nil
          or (type(entry.as) == "string" and entry.as:find(" " .. version, 1, true) ~= nil) then
@@ -205,7 +205,7 @@ local function checked_plugin_set(config, plugins_key, classpath_key, owners)
           .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
           .. plugins_key .. '" block in the manifest, then add the block', 0)
   end
-  refuse_a_version_no_pin_carries(plugins, jars, plugins_key, classpath_key)
+  refuse_a_version_no_pin_carries(config[plugins_key] or {}, jars, plugins_key, classpath_key)
   return plugins, jars, included
 end
 

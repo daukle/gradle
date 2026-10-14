@@ -74,7 +74,9 @@ function builds.read(config, declared, project_name)
             .. ' by its directory, with "/" between components', 0)
     end
     local block = blocks[name]
-    if type(block) ~= "table" then block = {} end
+    if type(block) ~= "table" then
+      error('"builds.' .. name .. '" must be a table, not a ' .. type(block), 0)
+    end
     refuse_an_unknown_key(name, block)
     local gradle_name = (string.gsub(name, "/", "-"))
     if taken[gradle_name] then
