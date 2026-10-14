@@ -28,23 +28,8 @@ local function root_of(name)
   return ROOT .. string.rep("/..", separators + 1)
 end
 
-local function src_dirs(paths, depth)
-  if #paths == 0 then return "[]" end
-  local rendered = {}
-  for index = 1, #paths do
-    rendered[index] = "new File(file(" .. groovy.quoted(depth) .. "), "
-                      .. groovy.quoted(paths[index]) .. ")"
-  end
-  return "[" .. table.concat(rendered, ", ") .. "]"
-end
-
-local function file_list(paths, indent)
-  local rendered = {}
-  for index = 1, #paths do
-    rendered[index] = indent .. groovy.quoted(paths[index])
-  end
-  return table.concat(rendered, ",\n")
-end
+local src_dirs = groovy.src_dirs
+local file_list = groovy.file_list
 
 local function source_set(name, java_dirs, resource_dirs, depth)
   return "  " .. name .. " {\n"
