@@ -11,6 +11,7 @@ local build_file = {}
 local configurations = daukle.require("lib/configurations")
 local groovy = daukle.require("lib/groovy")
 local extensions = daukle.require("lib/extensions")
+local composite = daukle.require("lib/composite")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -69,7 +70,8 @@ end
 
 --- @param layout   { main = {java, resources}, test = {java, resources} }
 --- @param jars     { compile = {path...}, test = {path...}, plugin = {path...} }
---- @param options  { release, main, plugins, configure, requires }
+--- @param options  { release, main, plugins, configure, requires, included_plugins,
+---                   required_builds, gradle_plugins, group }
 --- @param depth    the `file('...')` prefix the source roots resolve against
 local function render_project(layout, jars, options, depth)
   local requires = options.requires or {}
@@ -104,16 +106,17 @@ local function render_project(layout, jars, options, depth)
        only `java` produced a fat jar whose manifest named no entry point and
        which nothing could run. Both are built into Gradle, so naming them here
        resolves nothing and the no-repository property is untouched. ]]
-  local base = configurations.needs_java_library(jars) and "java-library" or "java"
-  if options.main ~= nil then
-    lines[#lines + 1] = "plugins {"
-    lines[#lines + 1] = "  id " .. groovy.quoted(base)
-    lines[#lines + 1] = "  id 'application'"
-    lines[#lines + 1] = "}"
-  else
-    lines[#lines + 1] = "plugins { id " .. groovy.quoted(base) .. " }"
-  end
+  local gradle_plugins = options.gradle_plugins or {}
+  local ids = { configurations.needs_java_library(jars) and "java-library" or "java" }
+  if #gradle_plugins > 0 then ids[#ids + 1] = "java-gradle-plugin" end
+  if options.main ~= nil then ids[#ids + 1] = "application" end
+  for _, id in ipairs(options.included_plugins or {}) do ids[#ids + 1] = id end
+  for _, line in ipairs(composite.plugins_block(ids)) do lines[#lines + 1] = line end
   lines[#lines + 1] = ""
+  if options.group ~= nil then
+    lines[#lines + 1] = "group = " .. groovy.quoted(options.group)
+    lines[#lines + 1] = ""
+  end
 
   for index = 1, #options.plugins do
     lines[#lines + 1] = "apply plugin: " .. groovy.quoted(options.plugins[index].id)
@@ -129,6 +132,9 @@ local function render_project(layout, jars, options, depth)
   for index = 1, #requires do
     lines[#lines + 1] = "  implementation project("
                         .. groovy.quoted(gradle_path(requires[index])) .. ")"
+  end
+  for _, build_name in ipairs(options.required_builds or {}) do
+    lines[#lines + 1] = "  implementation " .. groovy.quoted(composite.GROUP .. ":" .. build_name)
   end
   for index = 1, #configurations.all do
     local row = configurations.all[index]
@@ -159,6 +165,12 @@ local function render_project(layout, jars, options, depth)
   lines[#lines + 1] = "tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }"
   lines[#lines + 1] = ""
   lines[#lines + 1] = "test { useJUnitPlatform() }"
+  if #gradle_plugins > 0 then
+    lines[#lines + 1] = ""
+    for _, line in ipairs(composite.gradle_plugin_block(gradle_plugins)) do
+      lines[#lines + 1] = line
+    end
+  end
 
   local configuration = build_file.configuration(options.configure, depth)
   for index = 1, #configuration do
@@ -213,6 +225,12 @@ end
 
 function build_file.render(layout, jars, options)
   return render_project(layout, jars, options, ROOT)
+end
+
+--- An included build's file, its source roots climbing back from its directory
+--- inside the derived one.
+function build_file.included(name, layout, jars, options)
+  return render_project(layout, jars, options, root_of(composite.path_of(name)))
 end
 
 --- The root build file of a multi-project build, which carries the buildscript

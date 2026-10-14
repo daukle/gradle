@@ -4,6 +4,7 @@ local junit = daukle.require("lib/junit")
 local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
 local validation = daukle.require("lib/validation")
+local composite = daukle.require("lib/composite")
 
 local BUILD_FILE = "build.gradle"
 
@@ -61,6 +62,25 @@ local function write_settings_plugins(config, owners)
   }
 end
 
+--- @implNote written on every run, the bare discovery render included:
+--- settings.gradle includes every declared build, so Gradle fails on any run
+--- that starts without them.
+local function write_included_builds(checked)
+  for index = 1, #checked do
+    local build = checked[index]
+    local at = composite.path_of(build.name)
+    junit.refuse_a_missing_launcher(test_reachable(build.entries))
+    daukle.write{ path = at .. "/settings.gradle",
+                  text = settings_file.included_settings(build.gradle_name) }
+    daukle.write{ path = at .. "/" .. BUILD_FILE,
+                  text = build_file.included(build.name, build.layout, jars_of(build.entries, {}),
+                                             { release = build.release, plugins = {},
+                                               gradle_plugins = build.gradle_plugins,
+                                               group = (not build.plugin_build)
+                                                       and composite.GROUP or nil }) }
+  end
+end
+
 --- @implNote per module, because a module carries its own testClasspath: a
 --- project-wide check would pass while one module's test runtime held a
 --- platform engine and no launcher, which is the declaration that passes on
@@ -93,8 +113,9 @@ local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
   validation.validated(context, config)
-  local composite = validation.composite_of(context, config)
-  write_settings_plugins(config, composite.owners)
+  local composite_record = validation.composite_of(context, config)
+  write_settings_plugins(config, composite_record.owners)
+  write_included_builds(composite_record.builds)
   local bare = options ~= nil and options.bare or false
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]
@@ -112,7 +133,8 @@ local function write_build_file(context, config, options)
   local project_wide = { release = module_graph.string_key(config, "release", nil),
                          plugins = bare and {}
                                    or validation.checked_plugins(config.plugins, "plugins",
-                                                                 composite.owners),
+                                                                 composite_record.owners),
+                         included_plugins = bare and {} or composite_record.project_ids,
                          configure = configure,
                          discover = options ~= nil and options.discover or nil }
 
@@ -123,13 +145,14 @@ local function write_build_file(context, config, options)
       text = build_file.render(validation.layout_of(config),
                                jars_of(entries, plugin_jars),
                                extended(project_wide,
-                                        { main = module_graph.string_key(config, "main", nil) })),
+                                        { main = module_graph.string_key(config, "main", nil),
+                                          required_builds = composite_record.required })),
     }
   end
 
   daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
 
-  local modules = validation.checked_modules(config, declared, composite.read)
+  local modules = validation.checked_modules(config, declared, composite_record.read)
   for index = 1, #modules do
     local module = modules[index]
     refuse_a_module_missing_launcher(module)
@@ -139,7 +162,8 @@ local function write_build_file(context, config, options)
                                jars_of(module.entries, {}),
                                extended(project_wide,
                                         { main = module.main,
-                                          requires = module.requires })),
+                                          requires = module.requires,
+                                          required_builds = module.required_builds })),
     }
   end
 
