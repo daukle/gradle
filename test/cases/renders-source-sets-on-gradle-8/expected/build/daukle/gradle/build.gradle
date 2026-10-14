@@ -15,6 +15,10 @@ sourceSets {
     java      { srcDirs = [new File(file('../../..'), 'src/test/java')] }
     resources { srcDirs = [new File(file('../../..'), 'src/test/resources')] }
   }
+  create('bench') {
+    java      { srcDirs = [new File(file('../../..'), 'src/bench/java')] }
+    resources { srcDirs = [new File(file('../../..'), 'src/bench/resources')] }
+  }
   create('integrationTest') {
     java      { srcDirs = [new File(file('../../..'), 'src/integrationTest/java')] }
     resources { srcDirs = [new File(file('../../..'), 'src/integrationTest/resources')] }

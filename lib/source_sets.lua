@@ -48,11 +48,20 @@ for name in ([[
   TAKEN_TASK_NAMES[name] = true
 end
 
+--- @implNote 64 keeps the longest kebab spelling of a name (96 characters)
+--- inside the 128 bytes core allows a task's `daukle.task/<name>` capability.
+local NAME_LIMIT = 64
+
+local function is_usable_name(name)
+  return type(name) == "string" and #name <= NAME_LIMIT and name:match("^%l[%a%d]*$") ~= nil
+end
+
 local function refuse_a_bad_name(name, label)
-  if type(name) ~= "string" or name:match("^%l[%a%d]*$") == nil then
+  if not is_usable_name(name) then
     error('"' .. label .. '.' .. tostring(name) .. '" is not a source set name: start with a'
-          .. ' lowercase letter and use only letters and digits, as in "integrationTest",'
-          .. ' because the name becomes a configuration prefix and a task name', 0)
+          .. ' lowercase letter and use only letters and digits, at most ' .. NAME_LIMIT
+          .. ' of them, as in "integrationTest", because the name becomes a configuration'
+          .. ' prefix and a task name', 0)
   end
   if RESERVED[name] then
     error('"' .. label .. '.' .. name .. '" is Gradle\'s own source set: name yours'
@@ -93,6 +102,7 @@ local function read_one(name, block, where, prefix, main_entries)
   end
   local set = {
     name = name,
+    label = where,
     test = module_graph.boolean_key(block, "test", false, where .. ".test"),
     java = module_graph.string_list_key(block, "sourceRoot", prefix .. "src/" .. name .. "/java",
                                         where .. ".sourceRoot"),
@@ -151,18 +161,18 @@ function source_sets.refuse_task_collisions(config, modules)
     for _, set in ipairs(sets) do
       local task = discovery.task_name(set.name)
       local other = test_sets[task]
-      if set.test and other ~= nil and other ~= set.name then
-        error('"sourceSets.' .. other .. '" and "sourceSets.' .. set.name .. '" both run as'
+      if set.test and other ~= nil and other.name ~= set.name then
+        error('"' .. other.label .. '" and "' .. set.label .. '" both run as'
               .. ' "gradle:' .. task .. '", and a duplicate task name is fatal on every'
               .. ' command in the project', 0)
       end
-      if set.test then test_sets[task] = set.name end
+      if set.test then test_sets[task] = set end
       if set.test and discovery.STATIC[task] then
-        error('"sourceSets.' .. set.name .. '" runs as "gradle:' .. task .. '", which this'
+        error('"' .. set.label .. '" runs as "gradle:' .. task .. '", which this'
               .. ' toolchain declares itself', 0)
       end
       if set.test and mapped[task] ~= nil then
-        error('"sourceSets.' .. set.name .. '" runs as "gradle:' .. task .. '", which "tasks"'
+        error('"' .. set.label .. '" runs as "gradle:' .. task .. '", which "tasks"'
               .. ' also maps "' .. mapped[task] .. '" to', 0)
       end
     end
@@ -178,7 +188,8 @@ function source_sets.declared_test_names(config)
   local function collect(blocks)
     if type(blocks) ~= "table" then return end
     for name, block in pairs(blocks) do
-      if type(name) == "string" and type(block) == "table" and block.test == true
+      if is_usable_name(name) and not RESERVED[name] and type(block) == "table"
+         and block.test == true
          and not seen[name] then
         seen[name] = true
         names[#names + 1] = name

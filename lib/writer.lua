@@ -39,7 +39,6 @@ local function test_reachable(entries)
   return configurations.test_reachable(function(key) return entries[key] end)
 end
 
---- The cache paths per configuration, which is the shape the renderer takes.
 local function with_paths(sets)
   for _, set in ipairs(sets) do
     set.paths = {}
@@ -48,6 +47,7 @@ local function with_paths(sets)
   return sets
 end
 
+--- The cache paths per configuration, which is the shape the renderer takes.
 local function jars_of(entries, plugin_jars)
   local jars = { plugin = plugin_jars }
   for index = 1, #configurations.all do

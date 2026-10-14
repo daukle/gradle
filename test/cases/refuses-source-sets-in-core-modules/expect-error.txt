@@ -1,0 +1,1 @@
+"modules.app.sourceSets" is in core's "[modules.app]", which this toolchain never reads

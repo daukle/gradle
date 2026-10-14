@@ -1,0 +1,1 @@
+"sourceSets.my set" is not a source set name
