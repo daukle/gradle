@@ -1,0 +1,20 @@
+schema = 1
+project = "daukle/example-gradle-included-build"
+version = "1.0.0"
+
+[modules]
+
+[resolvers.github]
+url = "https://raw.githubusercontent.com/daukle/daukle/1f515141e06d16eace718a45944a39933611fa39/plugins/github-releases.lua"
+sha256 = "3789865c266eb53fafcf7300d77a24461170c615195d92d0ddf88078c556e23e"
+
+[plugins]
+gradle = { resolver = "github", coordinate = "daukle/gradle@^1.9.0" }
+
+[toolchains.gradle]
+version = "9.6.0"
+plugins = [{ id = "example.hello" }]
+tasks = ["hello"]
+
+[toolchains.gradle.builds."build-logic"]
+gradlePlugins = [{ id = "example.hello", implementationClass = "com.example.logic.HelloPlugin" }]

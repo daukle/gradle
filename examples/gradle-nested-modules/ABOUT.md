@@ -33,8 +33,8 @@ the runtime classpath of `gradle:run` without colliding.
 
 ## What this example cannot show
 
-**`includeBuild`, a composite build.** It is a different Gradle mechanism, and nothing in
-`[modules]` reaches it.
+**`includeBuild`, a composite build.** It is a different Gradle mechanism, declared under
+`[toolchains.gradle.builds]` rather than `[modules]`, and `gradle-included-build` shows it.
 
 **A project directory that differs from the module name.** Gradle lets `settings.gradle` move a
 project anywhere; here the name IS the directory, which is what keeps one spelling for every
