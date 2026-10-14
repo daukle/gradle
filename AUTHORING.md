@@ -508,6 +508,13 @@ with a version resolves from a repository.
 tasks an included plugin registers count as contributed. It keeps the `pluginManagement` and
 settings lines, because the bare run must still be a build Gradle accepts.
 
+### A build's own dependencies
+
+**A build block takes `classpath` and every other dependency key a module takes, and `daukle/maven`
+fills it** since `maven@1.2.0`, by naming the path as `into`:
+`into = ["builds", "build-logic", "classpath"]`. The `gradle-included-build` example does exactly
+that, and its plugin runs against the resolved jar.
+
 ### The Gradle name, and the collision it can have
 
 **Gradle names an included build after its root project**, and daukle writes that name as the
@@ -520,10 +527,6 @@ refused as well, and so is one plugin id declared by two builds.
 
 ### What is outside it
 
-- **A build's own `classpath` cannot be filled by `daukle/maven` yet**, because `into` takes a flat
-  key name and this one sits inside the build's block. That is `D-127`; until it lands, a build's
-  pins are written inline or assigned from `daukle.lua`. A pinned jar there does reach the plugin
-  at run time.
 - **A `generateConfig`-style task**, a task with a `doLast` body that writes a source file, is build
   logic written as code and outside the declarative boundary, whichever build it sits in. Turn its
   output into a resource the plugin reads or a committed constant, or run the generator through

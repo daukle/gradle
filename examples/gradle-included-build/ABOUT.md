@@ -8,13 +8,16 @@ and the task that plugin registers runs as a daukle task.
 ```console
 $ daukle gradle:hello
 provisioning gradle 9.6.0
-hello from build-logic, applied to example-gradle-included-build
+hello from build-logic, applied to "example-gradle-included-build"
 ```
 
 That line is printed by a class compiled from `build-logic/src/main/java` in the same Gradle run,
-so it is evidence that the build was included, built, and its plugin applied by id.
+so it is evidence that the build was included, built, and its plugin applied by id. **The quotes
+are Gson's**: the plugin formats the name with `new Gson().toJson(...)`, so the line is also
+evidence that the included build compiled and ran against a dependency `daukle/maven` resolved
+into that build's own block.
 
-**This example needs `daukle/gradle` 1.9.0.**
+**This example needs `daukle/gradle` 1.9.0 and `daukle/maven` 1.2.0.**
 
 ## What to look at
 
@@ -30,6 +33,12 @@ build rather than from a pinned jar. It must name an id some build declares in `
 renders as `id 'example.hello'` inside the project's `plugins {}` block, not as `apply plugin:`,
 because Gradle finds a plugin from an included build only through `plugins {}`.
 
+**The included build has dependencies of its own, resolved by `daukle/maven`.** Its
+`[[toolchains.maven.resolve]]` entry names `into = ["builds", "build-logic", "classpath"]`, the
+path to the build's own `classpath`, so Gson lands on `build-logic` and on nothing else. The pins
+are in `daukle/maven/classpath.lua`, written by `daukle maven:resolve --resolve` and included from
+`daukle.lua`, which is why the example carries both files.
+
 **`tasks = ["hello"]`** surfaces the task the plugin registers as `daukle gradle:hello`, the same
 way a task from a third-party plugin is surfaced.
 
@@ -38,7 +47,3 @@ way a task from a third-party plugin is surfaced.
 **A library build.** A build with no `gradlePlugins` is included at the top level instead, and a
 project or a module depends on it with `requiresBuilds = ["<name>"]`. The plugin's own cases run
 one; this example keeps to the plugin half, which is the one a `build-logic` directory is for.
-
-**A pinned jar inside the build.** A build block takes `classpath` and every other dependency key a
-module takes, but `daukle/maven` cannot write into it yet, so its pins go inline or come from
-`daukle.lua`.
