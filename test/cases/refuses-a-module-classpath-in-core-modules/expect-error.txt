@@ -1,0 +1,1 @@
+"modules.app.classpath" is in core's "[modules.app]", which this toolchain never reads: write it under "[toolchains.gradle.modules.app]"
