@@ -92,7 +92,8 @@ run_case() {
   fi
 
   if [ -d "$case_dir/expected" ]; then
-    compare_expected "$case_dir" "$sandbox" "$name" || return
+    # A bare return passes the diff's status up, and set -e then ends the whole run.
+    compare_expected "$case_dir" "$sandbox" "$name" || return 0
   fi
 
   # One literal per line the run's own output must carry. It is how a case
