@@ -58,11 +58,12 @@ daukle.toolchain{
   generate = function(context)
     local config = validation.config_of(context)
     validation.validated(context, config)
-    local owners = validation.composite_of(context, config).owners
+    local record = validation.composite_of(context, config)
     return { [SETTINGS_FILE] = settings_file.settings(validation.project_name(context),
                                                     module_graph.declared(context),
-                                                    validation.settings_plugins_of(config, owners)
-                                                    ~= nil) }
+                                                    validation.settings_plugins_of(config, record.owners)
+                                                    ~= nil,
+                                                    record) }
   end,
 }
 
