@@ -22,12 +22,28 @@ local function project_names(declared, project_name)
   return names
 end
 
+local PLUGIN_ENTRY_KEYS = { id = true, implementationClass = true }
+
+local function refuse_an_unknown_plugin_entry_key(label, entry)
+  for key in pairs(entry) do
+    if PLUGIN_ENTRY_KEYS[key] == nil then
+      error('"' .. label .. '.' .. tostring(key) .. '" is not a key a plugin entry takes', 0)
+    end
+  end
+end
+
+--- @implNote an empty list or a single `{ id, implementationClass }` table has
+--- no list entries, and would otherwise make the build a library build silently.
 local function gradle_plugins_of(name, block)
   local entries = block.gradlePlugins
   if entries == nil then return {} end
   if type(entries) ~= "table" then
     error('"builds.' .. name .. '.gradlePlugins" must be a list of entries, not a '
           .. type(entries), 0)
+  end
+  if #entries == 0 then
+    error('"builds.' .. name .. '.gradlePlugins" must be a non-empty list of'
+          .. ' { id, implementationClass } entries', 0)
   end
   for index = 1, #entries do
     local entry = entries[index]
@@ -36,6 +52,8 @@ local function gradle_plugins_of(name, block)
       error('"builds.' .. name .. '.gradlePlugins[' .. index .. ']" needs an "id" and an'
             .. ' "implementationClass"', 0)
     end
+    refuse_an_unknown_plugin_entry_key('builds.' .. name .. '.gradlePlugins[' .. index .. ']',
+                                       entry)
   end
   return entries
 end
@@ -137,6 +155,10 @@ function builds.required(block, label, read)
   if wanted == nil then return {} end
   if type(wanted) ~= "table" then
     error('"' .. label .. '" must be a list of included build names, not a ' .. type(wanted), 0)
+  end
+  if #wanted == 0 and next(wanted) ~= nil then
+    error('"' .. label .. '" must be a list of included build names, not a table of named keys',
+          0)
   end
   local by_name = {}
   for index = 1, #read do by_name[read[index].name] = read[index] end
