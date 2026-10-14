@@ -1,1 +1,1 @@
-build/daukle/gradle/build/libs/fat-jar-all.jar com/example/shaded/org/apache/commons/lang3/StringUtils
+build/daukle/gradle/build/libs/fat-jar-1.0.0-all.jar com/example/shaded/org/apache/commons/lang3/StringUtils

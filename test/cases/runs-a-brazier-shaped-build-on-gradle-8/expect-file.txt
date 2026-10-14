@@ -1,5 +1,5 @@
 build/daukle/gradle/interop/core/build/classes/java/main/com/example/interop/Interop.class
 build/daukle/gradle/tools/maven/plugin/build/classes/java/main/com/example/plugin/App.class
-build/daukle/gradle/core/build/libs/core.jar
-build/daukle/gradle/interop/core/build/libs/core.jar
-build/daukle/gradle/tools/core/build/libs/core.jar
+build/daukle/gradle/core/build/libs/core-1.0.0.jar
+build/daukle/gradle/interop/core/build/libs/core-1.0.0.jar
+build/daukle/gradle/tools/core/build/libs/core-1.0.0.jar

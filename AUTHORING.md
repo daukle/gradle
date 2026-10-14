@@ -72,6 +72,10 @@ daukle gradle:discover           # what your applied plugins contribute
 | `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
 | `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
 
+**The manifest's own `version` is rendered as Gradle's `version`** into every project file, so a
+jar is named `<name>-<version>.jar` exactly as a Gradle build that sets one names it. Included
+builds do not take it: they are separate builds with versions of their own. Since `1.11.0`.
+
 ## The tasks a plugin contributes
 
 `plugin.lua` declares five tasks of its own and a Gradle plugin contributes its own. **The two
