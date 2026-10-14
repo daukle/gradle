@@ -1,0 +1,14 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+requiresBuilds = ["greeting"]
+
+[toolchains.gradle.builds.greeting]

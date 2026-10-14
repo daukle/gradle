@@ -1,0 +1,1 @@
+"requiresBuilds" belongs to a module and this project declares modules, so it has to live in "[toolchains.gradle.modules.<name>]": a project-wide "requiresBuilds" would apply to every module at once
