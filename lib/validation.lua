@@ -127,7 +127,8 @@ local function project_name(context)
 end
 
 local function checked_builds(context, config)
-  local read = builds.read(config, module_graph.declared(context), project_name(context))
+  local declared = module_graph.declared(context)
+  local read = builds.read(config, declared, project_name(context), MANIFEST)
   local release = string_key(config, "release", nil)
   local checked = {}
   for index = 1, #read do
@@ -257,7 +258,6 @@ local function validated(context, config)
   entries_of_configurations(config, "")
   string_key(config, "release", nil)
   string_key(config, "main", nil)
-
   checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)
   checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath", record.owners)
   --[[ Rendered and thrown away, so a tree this refuses is refused by `daukle
