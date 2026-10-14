@@ -1,0 +1,192 @@
+--- Custom source sets and test sets, `[toolchains.gradle.sourceSets.<name>]`.
+---
+--- @implNote rendered as a plain source set plus, for a test set, a registered
+--- Test task, never through `testing { suites {} }`: every suite but the
+--- built-in one adds an external JUnit dependency on 7.6.4, 8.13 and 9.6.0, and
+--- this build declares no repository (2026-10-14 source sets design, section 1).
+
+local module_graph = daukle.require("lib/modules")
+local configurations = daukle.require("lib/configurations")
+local groovy = daukle.require("lib/groovy")
+local junit = daukle.require("lib/junit")
+local discovery = daukle.require("lib/discovery")
+
+local source_sets = {}
+
+source_sets.CONFIGURATIONS = {
+  { key = "classpath",           suffix = "Implementation",      testRuntime = true },
+  { key = "compileOnly",         suffix = "CompileOnly" },
+  { key = "runtimeOnly",         suffix = "RuntimeOnly",         testRuntime = true },
+  { key = "annotationProcessor", suffix = "AnnotationProcessor" },
+}
+
+local KEYS = { test = true, sourceRoot = true, resourceRoot = true }
+for _, row in ipairs(source_sets.CONFIGURATIONS) do KEYS[row.key] = true end
+
+local RESERVED = { main = true, test = true }
+
+--- @implNote main's configurations a test set inherits through
+--- `<name>Implementation.extendsFrom implementation` and
+--- `<name>RuntimeOnly.extendsFrom runtimeOnly`; `api` arrives because
+--- `java-library` makes `implementation` extend it.
+local INHERITED_FROM_MAIN = { "classpath", "runtimeOnly", "api" }
+
+--- @implNote the union of what `java` and `application` register on 7.6.4,
+--- 8.13 and 9.6.0, measured 2026-10-14 from `project.tasks.names`, plus this
+--- plugin's own. A test set registers a Test task under its own name, and
+--- Gradle answers "Cannot add task 'jar' as a task with that name already
+--- exists" for one that is taken.
+local TAKEN_TASK_NAMES = {}
+for name in ([[
+  artifactTransforms assemble assembleDist build buildDependents buildEnvironment buildNeeded
+  check classes clean compileJava compileTestJava components daukleRun daukleTasks dependencies
+  dependencyInsight dependentComponents distTar distZip help init installDist jar javaToolchains
+  javadoc model outgoingVariants prepareKotlinBuildScriptModel processResources
+  processTestResources projects properties resolvableConfigurations run sourcesJar startScripts
+  tasks test testClasses updateDaemonJvm wrapper
+]]):gmatch("%S+") do
+  TAKEN_TASK_NAMES[name] = true
+end
+
+local function refuse_a_bad_name(name, label)
+  if type(name) ~= "string" or name:match("^%l[%a%d]*$") == nil then
+    error('"' .. label .. '.' .. tostring(name) .. '" is not a source set name: start with a'
+          .. ' lowercase letter and use only letters and digits, as in "integrationTest",'
+          .. ' because the name becomes a configuration prefix and a task name', 0)
+  end
+  if RESERVED[name] then
+    error('"' .. label .. '.' .. name .. '" is Gradle\'s own source set: name yours'
+          .. ' something else', 0)
+  end
+end
+
+local function sorted_names(blocks, label)
+  local names = {}
+  for name in pairs(blocks) do
+    refuse_a_bad_name(name, label)
+    names[#names + 1] = name
+  end
+  table.sort(names)
+  return names
+end
+
+local function refuse_a_missing_launcher(set, main_entries)
+  local reachable = {}
+  local function add(entries)
+    for _, entry in ipairs(entries) do reachable[#reachable + 1] = entry end
+  end
+  for _, key in ipairs(INHERITED_FROM_MAIN) do add(main_entries[key]) end
+  for _, row in ipairs(source_sets.CONFIGURATIONS) do
+    if row.testRuntime then add(set.entries[row.key]) end
+  end
+  junit.refuse_a_missing_launcher(reachable)
+end
+
+local function read_one(name, block, where, prefix, main_entries)
+  if type(block) ~= "table" then
+    error('"' .. where .. '" must be a block, not a ' .. type(block), 0)
+  end
+  for key in pairs(block) do
+    if KEYS[key] == nil then
+      error('"' .. where .. '.' .. tostring(key) .. '" is not a key a source set takes', 0)
+    end
+  end
+  local set = {
+    name = name,
+    test = module_graph.boolean_key(block, "test", false, where .. ".test"),
+    java = module_graph.string_list_key(block, "sourceRoot", prefix .. "src/" .. name .. "/java",
+                                        where .. ".sourceRoot"),
+    resources = module_graph.string_list_key(block, "resourceRoot",
+                                             prefix .. "src/" .. name .. "/resources",
+                                             where .. ".resourceRoot"),
+    entries = {},
+  }
+  for _, row in ipairs(source_sets.CONFIGURATIONS) do
+    set.entries[row.key] = configurations.checked_entries(block[row.key], where .. "." .. row.key)
+  end
+  if set.test then
+    if TAKEN_TASK_NAMES[name] then
+      error('"' .. where .. '" is a test set, and Gradle already has a task named "' .. name
+            .. '" for its Test task to collide with', 0)
+    end
+    refuse_a_missing_launcher(set, main_entries)
+  end
+  return set
+end
+
+--- Every set a project or one module declares, checked, sorted by name.
+--- @param owner the toolchain config, or one module's block
+--- @param module_name nil for the project itself
+function source_sets.read(owner, module_name)
+  local scope = module_name ~= nil and ("modules." .. module_name .. ".") or ""
+  local label = scope .. "sourceSets"
+  local blocks = owner.sourceSets
+  if blocks == nil then return {} end
+  if type(blocks) ~= "table" then
+    error('"' .. label .. '" must be a table of source set blocks keyed by name, not a '
+          .. type(blocks), 0)
+  end
+  if #blocks > 0 then
+    error('"' .. label .. '" must be keyed by name, as [toolchains.gradle.sourceSets.<name>],'
+          .. ' not a list', 0)
+  end
+  local prefix = module_name ~= nil and (module_name .. "/") or ""
+  local main_entries = configurations.entries_of(owner, scope)
+  local sets = {}
+  for index, name in ipairs(sorted_names(blocks, label)) do
+    sets[index] = read_one(name, blocks[name], label .. "." .. name, prefix, main_entries)
+  end
+  return sets
+end
+
+--- Refuses a test set whose `gradle:<kebab>` is already a task of this
+--- toolchain's: a duplicate daukle task name is fatal on every command.
+--- @param modules the records `checked_modules` returns, empty without modules
+function source_sets.refuse_task_collisions(config, modules)
+  local owners = { #modules == 0 and source_sets.read(config, nil) or {} }
+  for _, module in ipairs(modules) do owners[#owners + 1] = module.source_sets end
+  local mapped = {}
+  for _, entry in ipairs(discovery.mapped(config.tasks)) do mapped[entry.daukle] = entry.gradle end
+  for _, sets in ipairs(owners) do
+    for _, set in ipairs(sets) do
+      local task = discovery.task_name(set.name)
+      if set.test and discovery.STATIC[task] then
+        error('"sourceSets.' .. set.name .. '" runs as "gradle:' .. task .. '", which this'
+              .. ' toolchain declares itself', 0)
+      end
+      if set.test and mapped[task] ~= nil then
+        error('"sourceSets.' .. set.name .. '" runs as "gradle:' .. task .. '", which "tasks"'
+              .. ' also maps "' .. mapped[task] .. '" to', 0)
+      end
+    end
+  end
+end
+
+--- Every test set name the manifest declares, project-wide and per module.
+---
+--- @implNote lenient on purpose: it runs at chunk time, where a raise fails
+--- every command including the `sync` that would refuse the block by name.
+function source_sets.declared_test_names(config)
+  local names, seen = {}, {}
+  local function collect(blocks)
+    if type(blocks) ~= "table" then return end
+    for name, block in pairs(blocks) do
+      if type(name) == "string" and type(block) == "table" and block.test == true
+         and not seen[name] then
+        seen[name] = true
+        names[#names + 1] = name
+      end
+    end
+  end
+  if type(config) ~= "table" then return names end
+  collect(config.sourceSets)
+  if type(config.modules) == "table" then
+    for _, block in pairs(config.modules) do
+      if type(block) == "table" then collect(block.sourceSets) end
+    end
+  end
+  table.sort(names)
+  return names
+end
+
+return source_sets

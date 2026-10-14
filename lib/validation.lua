@@ -4,6 +4,7 @@ local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
 local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
+local source_sets = daukle.require("lib/source_sets")
 
 local DEFAULT_JDK = "17"
 
@@ -88,6 +89,7 @@ local function checked_modules(config, declared, read)
       main = string_key(block, "main", nil, scope .. "main"),
       entries = entries_of_configurations(block, scope),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
+      source_sets = source_sets.read(block, name),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -227,7 +229,7 @@ local function validated(context, config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   local record = composite_of(context, config)
-  checked_modules(config, declared, record.read)
+  source_sets.refuse_task_collisions(config, checked_modules(config, declared, record.read))
   entries_of_configurations(config, "")
   module_graph.project_options(config)
   checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)
