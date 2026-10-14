@@ -1,0 +1,1 @@
+the included build "composite" is named "composite" in Gradle, which is also a project of this build

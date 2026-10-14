@@ -1,0 +1,1 @@
+"builds.logic.gradlePlugins" must be a non-empty list of { id, implementationClass } entries

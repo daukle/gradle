@@ -1,0 +1,15 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "9.6.0"
+plugins = [{ id = "example.hello" }]
+
+[toolchains.gradle.builds.logic]
+gradlePlugins = [{ id = "example.hello", implementationClass = "example.logic.HelloPlugin" }]

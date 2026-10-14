@@ -11,6 +11,7 @@ local build_file = {}
 local configurations = daukle.require("lib/configurations")
 local groovy = daukle.require("lib/groovy")
 local extensions = daukle.require("lib/extensions")
+local composite = daukle.require("lib/composite")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -69,7 +70,8 @@ end
 
 --- @param layout   { main = {java, resources}, test = {java, resources} }
 --- @param jars     { compile = {path...}, test = {path...}, plugin = {path...} }
---- @param options  { release, main, plugins, configure, requires }
+--- @param options  { release, main, plugins, configure, requires, included_plugins,
+---                   required_builds, gradle_plugins, group }
 --- @param depth    the `file('...')` prefix the source roots resolve against
 local function render_project(layout, jars, options, depth)
   local requires = options.requires or {}
@@ -104,16 +106,17 @@ local function render_project(layout, jars, options, depth)
        only `java` produced a fat jar whose manifest named no entry point and
        which nothing could run. Both are built into Gradle, so naming them here
        resolves nothing and the no-repository property is untouched. ]]
-  local base = configurations.needs_java_library(jars) and "java-library" or "java"
-  if options.main ~= nil then
-    lines[#lines + 1] = "plugins {"
-    lines[#lines + 1] = "  id " .. groovy.quoted(base)
-    lines[#lines + 1] = "  id 'application'"
-    lines[#lines + 1] = "}"
-  else
-    lines[#lines + 1] = "plugins { id " .. groovy.quoted(base) .. " }"
-  end
+  local gradle_plugins = options.gradle_plugins or {}
+  local ids = { configurations.needs_java_library(jars) and "java-library" or "java" }
+  if #gradle_plugins > 0 then ids[#ids + 1] = "java-gradle-plugin" end
+  if options.main ~= nil then ids[#ids + 1] = "application" end
+  for _, id in ipairs(options.included_plugins or {}) do ids[#ids + 1] = id end
+  for _, line in ipairs(composite.plugins_block(ids)) do lines[#lines + 1] = line end
   lines[#lines + 1] = ""
+  if options.group ~= nil then
+    lines[#lines + 1] = "group = " .. groovy.quoted(options.group)
+    lines[#lines + 1] = ""
+  end
 
   for index = 1, #options.plugins do
     lines[#lines + 1] = "apply plugin: " .. groovy.quoted(options.plugins[index].id)
@@ -129,6 +132,9 @@ local function render_project(layout, jars, options, depth)
   for index = 1, #requires do
     lines[#lines + 1] = "  implementation project("
                         .. groovy.quoted(gradle_path(requires[index])) .. ")"
+  end
+  for _, build_name in ipairs(options.required_builds or {}) do
+    lines[#lines + 1] = "  implementation " .. groovy.quoted(composite.GROUP .. ":" .. build_name)
   end
   for index = 1, #configurations.all do
     local row = configurations.all[index]
@@ -159,6 +165,12 @@ local function render_project(layout, jars, options, depth)
   lines[#lines + 1] = "tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }"
   lines[#lines + 1] = ""
   lines[#lines + 1] = "test { useJUnitPlatform() }"
+  if #gradle_plugins > 0 then
+    lines[#lines + 1] = ""
+    for _, line in ipairs(composite.gradle_plugin_block(gradle_plugins)) do
+      lines[#lines + 1] = line
+    end
+  end
 
   local configuration = build_file.configuration(options.configure, depth)
   for index = 1, #configuration do
@@ -215,6 +227,12 @@ function build_file.render(layout, jars, options)
   return render_project(layout, jars, options, ROOT)
 end
 
+--- An included build's file, its source roots climbing back from its directory
+--- inside the derived one.
+function build_file.included(name, layout, jars, options)
+  return render_project(layout, jars, options, root_of(composite.path_of(name)))
+end
+
 --- The root build file of a multi-project build, which carries the buildscript
 --- classpath and nothing else.
 ---
@@ -240,89 +258,13 @@ function build_file.buildscript(plugin_jars)
   return table.concat(lines, "\n")
 end
 
-build_file.SETTINGS_SCRIPT = "settings-plugins.gradle"
-
---[[ Resolves an id the way Gradle does, through the jar's own descriptor, but
-     against THIS script's classloader: `apply plugin: '<id>'` from an applied
-     script looks the id up on the target's classloader and fails with "Plugin
-     with id ... not found", measured on 8.13 and 9.6.0. ]]
-local APPLY_BY_ID = {
-  "def daukleApply = { String id ->",
-  "  def descriptor = buildscript.classLoader"
-    .. ".getResource(\"META-INF/gradle-plugins/${id}.properties\")",
-  "  if (descriptor == null) {",
-  "    throw new GradleException(\"no plugin descriptor for \" + id"
-    .. " + \" on the settings classpath\")",
-  "  }",
-  "  def properties = new Properties()",
-  "  descriptor.withInputStream { properties.load(it) }",
-  "  apply plugin: buildscript.classLoader"
-    .. ".loadClass(properties.getProperty('implementation-class'))",
-  "}",
-}
-
---- The script settings.gradle applies when the manifest declares settings
---- plugins: the pinned classpath, then every apply, then the configure blocks.
----
---- @implNote a task writes it rather than generate, because generate may not
---- acquire a jar, and settings.gradle stays generate's own: a task rewriting
---- that file would make every later sync report it as changed outside daukle.
---- @implNote the order is load-bearing: a configure block naming a plugin's
---- extension fails before that plugin applied.
-function build_file.settings_plugins(jars, plugins, configure)
-  local lines = { "// Generated by daukle/gradle. Do not edit." }
-  if #jars > 0 then
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "buildscript {"
-    lines[#lines + 1] = "  dependencies {"
-    lines[#lines + 1] = "    classpath files(\n" .. file_list(jars, "      ") .. "\n    )"
-    lines[#lines + 1] = "  }"
-    lines[#lines + 1] = "}"
-  end
-  if #plugins > 0 then
-    lines[#lines + 1] = ""
-    for index = 1, #APPLY_BY_ID do lines[#lines + 1] = APPLY_BY_ID[index] end
-    lines[#lines + 1] = ""
-    for index = 1, #plugins do
-      lines[#lines + 1] = "daukleApply(" .. groovy.quoted(plugins[index].id) .. ")"
-    end
-  end
-  local configuration = build_file.configuration(configure, ROOT, "settingsConfigure")
-  if #configuration > 0 then
-    lines[#lines + 1] = ""
-    for index = 1, #configuration do lines[#lines + 1] = configuration[index] end
-  end
-  return table.concat(lines, "\n") .. "\n"
-end
-
 --- An implicit parent project's file: the header and nothing else, so a build
 --- file an earlier run left in its directory is overwritten rather than read.
 function build_file.empty_project()
   return build_file.buildscript({})
 end
 
---- Without this Gradle names the project after its directory, which would be
---- "gradle".
----
---- @implNote one `include` per declared module, in manifest order. A nested
---- name includes its undeclared parents implicitly, as Gradle does, and daukle
---- writes no build file for them because they are not modules. An empty list
---- renders what a single-project build has always rendered, byte for byte.
---- @param applies_settings_plugins whether the manifest declares settings
---- plugins, which is all generate may know: their jars are acquired by a task
-function build_file.settings(name, modules, applies_settings_plugins)
-  local lines = { "// Generated by daukle/gradle. Do not edit." }
-  if applies_settings_plugins then
-    lines[#lines + 1] = "apply from: " .. groovy.quoted(build_file.SETTINGS_SCRIPT)
-  end
-  lines[#lines + 1] = "rootProject.name = " .. groovy.quoted(name)
-  if modules ~= nil and #modules > 0 then
-    lines[#lines + 1] = ""
-    for index = 1, #modules do
-      lines[#lines + 1] = "include " .. groovy.quoted(gradle_path(modules[index].name))
-    end
-  end
-  return table.concat(lines, "\n") .. "\n"
-end
+build_file.gradle_path = gradle_path
+build_file.file_list = file_list
 
 return build_file

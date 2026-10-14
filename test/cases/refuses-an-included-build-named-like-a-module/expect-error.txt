@@ -1,0 +1,1 @@
+the included build "app" is named "app" in Gradle, which is also a project of this build

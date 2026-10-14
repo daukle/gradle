@@ -1,0 +1,18 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+settingsPlugins = [{ id = "example.mark" }]
+requiresBuilds = ["greeting"]
+
+[toolchains.gradle.builds.logic]
+gradlePlugins = [{ id = "example.mark", implementationClass = "example.logic.Mark" }]
+
+[toolchains.gradle.builds.greeting]

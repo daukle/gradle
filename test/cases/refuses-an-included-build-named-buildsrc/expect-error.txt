@@ -1,0 +1,1 @@
+the included build "buildSrc" is named "buildSrc" in Gradle, which Gradle reserves for its implicit build: rename the directory, to "build-logic" for example

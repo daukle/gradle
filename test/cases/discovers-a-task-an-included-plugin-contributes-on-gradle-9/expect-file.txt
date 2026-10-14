@@ -1,0 +1,1 @@
+build/daukle/gradle/included/logic/build/classes/java/main/example/logic/HelloPlugin.class

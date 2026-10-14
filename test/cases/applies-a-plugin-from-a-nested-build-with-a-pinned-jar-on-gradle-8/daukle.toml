@@ -1,0 +1,20 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+plugins = [{ id = "example.hello" }]
+tasks = ["hello"]
+
+[toolchains.gradle.builds."tools/logic"]
+gradlePlugins = [{ id = "example.hello", implementationClass = "example.logic.HelloPlugin" }]
+
+[[toolchains.gradle.builds."tools/logic".classpath]]
+url = "https://repo1.maven.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
+sha256 = "4241c14a7727c34feea6507ec801318a3d4a90f070e4525681079fb94ee4c593"

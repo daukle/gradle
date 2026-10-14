@@ -1,0 +1,1 @@
+"builds.logic.gradlePlugins[1].version" is not a key a plugin entry takes
