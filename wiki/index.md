@@ -43,7 +43,7 @@ release = "8"
 | `tasks` | Gradle task names to surface as daukle tasks. `gradle:discover` tells you which exist |
 | `modules` | per-module blocks, keyed by a name `[modules]` declares. A source root, `main`, `requiresBuilds` and **every dependency configuration above** belong here once a project has modules |
 | `builds` | included builds, Gradle's composite builds, keyed by the build's directory. A build declaring `gradlePlugins`, each a `{ id, implementationClass }`, is a plugin build whose plugins a versionless `plugins` or `settingsPlugins` entry applies; one without is a library build. A block takes the source roots, `release` and every dependency configuration, and refuses any other key by name |
-| `requiresBuilds` | the library builds a project depends on, by name. With modules it goes in `[toolchains.gradle.modules.<name>]`: written in core's `[modules.<name>]` beside `requires` it is silently ignored |
+| `requiresBuilds` | the library builds a project depends on, by name. With modules it goes in `[toolchains.gradle.modules.<name>]`, and core's `[modules.<name>]` refuses it |
 
 ## Tasks
 
@@ -148,7 +148,8 @@ gradlePlugins = [{ id = "example.hello", implementationClass = "com.example.logi
 
 `daukle gradle:hello` builds `build-logic` from source and runs the task its plugin registers.
 Nothing is written into `build-logic/`: its Gradle files are generated under
-`build/daukle/gradle/included/`. **This needs `daukle/gradle` 1.9.0.**
+`build/daukle/gradle/included/`. **This needs `daukle/gradle` 1.9.0.** A `buildSrc` directory has
+to be renamed first, to `build-logic` for example, because Gradle reserves that build name.
 
 ## What it does not do
 

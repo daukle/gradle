@@ -465,7 +465,8 @@ release = "11"
 - **Declaring `gradlePlugins` is what makes a build a plugin build.** It is included under
   `pluginManagement {}` only and its file applies `java-gradle-plugin` with one `gradlePlugin {}`
   entry per plugin. A build without it is a library build, included at the top level only, with
-  `group = 'daukle.included'`.
+  `group = 'daukle.included'`. An empty `gradlePlugins`, one written as a single table rather than
+  a list, and an entry key other than `id` and `implementationClass` are refused by name.
 - **A `plugins` or `settingsPlugins` entry with no `version` comes from an included build** and must
   name an id some build's `gradlePlugins` declares. A versioned entry is the pinned shape,
   unchanged, and both can sit in one list. A list of nothing but included plugins needs no
@@ -474,11 +475,7 @@ release = "11"
   `implementation 'daukle.included:<gradle name>'`, which Gradle substitutes with the included
   project. Naming a plugin build is refused: a plugin build is applied, not depended on.
 
-**In a project with modules, `requiresBuilds` goes in `[toolchains.gradle.modules.<name>]`, NOT in
-core's `[modules.<name>]` beside `requires`.** Core owns that table and passes this plugin only the
-module graph, so a `requiresBuilds` written there is silently ignored and the module then fails to
-compile against the library it never received. Written project-wide in a project with modules it is
-refused, like every other module key.
+**With modules, `requiresBuilds` goes in `[toolchains.gradle.modules.<name>]`**; in core's `[modules.<name>]` or project-wide it is refused.
 
 ### What gets generated
 
@@ -535,8 +532,10 @@ refused as well, and so is one plugin id declared by two builds.
   refused as unknown rather than ignored.
 - **A build that is both a plugin build and a library build.** Gradle allows one directory under
   both; nothing here has measured it, and `gradlePlugins` decides which role a build has.
-- **`buildSrc`'s implicit form.** A `buildSrc` directory can be declared as a plugin build like any
-  other; nothing renders Gradle's implicit one.
+- **`buildSrc`, implicit or declared.** Gradle reserves the build name: an included build named
+  `buildSrc` fails with *"has build name 'buildSrc' which cannot be used as it is a reserved name"*,
+  measured on 8.13, so daukle refuses it first. Rename the directory, to `build-logic` for example,
+  and declare it as a plugin build.
 - **Not measured**: Gradle 7.6.4, and an included plugin build beside a PINNED settings plugin in
   one manifest.
 
