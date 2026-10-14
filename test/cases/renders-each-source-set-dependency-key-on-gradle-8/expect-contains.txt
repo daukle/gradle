@@ -1,0 +1,8 @@
+build/daukle/gradle/build.gradle toolsImplementation files(
+build/daukle/gradle/build.gradle opentest4j-1.3.0.jar
+build/daukle/gradle/build.gradle toolsCompileOnly files(
+build/daukle/gradle/build.gradle apiguardian-api-1.1.2.jar
+build/daukle/gradle/build.gradle toolsRuntimeOnly files(
+build/daukle/gradle/build.gradle junit-platform-commons-1.10.1.jar
+build/daukle/gradle/build.gradle toolsAnnotationProcessor files(
+build/daukle/gradle/build.gradle junit-jupiter-api-5.10.1.jar

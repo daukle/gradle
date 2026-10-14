@@ -1,0 +1,14 @@
+schema = 1
+project = "example/sets"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+tasks = ["integrationTest"]
+
+[toolchains.gradle.sourceSets.integrationTest]
+test = true

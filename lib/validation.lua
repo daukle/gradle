@@ -4,6 +4,7 @@ local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
 local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
+local source_sets = daukle.require("lib/source_sets")
 
 local DEFAULT_JDK = "17"
 
@@ -63,35 +64,8 @@ local function layout_of(config)
   return module_graph.layout_of(nil, config)
 end
 
-local function checked_classpath(entries, key)
-  if entries == nil then return {} end
-  if type(entries) ~= "table" then
-    error('"' .. key .. '" must be a list of pinned entries, not a ' .. type(entries), 0)
-  end
-  for index = 1, #entries do
-    local entry = entries[index]
-    if type(entry) ~= "table" or type(entry.url) ~= "string"
-       or type(entry.sha256) ~= "string" then
-      error('"' .. key .. '[' .. index .. ']" needs a url and a sha256: every dependency this'
-            .. ' toolchain gives Gradle is pinned before Gradle sees it', 0)
-    end
-  end
-  return entries
-end
-
---- Every pinned entry a configuration holds, keyed by its manifest name.
----
---- @implNote read through one list rather than key by key, so a configuration
---- added to lib/configurations reaches the reader, the renderer, the launcher
---- check and the module key set at once.
-local function entries_of_configurations(block, scope)
-  local entries = {}
-  for index = 1, #configurations.all do
-    local key = configurations.all[index].key
-    entries[key] = checked_classpath(block[key], scope .. key)
-  end
-  return entries
-end
+local checked_classpath = configurations.checked_entries
+local entries_of_configurations = configurations.entries_of
 
 --- Every declared module with its own block read and shape-checked.
 ---
@@ -115,6 +89,7 @@ local function checked_modules(config, declared, read)
       main = string_key(block, "main", nil, scope .. "main"),
       entries = entries_of_configurations(block, scope),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
+      source_sets = source_sets.read(block, name),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -254,7 +229,7 @@ local function validated(context, config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   local record = composite_of(context, config)
-  checked_modules(config, declared, record.read)
+  source_sets.refuse_task_collisions(config, checked_modules(config, declared, record.read))
   entries_of_configurations(config, "")
   module_graph.project_options(config)
   checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)

@@ -1,0 +1,1 @@
+"sourceSets.integrationTest.test" must be true or false, not a string

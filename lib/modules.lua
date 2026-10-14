@@ -176,11 +176,11 @@ function modules.string_key(block, key, fallback, label)
   return value
 end
 
-function modules.boolean_key(block, key, fallback)
+function modules.boolean_key(block, key, fallback, label)
   local value = block[key]
   if value == nil then return fallback end
   if type(value) ~= "boolean" then
-    error('"' .. key .. '" must be true or false, not a ' .. type(value), 0)
+    error('"' .. (label or key) .. '" must be true or false, not a ' .. type(value), 0)
   end
   return value
 end
@@ -234,7 +234,7 @@ end
 
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
-  main = true, requiresBuilds = true,
+  main = true, requiresBuilds = true, sourceSets = true,
 }
 
 for index = 1, #configurations.all do

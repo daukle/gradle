@@ -1,0 +1,18 @@
+schema = 1
+project = "example/sets"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+
+[toolchains.gradle.sourceSets.integrationTest]
+test = true
+
+[toolchains.gradle.sourceSets.tools]
+sourceRoot = ["src/tools/java", "generated/tools"]
