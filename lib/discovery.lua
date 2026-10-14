@@ -21,7 +21,7 @@ discovery.MARKER = "daukle-task "
 
 --- The names this plugin declares itself, which a mapped name may not take.
 discovery.STATIC = { classes = true, test = true, jar = true, run = true,
-                     version = true, discover = true }
+                     version = true, discover = true, ["sources-jar"] = true }
 
 --[[ camelCase to kebab, which is lossy on purpose: core takes lowercase names
      only, so "publishGithub" and "publishgithub" both arrive as

@@ -176,6 +176,23 @@ function modules.string_key(block, key, fallback, label)
   return value
 end
 
+function modules.boolean_key(block, key, fallback)
+  local value = block[key]
+  if value == nil then return fallback end
+  if type(value) ~= "boolean" then
+    error('"' .. key .. '" must be true or false, not a ' .. type(value), 0)
+  end
+  return value
+end
+
+--- The project-wide keys that are neither a path nor a dependency, read in one
+--- place so `generate` refuses exactly what the writer would.
+function modules.project_options(config)
+  return { release = modules.string_key(config, "release", nil),
+           main = modules.string_key(config, "main", nil),
+           sources_jar = modules.boolean_key(config, "sourcesJar", false) }
+end
+
 --- One string or a list of them, always returned as a list: Gradle's `srcDirs`
 --- takes several roots, and an empty list is its way of declaring none.
 function modules.string_list_key(block, key, fallback, label)

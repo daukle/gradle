@@ -130,7 +130,9 @@ local function write_build_file(context, config, options)
   local plugin_jars = bare and {}
                       or paths_of(validation.checked_classpath(config.pluginClasspath,
                                                                "pluginClasspath"))
-  local project_wide = { release = module_graph.string_key(config, "release", nil),
+  local project_options = module_graph.project_options(config)
+  local project_wide = { release = project_options.release,
+                         sources_jar = project_options.sources_jar,
                          version = context.version,
                          plugins = bare and {}
                                    or validation.checked_plugins(config.plugins, "plugins",
@@ -146,7 +148,7 @@ local function write_build_file(context, config, options)
       text = build_file.render(validation.layout_of(config),
                                jars_of(entries, plugin_jars),
                                extended(project_wide,
-                                        { main = module_graph.string_key(config, "main", nil),
+                                        { main = project_options.main,
                                           required_builds = composite_record.required })),
     }
   end

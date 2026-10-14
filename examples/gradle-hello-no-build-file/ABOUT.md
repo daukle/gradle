@@ -19,7 +19,7 @@ runner cost for no new information:
 | `daukle gradle:classes` | compiles only |
 | `daukle gradle:jar` | packages `build/daukle/gradle/build/libs/example-...-no-build-file-1.0.0.jar` |
 | `daukle gradle:version` | prints the version of the Gradle daukle provisioned |
-| `daukle tasks` | lists the six tasks the plugin declares |
+| `daukle tasks` | lists the seven tasks the plugin declares |
 
 ## What to look at
 
