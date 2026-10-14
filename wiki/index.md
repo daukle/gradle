@@ -31,7 +31,7 @@ release = "8"
 | `jdk` | which JDK, through `daukle/java`'s table, defaulting to `17` |
 | `release` | the Java source and target level |
 | `main` | the class `gradle:run` runs. It also applies Gradle's `application` plugin, which is where a packaging plugin reads `Main-Class` from |
-| `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults |
+| `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults. Each takes one directory or a list of them, so generated sources can sit beside written ones |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`, rendering `implementation` and `testImplementation` |
 | `compileOnly`, `runtimeOnly`, `testCompileOnly`, `testRuntimeOnly` | the Gradle configurations of the same names. **`compileOnly` is not on the runtime classpath and `runtimeOnly` is not on the compile classpath**, which is why they are separate keys rather than one |
 | `annotationProcessor`, `testAnnotationProcessor` | javac's `-processorpath`, which is not the compile classpath. A processor usually wants its annotations on `compileOnly` too, and naming the same jar in both is correct |

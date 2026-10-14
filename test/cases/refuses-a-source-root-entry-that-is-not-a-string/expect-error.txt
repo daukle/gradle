@@ -1,0 +1,1 @@
+"modules.alpha.testSourceRoot[2]" must be a string, not a number

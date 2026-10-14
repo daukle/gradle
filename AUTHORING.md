@@ -52,7 +52,7 @@ daukle gradle:discover           # what your applied plugins contribute
 | --- | --- |
 | `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`7.6.4`, `8.4`, `8.8`, `8.10`, `8.10.2`, `8.11.1`, `8.13`, `8.14`, `8.14.3`, `8.14.4`, `9.0.0`, `9.1.0`, `9.2.0`, `9.3.1`, `9.5.0`, `9.6.0`**, and a version not in that set is refused by name rather than fetched. **`7.6.4` is the floor and the refusal says why**: `6.7` cannot run on JDK 17, and 7.3 to 7.6.3 are pinnable and unmeasured |
 | `jdk` | which JDK to provision, through `daukle/java`'s table. Defaults to `17` |
-| `sourceRoot` | defaults to `src/main/java` |
+| `sourceRoot` | defaults to `src/main/java`. **Each of the four roots takes a string or a list of strings**, Gradle's `srcDirs`, and an empty list declares no root at all |
 | `resourceRoot` | defaults to `src/main/resources` |
 | `testSourceRoot` | defaults to `src/test/java` |
 | `testResourceRoot` | defaults to `src/test/resources` |
