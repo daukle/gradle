@@ -95,6 +95,11 @@ function builds.read(config, declared, project_name, manifest)
     end
     refuse_an_unknown_key(name, block)
     local gradle_name = (string.gsub(name, "/", "-"))
+    if gradle_name == "buildSrc" then
+      error('the included build "' .. name .. '" is named "buildSrc" in Gradle, which Gradle'
+            .. ' reserves for its implicit build: rename the directory, to "build-logic" for'
+            .. ' example', 0)
+    end
     if taken[gradle_name] then
       error('the included build "' .. name .. '" is named "' .. gradle_name .. '" in Gradle,'
             .. ' which is also a project of this build', 0)
