@@ -37,46 +37,47 @@ function modules.problem_of(name)
   return nil
 end
 
-local function refuse_a_name_this_toolchain_cannot_model(name)
+local function name_problem(name)
   local problem = modules.problem_of(name)
-  if problem ~= nil then
-    error('the module "' .. name .. '" ' .. problem .. '. A module name is its directory, with'
-          .. ' "/" between components', 0)
-  end
+  if problem == nil then return nil end
+  return 'the module "' .. name .. '" ' .. problem .. '. A module name is its directory, with'
+         .. ' "/" between components'
 end
 
-local function refuse_an_unknown_requires(declared)
+local function unknown_requires_problem(declared)
   local known = {}
   for index = 1, #declared do known[declared[index].name] = true end
   for index = 1, #declared do
     local entry = declared[index]
     for edge = 1, #entry.requires do
       if known[entry.requires[edge]] == nil then
-        error('the module "' .. entry.name .. '" requires "' .. entry.requires[edge]
-              .. '", which this project does not declare', 0)
+        return 'the module "' .. entry.name .. '" requires "' .. entry.requires[edge]
+               .. '", which this project does not declare'
       end
     end
   end
+  return nil
 end
 
 --- @implNote separate from the two-module cycle below because a self-require
 --- is one module and not two: that check would answer with the same name
 --- twice, which reads as a defect in the refusal rather than in the manifest.
-local function refuse_a_self_require(declared)
+local function self_require_problem(declared)
   for index = 1, #declared do
     local entry = declared[index]
     for edge = 1, #entry.requires do
       if entry.requires[edge] == entry.name then
-        error('the module "' .. entry.name .. '" cannot require itself', 0)
+        return 'the module "' .. entry.name .. '" cannot require itself'
       end
     end
   end
+  return nil
 end
 
 --- @implNote catches two modules requiring each other, the shape a user
 --- writes, and nothing longer: a longer cycle is left to Gradle to name.
 --- Refused here because this check needs no Gradle and so runs on every host.
-local function refuse_a_two_module_cycle(declared)
+local function two_module_cycle_problem(declared)
   local requires_of = {}
   for index = 1, #declared do requires_of[declared[index].name] = declared[index].requires end
   for index = 1, #declared do
@@ -85,12 +86,25 @@ local function refuse_a_two_module_cycle(declared)
       local other = declared[index].requires[edge]
       for back = 1, #requires_of[other] do
         if requires_of[other][back] == name then
-          error('the modules "' .. name .. '" and "' .. other .. '" cannot depend on each other',
-                0)
+          return 'the modules "' .. name .. '" and "' .. other .. '" cannot depend on each other'
         end
       end
     end
   end
+  return nil
+end
+
+--- Why `declared` would refuse the module list a context carries, or nil.
+--- @implNote the migrator asks for the reason, because it reports a refusal
+--- as a blocker and the sandbox has no pcall.
+function modules.declared_problem(context)
+  local declared = context.modules or {}
+  for index = 1, #declared do
+    local problem = name_problem(declared[index].name)
+    if problem ~= nil then return problem end
+  end
+  return unknown_requires_problem(declared) or self_require_problem(declared)
+         or two_module_cycle_problem(declared)
 end
 
 --- @implNote core publishes `{ name, requires }` per module in both the
@@ -105,16 +119,13 @@ end
 --- @param context a generate or task context
 --- @return { { name = string, requires = { string } } } in manifest order
 function modules.declared(context)
+  local problem = modules.declared_problem(context)
+  if problem ~= nil then error(problem, 0) end
   local declared = context.modules or {}
   local out = {}
   for index = 1, #declared do
-    local entry = declared[index]
-    refuse_a_name_this_toolchain_cannot_model(entry.name)
-    out[#out + 1] = { name = entry.name, requires = entry.requires }
+    out[#out + 1] = { name = declared[index].name, requires = declared[index].requires }
   end
-  refuse_an_unknown_requires(out)
-  refuse_a_self_require(out)
-  refuse_a_two_module_cycle(out)
   return out
 end
 
@@ -141,20 +152,28 @@ function modules.undeclared_parents(declared)
   return parents
 end
 
---- @implNote a daukle task takes no arguments, so `gradle:run` cannot name a
---- module. Running every runnable module instead is nobody's intent.
---- @param checked the records `checked_modules` builds, each with `name` and `main`
-function modules.refuse_two_mains(checked)
+--- Why `refuse_two_mains` would refuse, or nil.
+--- @param checked records each with `name` and `main`, in manifest order
+function modules.two_mains_problem(checked)
   local found = nil
   for index = 1, #checked do
     if checked[index].main ~= nil then
       if found ~= nil then
-        error('the modules "' .. found .. '" and "' .. checked[index].name .. '" both declare'
-              .. ' "main", and "gradle:run" cannot name which one it means', 0)
+        return 'the modules "' .. found .. '" and "' .. checked[index].name .. '" both declare'
+               .. ' "main", and "gradle:run" cannot name which one it means'
       end
       found = checked[index].name
     end
   end
+  return nil
+end
+
+--- @implNote a daukle task takes no arguments, so `gradle:run` cannot name a
+--- module. Running every runnable module instead is nobody's intent.
+--- @param checked the records `checked_modules` builds, each with `name` and `main`
+function modules.refuse_two_mains(checked)
+  local problem = modules.two_mains_problem(checked)
+  if problem ~= nil then error(problem, 0) end
 end
 
 local DEFAULT_SUFFIX = {
@@ -240,6 +259,9 @@ local MODULE_KEYS = {
 for index = 1, #configurations.all do
   MODULE_KEYS[configurations.all[index].key] = true
 end
+
+--- The keys a `[toolchains.gradle.modules.<name>]` block takes.
+modules.MODULE_KEYS = MODULE_KEYS
 
 --- @implNote core reads only `requires` in its `[modules.<n>]` and hands every
 --- other key on unread, so a module key written there does nothing and only

@@ -6,14 +6,15 @@
 --- declarations, because `daukle/gradle` hands Gradle files and resolves
 --- nothing: every transitive artifact has to be pinned, and a configuration
 --- the build wired with `extendsFrom` shows up as the artifacts it brought.
---- The declarations decide only `api` and `compileOnlyApi`, which no resolved
---- classpath can tell from `implementation` and `compileOnly`.
+--- Which declaration reached a row decides `api` and `compileOnlyApi`, which
+--- no resolved classpath can tell from `implementation` and `compileOnly`
+--- (lib/translate_dependencies).
 
 local translate_model = {}
 
-local model_dump = daukle.require("lib/model_dump")
 local translation_state = daukle.require("lib/translation")
 local translate_plugins = daukle.require("lib/translate_plugins")
+local translate_dependencies = daukle.require("lib/translate_dependencies")
 
 local SURFACE = "GRADLE-SURFACE.md: "
 local LAYOUT_ROW = SURFACE .. "3. The `java` extension and source layout"
@@ -126,14 +127,18 @@ local function is_absolute(path)
   return string.sub(path, 1, 1) == "/" or string.match(path, "^%a:/") ~= nil
 end
 
---- A model path (relative to the build's root) relative to the project instead,
---- or nil when it lies outside the project.
-local function within_project(project, path)
+--- A model path (relative to the build's root) as a source root key holds
+--- it, relative to the daukle project's root, or nil when it lies outside it.
+local function within_project(translation, path)
   if is_absolute(path) or path == ".." or string.sub(path, 1, 3) == "../" then return nil end
-  if project.dir == "." then return path end
-  local prefix = project.dir .. "/"
-  if string.sub(path, 1, #prefix) ~= prefix then return nil end
-  return string.sub(path, #prefix + 1)
+  return translation.prefix .. path
+end
+
+--- Where a set's root lies when the key is left out: under the module's or
+--- the included build's own directory, else under the project's root.
+local function default_root(translation, set_name, kind)
+  local owner = translation.name ~= nil and (translation.name .. "/") or ""
+  return owner .. "src/" .. set_name .. "/" .. kind
 end
 
 local function same_list(left, right)
@@ -149,7 +154,7 @@ local function one_or_list(paths)
   return paths
 end
 
-local function translate_roots(translation, project, set_name, kind, sources)
+local function translate_roots(translation, set_name, kind, sources)
   local construct = "sourceSets." .. set_name .. "." .. kind
   if sources == nil or is_unrendered(sources) then
     block(translation, construct, "could not be read from the model", LAYOUT_ROW)
@@ -162,7 +167,7 @@ local function translate_roots(translation, project, set_name, kind, sources)
   end
   local roots = {}
   for _, path in ipairs(sources.srcDirs or {}) do
-    local relative = within_project(project, path)
+    local relative = within_project(translation, path)
     if relative == nil then
       block(translation, construct, "names the root " .. path .. ", which lies outside the project",
             LAYOUT_ROW)
@@ -170,7 +175,7 @@ local function translate_roots(translation, project, set_name, kind, sources)
     end
     roots[#roots + 1] = carried(translation, relative, construct)
   end
-  if same_list(roots, { "src/" .. set_name .. "/" .. kind }) then return nil end
+  if same_list(roots, { default_root(translation, set_name, kind) }) then return nil end
   return one_or_list(roots)
 end
 
@@ -209,127 +214,6 @@ local function union(...)
   return out
 end
 
-local function row_key(row)
-  return row.component .. "\0" .. (row.fileName or "")
-end
-
---- The resolved rows of each configuration, in Gradle's classpath order.
-local function rows_by_configuration(project)
-  local rows = {}
-  local dependencies = project.dependencies or {}
-  for _, row in ipairs(dependencies.resolved or {}) do
-    local list = rows[row.configuration]
-    if list == nil then
-      list = { seen = {} }
-      rows[row.configuration] = list
-    end
-    if not list.seen[row_key(row)] then
-      list.seen[row_key(row)] = true
-      list[#list + 1] = row
-    end
-  end
-  return rows
-end
-
-local function declared_modules(project, configuration)
-  local modules = {}
-  for _, row in ipairs((project.dependencies or {}).declared or {}) do
-    if row.configuration == configuration and row.kind == "module" then
-      modules[row.group .. ":" .. row.name] = true
-    end
-  end
-  return modules
-end
-
---- Each artifact a set's classpaths resolve to, sorted into the bucket that
---- reproduces them: on both compile and runtime, compile only, runtime only.
---- `inherited` maps each bucket to the artifacts the set already sees through
---- main, which are left out of it.
-local function split_classpaths(rows, set, inherited)
-  local compile = rows[set.compileClasspath] or { seen = {} }
-  local runtime = rows[set.runtimeClasspath] or { seen = {} }
-  local split = { both = {}, compile = {}, runtime = {}, processor = {} }
-  for _, row in ipairs(compile) do
-    local bucket = runtime.seen[row_key(row)] and "both" or "compile"
-    if not inherited[bucket][row_key(row)] then split[bucket][#split[bucket] + 1] = row end
-  end
-  for _, row in ipairs(runtime) do
-    if not compile.seen[row_key(row)] and not inherited.runtime[row_key(row)] then
-      split.runtime[#split.runtime + 1] = row
-    end
-  end
-  for _, row in ipairs(rows[set.annotationProcessor] or {}) do split.processor[#split.processor + 1] = row end
-  return split
-end
-
-local function keys_of(rows)
-  local keys = {}
-  for _, row in ipairs(rows) do keys[row_key(row)] = true end
-  return keys
-end
-
-local function append_pin(translation, project, buckets, key, row)
-  local pin = translation_state.pin_of(translation, project.repositories, row)
-  if pin == nil then return end
-  buckets[key] = buckets[key] or {}
-  buckets[key][#buckets[key] + 1] = pin
-end
-
-local function is_declared_in(modules, row)
-  return row.group ~= nil and modules[row.group .. ":" .. row.module] == true
-end
-
-local NOTHING_INHERITED = { both = {}, compile = {}, runtime = {} }
-
---- @return the buckets keyed by manifest key, and main's rows by bucket for test to inherit
-local function main_dependencies(translation, project, rows, set)
-  local split = split_classpaths(rows, set, NOTHING_INHERITED)
-  local api = declared_modules(project, "api")
-  local compile_only_api = declared_modules(project, "compileOnlyApi")
-  local buckets = {}
-  for _, row in ipairs(split.both) do
-    append_pin(translation, project, buckets, is_declared_in(api, row) and "api" or "classpath", row)
-  end
-  for _, row in ipairs(split.compile) do
-    append_pin(translation, project, buckets,
-               is_declared_in(compile_only_api, row) and "compileOnlyApi" or "compileOnly", row)
-  end
-  for _, row in ipairs(split.runtime) do append_pin(translation, project, buckets, "runtimeOnly", row) end
-  for _, row in ipairs(split.processor) do append_pin(translation, project, buckets, "annotationProcessor", row) end
-  return buckets, split
-end
-
---- @implNote test sees main's `implementation` and `api` on both classpaths and
---- main's `runtimeOnly` at runtime, so those are not repeated in test's keys.
---- The launcher the dump resolved for a JUnit Platform engine goes to
---- `testRuntimeOnly`, where Gradle 8 put it at test time.
-local function test_dependencies(translation, project, rows, set, main_split)
-  local both = keys_of(main_split.both)
-  local inherited = { both = both, compile = both, runtime = union(both, keys_of(main_split.runtime)) }
-  local split = split_classpaths(rows, set, inherited)
-  local buckets = {}
-  local keys = { both = "testClasspath", compile = "testCompileOnly", runtime = "testRuntimeOnly",
-                 processor = "testAnnotationProcessor" }
-  for bucket, key in pairs(keys) do
-    for _, row in ipairs(split[bucket]) do append_pin(translation, project, buckets, key, row) end
-  end
-  for _, row in ipairs(rows[model_dump.IMPLIED_LAUNCHER] or {}) do
-    append_pin(translation, project, buckets, "testRuntimeOnly", row)
-  end
-  return buckets
-end
-
-local function custom_dependencies(translation, project, rows, set)
-  local split = split_classpaths(rows, set, NOTHING_INHERITED)
-  local buckets = {}
-  local keys = { both = "classpath", compile = "compileOnly", runtime = "runtimeOnly",
-                 processor = "annotationProcessor" }
-  for bucket, key in pairs(keys) do
-    for _, row in ipairs(split[bucket]) do append_pin(translation, project, buckets, key, row) end
-  end
-  return buckets
-end
-
 local function copy_into(target, source)
   for key, value in pairs(source) do target[key] = value end
 end
@@ -352,8 +236,9 @@ local function effective_encoding(project, set)
 end
 
 local function on_disk(translation, path)
-  if translation.dir == nil or translation.dir == "." then return path end
-  return translation.dir .. "/" .. path
+  local rooted = translation.prefix .. path
+  if translation.dir == nil or translation.dir == "." then return rooted end
+  return translation.dir .. "/" .. rooted
 end
 
 --- The first file under `directory` holding a byte of 0x80 or above, or nil.
@@ -388,10 +273,10 @@ local function check_encoding(translation, project, set_name, set)
   end
 end
 
-local function translate_set_layout(translation, project, set_name, set, keys)
+local function translate_set_layout(translation, set_name, set, keys)
   local layout = {}
-  layout[keys.java] = translate_roots(translation, project, set_name, "java", set.java)
-  layout[keys.resources] = translate_roots(translation, project, set_name, "resources", set.resources)
+  layout[keys.java] = translate_roots(translation, set_name, "java", set.java)
+  layout[keys.resources] = translate_roots(translation, set_name, "resources", set.resources)
   return layout
 end
 
@@ -407,9 +292,8 @@ end
 local function translate_custom_set(translation, project, rows, name, set)
   check_classpath_wiring(translation, name, set, {}, as_set(set.output))
   check_encoding(translation, project, name, set)
-  local block_of = translate_set_layout(translation, project, name, set,
-                                        { java = "sourceRoot", resources = "resourceRoot" })
-  copy_into(block_of, custom_dependencies(translation, project, rows, set))
+  local block_of = translate_set_layout(translation, name, set, { java = "sourceRoot", resources = "resourceRoot" })
+  copy_into(block_of, translate_dependencies.custom(translation, project, rows, name, set))
   return block_of
 end
 
@@ -420,20 +304,20 @@ local function translate_source_sets(translation, project, config)
           .. " to translate", LAYOUT_ROW)
     return
   end
-  local rows = rows_by_configuration(project)
+  local rows = translate_dependencies.rows_by_configuration(project)
   local main = sets[MAIN]
   local main_output = as_set(main.output)
   check_classpath_wiring(translation, MAIN, main, {}, main_output)
   check_encoding(translation, project, MAIN, main)
-  copy_into(config, translate_set_layout(translation, project, MAIN, main, ROOT_KEYS.main))
-  local main_buckets, main_split = main_dependencies(translation, project, rows, main)
+  copy_into(config, translate_set_layout(translation, MAIN, main, ROOT_KEYS.main))
+  local main_buckets, main_split = translate_dependencies.main(translation, project, rows, main)
   copy_into(config, main_buckets)
   local test = sets[TEST]
   if test ~= nil then
     check_classpath_wiring(translation, TEST, test, main_output, union(main_output, as_set(test.output)))
     check_encoding(translation, project, TEST, test)
-    copy_into(config, translate_set_layout(translation, project, TEST, test, ROOT_KEYS.test))
-    copy_into(config, test_dependencies(translation, project, rows, test, main_split))
+    copy_into(config, translate_set_layout(translation, TEST, test, ROOT_KEYS.test))
+    copy_into(config, translate_dependencies.test(translation, project, rows, test, main_split))
   end
   for _, name in ipairs(sorted_set_names(sets)) do
     config.sourceSets = config.sourceSets or {}
@@ -446,10 +330,20 @@ local function main_compile_task(project)
   return (sets[MAIN] or {}).compileJavaTask or "compileJava"
 end
 
+local function sorted_keys(set)
+  local keys = {}
+  for key in pairs(set) do keys[#keys + 1] = key end
+  table.sort(keys)
+  return keys
+end
+
 --- @param project  one PROJECT of the model `migrator.read_model` returns
---- @param build    { model = <that whole model>, dir = <context.dir>, where = <the path blockers name> }
+--- @param build    what `lib/translation`'s `new` takes
 --- @return { config = <the [toolchains.gradle] keys>, name = <the project's name>,
 ---           version = <the project's version, or nil when Gradle's is unspecified>,
+---           requires = <the paths of this build's projects its main classpaths hold>,
+---           requiredBuilds = <the identity paths of the included builds they hold>,
+---           unpinned = <set of the components no pinned entry could name>,
 ---           blockers = { { construct, where, why, surface? } } }
 function translate_model.project(project, build)
   local translation = translation_state.new(build)
@@ -462,6 +356,23 @@ function translate_model.project(project, build)
   copy_into(config, translate_plugins.project(translation, project))
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
   return { config = config, name = carried(translation, project.name, "rootProject.name"), version = version,
+           requires = sorted_keys(translation.requires), requiredBuilds = sorted_keys(translation.required_builds),
+           unpinned = translation.unpinned, blockers = translation.blockers }
+end
+
+--- A project that becomes no module: the root of a multi-project build, or a
+--- parent directory Gradle made a project of. Only its plugin classpath has a
+--- key, the derived root's; everything else it holds is compared with the
+--- generated build's project of the same path, which holds nothing.
+--- @return { config = { pluginClasspath? }, name = <the project's name>, unpinned, blockers }
+function translate_model.parent(project, build)
+  local translation = translation_state.new(build)
+  if extension_value(project, "sourceSets") ~= nil then
+    block(translation, project.path, "applies a Java plugin, and with modules daukle/gradle's root and parent"
+          .. " projects compile nothing", LAYOUT_ROW)
+  end
+  return { config = translate_plugins.classpath(translation, project),
+           name = carried(translation, project.name, "rootProject.name"), unpinned = translation.unpinned,
            blockers = translation.blockers }
 end
 

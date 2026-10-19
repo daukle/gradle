@@ -1,0 +1,11 @@
+plugins {
+  id 'application'
+}
+
+dependencies {
+  implementation project(':greeting')
+}
+
+application {
+  mainClass = 'com.example.App'
+}

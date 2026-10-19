@@ -1,0 +1,1 @@
+core/build.gradle: bundleNotes: is a task the old build has and the build daukle/gradle generates from the translated keys does not

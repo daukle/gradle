@@ -13,10 +13,19 @@ local function environment_index(model)
   return index
 end
 
---- @param build { model = <the whole model>, dir = <context.dir>, where = <the path blockers name> }
+--- @param build { model = <the whole model>, dir = <context.dir>, where = <the path blockers name>,
+---                prefix? = <the model's root as seen from context.dir, "" or ending in "/">,
+---                name? = <the module or included build the project becomes>,
+---                includedPluginIds? = <set of the plugin ids included builds declare>,
+---                includedPluginBuilds? = <set of the identity paths of the builds declaring them>,
+---                inheritedBuildscript? = <the resolved buildscript rows of the project's ancestors> }
 function translation.new(build)
   return { model = build.model, dir = build.dir, where = build.where, blockers = {}, blocked = {},
-           environment = environment_index(build.model) }
+           environment = environment_index(build.model), prefix = build.prefix or "", name = build.name,
+           included_plugin_ids = build.includedPluginIds or {},
+           included_plugin_builds = build.includedPluginBuilds or {},
+           inherited_buildscript = build.inheritedBuildscript or {},
+           requires = {}, required_builds = {}, unpinned = {} }
 end
 
 function translation.block(state, construct, why, surface)
@@ -85,7 +94,7 @@ end
 --- Why a resolved row cannot be pinned, or nil when it can.
 local function unpinnable(row, repository)
   if row.kind == "project" then
-    return "is a dependency on another project, which this migrator does not translate yet"
+    return "is a project of this build or of an included one, which no pinned entry can name"
   end
   if row.kind ~= "module" then
     return "has no repository: a files(), flatDir or gradleApi() dependency, which no pinned entry can name"
@@ -114,6 +123,7 @@ function translation.pin_of(state, repositories, row)
   local repository = repository_named(state, repositories, row.repository)
   local why = unpinnable(row, repository)
   if why ~= nil then
+    state.unpinned[row.component] = true
     translation.block(state, row.component, why, CONFIGURATIONS_ROW)
     return nil
   end

@@ -283,23 +283,80 @@ def identifierKind = { identifier ->
   identifier.getClass().simpleName
 }
 
+/**
+ * The build a project component belongs to, as an identity path (`:` for the build being dumped).
+ * @implNote `BuildIdentifier.buildPath` exists from 8.2 and `name` is gone in 9; on 7.6.4 `name` is
+ * `:` for the current build and the bare build name for an included one. Measured on 7.6.4 and 9.6.0.
+ */
+def buildOf = { identifier ->
+  try { return identifier.build.buildPath } catch (Throwable ignored) { }
+  def name = identifier.build.name
+  name == ':' ? ':' : ':' + name
+}
+
+def isProjectComponent = { identifier -> identifier instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier }
+
+/**
+ * How one declared edge of the resolution root is named in `via`: by the project it selected, else by the
+ * module it requested, so a module coordinate an included build substitutes reads as that project.
+ */
+def edgeKey = { dependency ->
+  def selected = dependency.selected.id
+  if (isProjectComponent(selected)) return 'project ' + buildOf(selected) + ' ' + selected.projectPath
+  def requested = dependency.requested
+  if (requested instanceof org.gradle.api.artifacts.component.ModuleComponentSelector) {
+    return 'module ' + requested.group + ':' + requested.module
+  }
+  'other ' + requested.displayName
+}
+
+def isFollowed = { dependency ->
+  dependency instanceof org.gradle.api.artifacts.result.ResolvedDependencyResult && !dependency.constraint
+}
+
+/**
+ * For each component a configuration resolves, the declared edges of its root it is reachable through,
+ * which is what tells a transitive of an `api` declaration from one of an `implementation` declaration,
+ * and a row a required project brings from one the project declares itself.
+ */
+def viaOf = { configuration ->
+  def via = [:]
+  configuration.incoming.resolutionResult.root.dependencies.findAll { isFollowed(it) }.each { edge ->
+    def key = edgeKey(edge)
+    def seen = [] as Set
+    def pending = [edge.selected]
+    while (!pending.isEmpty()) {
+      def component = pending.remove(pending.size() - 1)
+      if (!seen.add(component.id.displayName)) continue
+      via.get(component.id.displayName, [] as TreeSet) << key
+      component.dependencies.findAll { isFollowed(it) }.each { pending << it.selected }
+    }
+  }
+  via
+}
+
 def resolvedRows = { configuration ->
   def repositories = [:]
   configuration.incoming.resolutionResult.allComponents.each { component ->
     repositories[component.id.displayName] = repositoryOf(component)
   }
+  def via = viaOf(configuration)
   configuration.incoming.artifacts.artifacts.collect { artifact ->
     def identifier = artifact.id.componentIdentifier
     def file = artifact.file
     def row = [configuration: configuration.name, component: identifier.displayName, kind: identifierKind(identifier),
                fileName: (artifact.id.hasProperty('fileName') ? artifact.id.fileName : file.name),
-               sha256: (file.isFile() ? sha256(file) : null), repository: repositories[identifier.displayName]]
+               sha256: (file.isFile() ? sha256(file) : null), repository: repositories[identifier.displayName],
+               via: (via[identifier.displayName] ?: []) as List]
     if (identifier instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
       row.group = identifier.group
       row.module = identifier.module
       row.version = identifier.version
     }
-    if (identifier instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier) row.project = identifier.projectPath
+    if (isProjectComponent(identifier)) {
+      row.project = identifier.projectPath
+      row.build = buildOf(identifier)
+    }
     row
   }
 }
@@ -310,6 +367,10 @@ def resolveInto = { configuration, List resolved, List errors ->
   catch (Throwable failure) { errors << [configuration: configuration.name, error: failure.toString()] }
 }
 
+/**
+ * @implNote a `ProjectDependency` has `path` on 9.6.0 and no `dependencyProject`; on 7.6.4 it has no
+ * `path` and `dependencyProject.path` is the project's path. Measured on both, D-146.
+ */
 def declaredRows = { configurations ->
   configurations.collectMany { configuration ->
     configuration.dependencies.collect { dependency ->
@@ -426,7 +487,15 @@ def applicationExtension = { File base, extension, owner ->
    applicationDefaultJvmArgs: safely { plain(base, extension.applicationDefaultJvmArgs) }]
 }
 
-def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtension, application: applicationExtension]
+def gradlePluginExtension = { File base, extension, owner ->
+  [plugins: extension.plugins.collectEntries { plugin ->
+    [plugin.name, [id: safely { plain(base, plugin.id) }, implementationClass: safely { plain(base, plugin.implementationClass) },
+                   displayName: safely { plain(base, plugin.displayName) }, description: safely { plain(base, plugin.description) }]]
+  }]
+}
+
+def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtension, application: applicationExtension,
+                              gradlePlugin: gradlePluginExtension]
 
 /**
  * The type that decides whether an extension is the build's or Gradle's: for a container (a

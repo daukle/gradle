@@ -1,0 +1,2 @@
+rootProject.name = 'exporter'
+include 'text', 'app'

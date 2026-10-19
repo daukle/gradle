@@ -1,6 +1,7 @@
 local model_dump = daukle.require("lib/model_dump")
 local launcher = daukle.require("lib/launcher")
-local translate_model = daukle.require("lib/translate_model")
+local translate_build = daukle.require("lib/translate_build")
+local migrate_comparison = daukle.require("lib/migrate_comparison")
 local migrate_blockers = daukle.require("lib/migrate_blockers")
 local distributions = daukle.require("lib/distributions")
 local writer = daukle.require("lib/writer")
@@ -82,16 +83,30 @@ local function gradle_refusal(context, distribution)
   return nil
 end
 
-local function model_name(build)
-  if build == nil then return MODEL end
-  return (string.gsub(MODEL, "%.json$", "")) .. "-" .. build .. ".json"
+local function model_name(base, build)
+  if build == nil then return base end
+  return (string.gsub(base, "%.json$", "")) .. "-" .. (string.gsub(build, ":", "-")) .. ".json"
 end
 
 --- The model `run` dumped, parsed: the root build's, or with `build` the
 --- included build's of that name (its identity path without the leading colon,
 --- each further colon a hyphen).
 local function read_model(context, build)
-  return daukle.json_parse(daukle.read(derived(context, model_name(build))))
+  return daukle.json_parse(daukle.read(derived(context, model_name(MODEL, build))))
+end
+
+local function derived_has(context, name)
+  return has_file("build/daukle/" .. context.instance, name)
+end
+
+--- Each included build's model by the name `includedBuilds` gives it, left
+--- out when the dump wrote none: the translation blocks that build by name.
+local function included_models(context, model)
+  local models = {}
+  for _, entry in ipairs(model.includedBuilds or {}) do
+    if derived_has(context, model_name(MODEL, entry.name)) then models[entry.name] = read_model(context, entry.name) end
+  end
+  return models
 end
 
 local function tail(text)
@@ -125,9 +140,9 @@ end
 
 --- The context a task of the translated manifest would see, which is what the
 --- plugin's own renderer reads.
-local function generation_context(context, translation, config)
+local function generation_context(context, built, config)
   return { instance = context.instance, dir = context.dir, root = context.root, host = context.host,
-           project = translation.name, version = translation.version, modules = {},
+           project = built.name, version = built.version, modules = built.declared or {},
            toolchain = { config = config, version = config.version } }
 end
 
@@ -151,15 +166,35 @@ local function generation_blockers(problems, where)
   return blockers
 end
 
+local function last_component(path)
+  return string.match(path, "([^/]+)$") or path
+end
+
+--- Each generated included build's model by its directory, found under the
+--- name Gradle gave the build, which is its root project's or its directory's.
+local function generated_builds(context, built)
+  local models = {}
+  for _, record in ipairs(built.builds) do
+    for _, name in ipairs({ record.gradle_name, last_component(record.dir) }) do
+      local file = model_name(GENERATED_MODEL, name)
+      if models[record.dir] == nil and derived_has(context, file) then
+        models[record.dir] = { identity = ":" .. name,
+                               model = daukle.json_parse(daukle.read(derived(context, file))) }
+      end
+    end
+  end
+  return models
+end
+
 --- The model of the build `daukle/gradle` renders from the translation,
 --- dumped with the same init script, Gradle and JDK as the old build, so the
 --- run reuses the first one's daemon; or nil and the blockers that stopped it.
 ---
 --- @implNote the writer's refusals are asked for as reasons first, because
 --- the sandbox has no pcall and a raise would discard every blocker found.
-local function dump_generated(context, translation, where)
-  local config = rendered_config(translation.config)
-  local generation = generation_context(context, translation, config)
+local function dump_generated(context, built, where)
+  local config = rendered_config(built.config)
+  local generation = generation_context(context, built, config)
   local problems = writer.generation_problems(generation, config)
   if #problems > 0 then return nil, generation_blockers(problems, where) end
   writer.write_build_file(generation, config)
@@ -182,40 +217,40 @@ end
 local OLD_JARS = "migrate-old"
 local NEW_JARS = "build/libs"
 
---- The jar to compare, named as the old build's `jar` task names it.
----
---- @implNote the old side is written by `build`, which does not exist yet, so
---- until it does the proof runs the new build and then reports the old jar
---- missing; that still writes daukle.toml for inspection, which no-proof does
---- not.
-local function proof_of(context, project)
+local function jar_name(project)
   for _, task in ipairs(project.tasks or {}) do
     local values = task.values
     if task.name == "jar" and type(values) == "table" and type(values.archiveFileName) == "string" then
-      return {
-        task = context.instance .. ":jar",
-        compare = { {
-          old = derived(context, OLD_JARS .. "/" .. values.archiveFileName),
-          new = derived(context, NEW_JARS .. "/" .. values.archiveFileName),
-          as = "archive",
-        } },
-      }
+      return values.archiveFileName
     end
   end
   return nil
 end
 
-local function scope_blockers(model, where)
-  local blockers = {}
-  for index = 2, #model.projects do
-    blockers[#blockers + 1] = { construct = model.projects[index].path, where = where,
-                                why = "is a subproject, and this migrator translates a single project only so far" }
+local function under(module, path)
+  if module == nil then return path end
+  return module .. "/" .. path
+end
+
+--- One jar to compare per project that becomes the root or a module, named as
+--- the old build's `jar` task names it.
+---
+--- @implNote the old side is written by `build`, which does not exist yet, so
+--- until it does the proof runs the new build and then reports the old jars
+--- missing; that still writes daukle.toml for inspection, which no-proof does
+--- not.
+local function proof_of(context, built)
+  local compare = {}
+  for _, entry in ipairs(built.projects) do
+    local name = jar_name(entry.project)
+    if name ~= nil and (entry.module ~= nil or built.declared == nil) then
+      compare[#compare + 1] = { old = derived(context, OLD_JARS .. "/" .. under(entry.module, name)),
+                                new = derived(context, under(entry.module, NEW_JARS .. "/" .. name)),
+                                as = "archive" }
+    end
   end
-  for _, build in ipairs(model.includedBuilds or {}) do
-    blockers[#blockers + 1] = { construct = build.dir, where = where,
-                                why = "is an included build, and this migrator translates a single project only so far" }
-  end
-  return blockers
+  if #compare == 0 then return nil end
+  return { task = context.instance .. ":jar", compare = compare }
 end
 
 local function append(target, source)
@@ -224,31 +259,19 @@ end
 
 local SETTINGS_FILES = { "settings.gradle", "settings.gradle.kts" }
 
---- The settings file blockers about settings plugins name, else `fallback`.
-local function settings_where(context, fallback)
+--- The settings file, relative to the instance's directory, that blockers
+--- about settings name; else the root build file, else the directory itself.
+local function settings_name(context, root)
   for _, name in ipairs(SETTINGS_FILES) do
-    if has_file(context.dir or ".", name) then return within(context.dir, name) end
+    if has_file(context.dir or ".", name) then return name end
   end
-  return fallback
+  return root.buildFile or "."
 end
 
---- The checks that need the generated build's model: what it applies and
---- registers that the old build's plugins and extensions did not reproduce.
-local function generated_blockers(model, root, generated, where, settings)
-  local generated_root = generated.projects[1]
+local function build_logic_blockers(built)
   local blockers = {}
-  append(blockers, migrate_blockers.core_plugins(root, generated_root, where))
-  append(blockers, migrate_blockers.third_party_plugins(root.plugins, generated_root.plugins, where, ""))
-  append(blockers, migrate_blockers.third_party_plugins(model.settingsPlugins, generated.settingsPlugins, settings,
-                                                        "settings "))
-  append(blockers, migrate_blockers.core_plugins({ plugins = model.settingsPlugins },
-                                                 { plugins = generated.settingsPlugins }, settings))
-  append(blockers, migrate_blockers.settings_differences(model.settingsCore, generated.settingsCore, settings))
-  append(blockers, migrate_blockers.extension_differences(root.extensions, generated_root.extensions, where,
-                                                          "configure"))
-  append(blockers, migrate_blockers.extension_differences(model.settingsExtensions, generated.settingsExtensions,
-                                                          settings, "settingsConfigure"))
-  append(blockers, migrate_blockers.task_difference(root, generated_root, where))
+  for _, entry in ipairs(built.projects) do append(blockers, migrate_blockers.build_logic(entry.project, entry.where)) end
+  for _, record in ipairs(built.builds) do append(blockers, migrate_blockers.build_logic(record.project, record.where)) end
   return blockers
 end
 
@@ -264,27 +287,26 @@ local function run(context)
   local gradle_version = distribution ~= nil and distribution.version or nil
   dump(context, gradle_version)
   local model = read_model(context)
-  local root = model.projects[1]
-  local where = within(context.dir, root.buildFile or ".")
-  local translation = translate_model.project(root, { model = model, dir = context.dir, where = where })
-  local settings = settings_where(context, where)
-  local settings_translation = translate_model.settings({ model = model, dir = context.dir, where = settings })
-  for key, value in pairs(settings_translation.config) do translation.config[key] = value end
-  translation.config.version = gradle_version
-  local blockers = translation.blockers
-  append(blockers, settings_translation.blockers)
-  append(blockers, scope_blockers(model, where))
-  append(blockers, migrate_blockers.build_logic(root, where))
-  local generated, refusals = dump_generated(context, translation, where)
+  local settings = settings_name(context, model.projects[1])
+  local built = translate_build.build(model, included_models(context, model),
+                                      { dir = context.dir, settings = settings })
+  built.config.version = gradle_version
+  local blockers = built.blockers
+  append(blockers, build_logic_blockers(built))
+  local settings_where = within(context.dir, settings)
+  local generated, refusals = dump_generated(context, built, built.projects[1].where)
   append(blockers, refusals)
-  if generated ~= nil then append(blockers, generated_blockers(model, root, generated, where, settings)) end
+  if generated ~= nil then
+    append(blockers, migrate_comparison.blockers(model, built, generated, generated_builds(context, built),
+                                                 settings_where))
+  end
   return {
-    manifest = { project = translation.name, version = translation.version,
-                 toolchains = { [context.instance] = translation.config } },
+    manifest = { project = built.name, version = built.version, modules = built.modules,
+                 toolchains = { [context.instance] = built.config } },
     foreign = {},
     blockers = blockers,
     owned = {},
-    proof = proof_of(context, root),
+    proof = proof_of(context, built),
   }
 end
 

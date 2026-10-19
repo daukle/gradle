@@ -37,41 +37,82 @@ local function sorted_keys(map)
   return keys
 end
 
+local function is_plugin_build_edge(state, edge)
+  local build = string.match(edge, "^project (%S+) ")
+  return build ~= nil and state.included_plugin_builds[build] == true
+end
+
+--- @implNote a plugin an included build supplies reaches the classpath as
+--- that build's project, with that build's own dependencies behind it, and a
+--- versionless `plugins` entry plus the build's block carry both instead.
+local function is_included_plugin_build(state, row)
+  if row.kind == "project" then return state.included_plugin_builds[row.build] == true end
+  local via = row.via or {}
+  if #via == 0 then return false end
+  for _, edge in ipairs(via) do
+    if not is_plugin_build_edge(state, edge) then return false end
+  end
+  return true
+end
+
 local function classpath_of(state, buildscript, key, surface)
   for _, failure in ipairs(buildscript.errors or {}) do
     block(state, key, "could not be resolved in the old build: " .. failure.error, surface)
   end
   local pins = {}
   for _, row in ipairs(buildscript.resolved or {}) do
-    local pin = translation_state.pin_of(state, buildscript.repositories, row)
-    if pin ~= nil then pins[#pins + 1] = pin end
+    if not is_included_plugin_build(state, row) then
+      local pin = translation_state.pin_of(state, buildscript.repositories, row)
+      if pin ~= nil then pins[#pins + 1] = pin end
+    end
   end
   return pins
 end
 
-local function jar_row(buildscript, jar)
-  for _, row in ipairs(buildscript.resolved or {}) do
+local function jar_row_in(rows, jar)
+  for _, row in ipairs(rows or {}) do
     if row.kind == "module" and row.fileName == jar then return row end
   end
   return nil
 end
 
+--- @implNote a subproject applies a plugin from its ancestors' classloader as
+--- well as from its own, so their resolved rows are looked in too.
+local function jar_row(state, buildscript, jar)
+  return jar_row_in(buildscript.resolved, jar) or jar_row_in(state.inherited_buildscript, jar)
+end
+
+local function included_id(state, plugin)
+  for _, id in ipairs(plugin.ids or {}) do
+    if state.included_plugin_ids[id] then return id end
+  end
+  return nil
+end
+
+local function pinned_entry(state, plugin, buildscript)
+  local id = (plugin.ids or {})[1]
+  local row = plugin.jar ~= nil and jar_row(state, buildscript, plugin.jar) or nil
+  if id == nil or row == nil then return nil end
+  local carried_id = carried(state, id, id)
+  local version = carried(state, row.version, id)
+  if carried_id == nil or version == nil then return nil end
+  return { id = carried_id, version = version }
+end
+
 --- @implNote only a plugin with an id, applied from a jar this classpath
---- resolved, can be an entry; any other third-party plugin is either applied
---- by one of those in the generated build too or blocks there
+--- resolved, can be a pinned entry, and one whose id an included build
+--- declares a versionless entry; any other third-party plugin is either
+--- applied by one of those in the generated build too or blocks there
 --- (`migrate_blockers.third_party_plugins`). The version is the jar's, which
 --- is the one the pinned url carries.
 local function plugin_entries(state, plugins, buildscript)
   local entries = {}
   for _, plugin in ipairs(plugins or {}) do
-    local id = (plugin.ids or {})[1]
-    local row = plugin.jar ~= nil and jar_row(buildscript, plugin.jar) or nil
-    if plugin.core ~= true and plugin.script == nil and id ~= nil and row ~= nil then
-      local carried_id = carried(state, id, id)
-      local version = carried(state, row.version, id)
-      if carried_id ~= nil and version ~= nil then
-        entries[#entries + 1] = { id = carried_id, version = version }
-      end
+    if plugin.core ~= true and plugin.script == nil then
+      local included = included_id(state, plugin)
+      local entry = included ~= nil and { id = carried(state, included, included) }
+                    or pinned_entry(state, plugin, buildscript)
+      if entry ~= nil and entry.id ~= nil then entries[#entries + 1] = entry end
     end
   end
   return entries
@@ -149,6 +190,12 @@ end
 local function non_empty(list)
   if #list == 0 then return nil end
   return list
+end
+
+--- @return { pluginClasspath? }
+function translate_plugins.classpath(state, project)
+  local buildscript = project.buildscript or {}
+  return { pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)) }
 end
 
 --- @return { plugins?, pluginClasspath?, configure? }
