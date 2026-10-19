@@ -18,8 +18,12 @@
 --- builds' `help`, because an included build no scheduled task needs is
 --- configured and never reaches `whenReady`. Measured on 7.6.4, 8.13, 9.3.1
 --- and 9.6.0, D-146.
+local PROPERTY = "daukle.migrate.model"
+
 local SCRIPT = [==[
 import groovy.json.JsonOutput
+
+def MODEL_PROPERTY = ']==] .. PROPERTY .. [==['
 
 def DENY = ['class', 'convention', 'conventionMapping', 'extensions', 'asDynamicObject', 'project', 'metaClass',
             'properties', 'services', 'objects', 'providers', 'fileOperations', 'layout', 'asMap', 'rootProject',
@@ -126,13 +130,26 @@ def typeOf = { Object instance ->
 
 def isCoreType = { Class type -> type.name.startsWith('org.gradle.') }
 
+/**
+ * A class name a script compiles to: a Groovy script's closure (build_<hash>$_run_closure1) or a
+ * Kotlin script's nested class or lambda (Build_gradle$1). A second signal beside the class loader,
+ * whose display name is Gradle-internal, so that a renamed loader degrades detection to the
+ * closures and lambdas rather than to nothing; it misses a Groovy script's top-level class.
+ */
+def namedLikeScriptClass = { Class type ->
+  def name = type?.name ?: ''
+  name ==~ /[A-Za-z0-9_]+_[a-z0-9]{20,}[$].*/ || name ==~ /[A-Z][A-Za-z0-9_]*_gradle[$].*/
+}
+
+def UNKNOWN_SCRIPT = '<unknown script>'
+
 def scriptOf = { File base, Class type ->
   def loader = String.valueOf(type?.classLoader)
   def groovy = loader =~ /groovy-script-(.+)-loader\)/
   if (groovy.find()) return pathFrom(base, groovy.group(1))
   def kotlin = loader =~ /kotlin-dsl:(.+?\.kts):/
   if (kotlin.find()) return pathFrom(base, kotlin.group(1))
-  null
+  namedLikeScriptClass(type) ? UNKNOWN_SCRIPT : null
 }
 
 def pluginIdsByLocation = [:]
@@ -425,8 +442,8 @@ gradle.settingsEvaluated { settings ->
 def outputFor = { invocation ->
   def outermost = invocation
   while (outermost.parent != null) outermost = outermost.parent
-  def requested = outermost.startParameter.systemPropertiesArgs['daukle.migrate.model'] ?: System.getProperty('daukle.migrate.model')
-  if (requested == null) throw new GradleException('daukle.migrate.model names no file to write the model to')
+  def requested = outermost.startParameter.systemPropertiesArgs[MODEL_PROPERTY] ?: System.getProperty(MODEL_PROPERTY)
+  if (requested == null) throw new GradleException(MODEL_PROPERTY + ' names no file to write the model to')
   def file = new File(requested)
   if (!file.isAbsolute()) file = new File(outermost.startParameter.currentDir, requested)
   if (invocation.parent == null) return file
@@ -459,4 +476,4 @@ gradle.taskGraph.whenReady {
 }
 ]==]
 
-return { SCRIPT = SCRIPT, PROPERTY = "daukle.migrate.model" }
+return { SCRIPT = SCRIPT, PROPERTY = PROPERTY }
