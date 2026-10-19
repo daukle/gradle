@@ -98,15 +98,17 @@ local function tail(text)
   return "..." .. string.sub(text, -STDERR_SHOWN)
 end
 
-local function run_dump(context, gradle_version, cwd, arguments, failure)
+--- @return Gradle's stderr when the run failed, else nil
+local function run_dump(context, gradle_version, cwd, arguments)
   local result = launcher.run(context, gradle_version, DUMP_JDK, arguments,
                               { cwd = cwd, capture = true, check = false })
-  if result.code ~= 0 then error(failure .. ":\n" .. tail(result.stderr), 0) end
+  if result.code ~= 0 then return tail(result.stderr) end
+  return nil
 end
 
 local function dump(context, gradle_version)
   daukle.write{ path = INIT_SCRIPT, text = model_dump.SCRIPT }
-  run_dump(context, gradle_version, context.dir or ".", {
+  local failure = run_dump(context, gradle_version, context.dir or ".", {
     "--project-dir", ".",
     "--project-cache-dir", derived_from_instance(context, PROJECT_CACHE),
     "--no-configuration-cache",
@@ -114,7 +116,10 @@ local function dump(context, gradle_version)
     "-D" .. model_dump.PROPERTY .. "=" .. derived_from_instance(context, MODEL),
     "--quiet",
     "help",
-  }, "Gradle could not configure the build, so there is no model to migrate from")
+  })
+  if failure ~= nil then
+    error("Gradle could not configure the build, so there is no model to migrate from:\n" .. failure, 0)
+  end
 end
 
 --- The context a task of the translated manifest would see, which is what the
@@ -134,15 +139,31 @@ local function rendered_config(config)
   return copy
 end
 
+local GENERATED = "the generated build"
+
+local function generation_blockers(problems, where)
+  local blockers = {}
+  for _, problem in ipairs(problems) do
+    blockers[#blockers + 1] = { construct = GENERATED, where = where,
+                                why = "would be refused by daukle/gradle: " .. problem }
+  end
+  return blockers
+end
+
 --- The model of the build `daukle/gradle` renders from the translation,
 --- dumped with the same init script, Gradle and JDK as the old build, so the
---- run reuses the first one's daemon.
-local function dump_generated(context, translation)
+--- run reuses the first one's daemon; or nil and the blockers that stopped it.
+---
+--- @implNote the writer's refusals are asked for as reasons first, because
+--- the sandbox has no pcall and a raise would discard every blocker found.
+local function dump_generated(context, translation, where)
   local config = rendered_config(translation.config)
   local generation = generation_context(context, translation, config)
+  local problems = writer.generation_problems(generation, config)
+  if #problems > 0 then return nil, generation_blockers(problems, where) end
   writer.write_build_file(generation, config)
   daukle.write{ path = writer.SETTINGS_FILE, text = writer.settings_text(generation, config) }
-  run_dump(context, config.version, derived(context, "."), {
+  local failure = run_dump(context, config.version, derived(context, "."), {
     "--project-dir", ".",
     "--offline",
     "--no-configuration-cache",
@@ -150,8 +171,11 @@ local function dump_generated(context, translation)
     "-D" .. model_dump.PROPERTY .. "=" .. GENERATED_MODEL,
     "--quiet",
     "help",
-  }, "Gradle could not configure the build daukle/gradle generates from the translation")
-  return daukle.json_parse(daukle.read(derived(context, GENERATED_MODEL)))
+  })
+  if failure ~= nil then
+    return nil, { { construct = GENERATED, where = where, why = "does not configure:\n" .. failure } }
+  end
+  return daukle.json_parse(daukle.read(derived(context, GENERATED_MODEL))), {}
 end
 
 local OLD_JARS = "migrate-old"
@@ -216,9 +240,12 @@ local function run(context)
   local blockers = translation.blockers
   append(blockers, scope_blockers(model, where))
   append(blockers, migrate_blockers.build_logic(root, where))
-  local generated = dump_generated(context, translation).projects[1]
-  append(blockers, migrate_blockers.core_plugins(root, generated, where))
-  append(blockers, migrate_blockers.task_difference(root, generated, where))
+  local generated, refusals = dump_generated(context, translation, where)
+  append(blockers, refusals)
+  if generated ~= nil then
+    append(blockers, migrate_blockers.core_plugins(root, generated.projects[1], where))
+    append(blockers, migrate_blockers.task_difference(root, generated.projects[1], where))
+  end
   return {
     manifest = { project = translation.name, version = translation.version,
                  toolchains = { [context.instance] = translation.config } },

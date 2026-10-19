@@ -198,8 +198,22 @@ local function settings_text(context, config)
                                 applies_settings_plugins, record)
 end
 
+--- What `write_build_file` would refuse in this config, as reasons rather
+--- than a raise, for the migrator, which reports a refusal as a blocker.
+---
+--- @implNote the refusals a translated config can meet: its plugin lists and
+--- the JUnit launcher. Every other check in `validated` is on a shape the
+--- translation never writes.
+local function generation_problems(context, config)
+  local problems = validation.plugin_set_problems(context, config)
+  local launcher = junit.missing_launcher(test_reachable(validation.entries_of_configurations(config, "")))
+  if launcher ~= nil then problems[#problems + 1] = launcher end
+  return problems
+end
+
 return {
   SETTINGS_FILE = SETTINGS_FILE,
+  generation_problems = generation_problems,
   settings_text = settings_text,
   write_build_file = write_build_file,
 }

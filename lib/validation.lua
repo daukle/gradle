@@ -147,7 +147,7 @@ end
      applies whatever jar it was handed. The version has to appear in some
      pinned entry, which the Maven layout puts in the url and which a
      hand-written pin can carry in "as". ]]
-local function refuse_a_version_no_pin_carries(plugins, pins, plugins_key, classpath_key)
+local function unpinned_plugin_version(plugins, pins, plugins_key, classpath_key)
   for index = 1, #plugins do
     local version = plugins[index].version
     local pinned = version == nil
@@ -159,30 +159,54 @@ local function refuse_a_version_no_pin_carries(plugins, pins, plugins_key, class
       end
     end
     if not pinned then
-      error('"' .. plugins_key .. '[' .. index .. ']" applies ' .. plugins[index].id .. " "
-            .. version .. ', and no entry in "' .. classpath_key .. '" names that version.'
-            .. ' This check runs on every command, so "maven:resolve" cannot fix it in place:'
-            .. ' remove this entry,'
-            .. " resolve the marker at that version, then put it back. Or correct the version"
-            .. " here", 0)
+      return '"' .. plugins_key .. '[' .. index .. ']" applies ' .. plugins[index].id .. " "
+             .. version .. ', and no entry in "' .. classpath_key .. '" names that version.'
+             .. ' This check runs on every command, so "maven:resolve" cannot fix it in place:'
+             .. ' remove this entry,'
+             .. " resolve the marker at that version, then put it back. Or correct the version"
+             .. " here"
     end
   end
+  return nil
+end
+
+--- Why one plugin list cannot be applied from its classpath, or nil.
+local function plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
+  if #plugins > 0 and #jars == 0 then
+    return '"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
+           .. '" is empty: a plugin is applied from a jar daukle pinned. This check runs on every'
+           .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
+           .. plugins_key .. '" block in the manifest, then add the block'
+  end
+  return unpinned_plugin_version(config[plugins_key] or {}, jars, plugins_key, classpath_key)
+end
+
+local function read_plugin_set(config, plugins_key, classpath_key, owners)
+  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
+  local jars = checked_classpath(config[classpath_key], classpath_key)
+  return plugins, jars, included, plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
 end
 
 --- One plugin list and the classpath it is applied from, checked together:
 --- the project's `plugins` and `pluginClasspath`, or the settings twins.
 --- @return the pinned plugin entries, the pinned classpath entries and the included ids
 local function checked_plugin_set(config, plugins_key, classpath_key, owners)
-  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
-  local jars = checked_classpath(config[classpath_key], classpath_key)
-  if #plugins > 0 and #jars == 0 then
-    error('"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
-          .. '" is empty: a plugin is applied from a jar daukle pinned. This check runs on every'
-          .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
-          .. plugins_key .. '" block in the manifest, then add the block', 0)
-  end
-  refuse_a_version_no_pin_carries(config[plugins_key] or {}, jars, plugins_key, classpath_key)
+  local plugins, jars, included, problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  if problem ~= nil then error(problem, 0) end
   return plugins, jars, included
+end
+
+--- What `checked_plugin_set` would refuse in each plugin list, as reasons,
+--- for a caller that reports a refusal instead of raising it.
+local function plugin_set_problems(context, config)
+  local _, read = checked_builds(context, config)
+  local owners = builds.owners(read)
+  local problems = {}
+  for _, keys in ipairs({ { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }) do
+    local _, _, _, problem = read_plugin_set(config, keys[1], keys[2], owners)
+    if problem ~= nil then problems[#problems + 1] = problem end
+  end
+  return problems
 end
 
 local function composite_of(context, config)
@@ -269,6 +293,7 @@ return {
   composite_of = composite_of,
   project_name = project_name,
   checked_plugins = checked_plugins,
+  plugin_set_problems = plugin_set_problems,
   settings_plugins_of = settings_plugins_of,
   validated = validated,
 }

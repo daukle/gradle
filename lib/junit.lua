@@ -49,21 +49,27 @@ end
 
 junit.version_of = version_of
 
---- Refuses a test run whose platform engine has no matching launcher.
+--- Why a test run whose platform engine has no matching launcher is refused,
+--- or nil when it is not.
 ---
 --- It refuses on every Gradle version rather than only on 9, because the same
 --- declaration that fails on 9 merely warns on 8, and shipping a project whose
 --- tests stop running at the next Gradle major is the thing this refusal is
 --- for. The fix is one line in the manifest.
-function junit.refuse_a_missing_launcher(entries)
+function junit.missing_launcher(entries)
   local engine = version_of(entries, ENGINE)
-  if engine == nil then return end
-  if version_of(entries, LAUNCHER) ~= nil then return end
-  error('the test classpath carries ' .. ENGINE .. ' ' .. engine .. ' and no ' .. LAUNCHER
-        .. '. Gradle 8 used to supply one and Gradle 9 does not, so this build would pass here'
-        .. ' and fail on the next Gradle major. It is in no POM, so no resolver finds it: add'
-        .. ' "org.junit.platform:' .. LAUNCHER .. ':' .. engine .. '" to the test coordinates'
-        .. ' your resolver reads, at the SAME version as the engine', 0)
+  if engine == nil then return nil end
+  if version_of(entries, LAUNCHER) ~= nil then return nil end
+  return 'the test classpath carries ' .. ENGINE .. ' ' .. engine .. ' and no ' .. LAUNCHER
+         .. '. Gradle 8 used to supply one and Gradle 9 does not, so this build would pass here'
+         .. ' and fail on the next Gradle major. It is in no POM, so no resolver finds it: add'
+         .. ' "org.junit.platform:' .. LAUNCHER .. ':' .. engine .. '" to the test coordinates'
+         .. ' your resolver reads, at the SAME version as the engine'
+end
+
+function junit.refuse_a_missing_launcher(entries)
+  local problem = junit.missing_launcher(entries)
+  if problem ~= nil then error(problem, 0) end
 end
 
 return junit
