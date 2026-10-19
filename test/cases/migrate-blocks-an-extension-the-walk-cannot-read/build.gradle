@@ -1,0 +1,12 @@
+plugins {
+  id 'java'
+}
+
+class Faulty {
+  String getBroken() {
+    throw new IllegalStateException('never set')
+  }
+}
+
+extensions.add('opaque', new Object())
+extensions.create('faulty', Faulty)

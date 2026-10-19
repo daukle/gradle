@@ -47,6 +47,10 @@ local function blocker(construct, where, why, surface)
   return { construct = construct, where = where, why = why, surface = surface }
 end
 
+local function append_all(target, source)
+  for _, item in ipairs(source) do target[#target + 1] = item end
+end
+
 --- @param version the Gradle the wrapper names
 function migrate_blockers.unpinned_gradle(version, where)
   return blocker("distributionUrl", where, "names Gradle " .. version .. ", which daukle/gradle does not"
@@ -188,7 +192,7 @@ local function union_keys(left, right)
       end
     end
   end
-  table.sort(keys)
+  table.sort(keys, function(left, right) return tostring(left) < tostring(right) end)
   return keys
 end
 
@@ -216,9 +220,20 @@ function compare_values(old, new, path, differences)
   end
 end
 
---- A third-party extension value the generated build does not reproduce:
---- what the configure tree could not carry (a read-only property, a file, a
---- list or a value set through a method), compared leaf by leaf.
+local DIFFERS = "differs in the build daukle/gradle generates from the translated keys"
+
+local function difference_blockers(old, new, path, where, why)
+  local differences = {}
+  compare_values(old, new, path, differences)
+  local blockers = {}
+  for _, difference in ipairs(differences) do blockers[#blockers + 1] = blocker(difference, where, why, UNCOVERED_ROW) end
+  return blockers
+end
+
+--- A third-party extension the generated build does not register, or a value
+--- of one it does not reproduce: what the configure tree could not carry (a
+--- read-only property, a file, a list or a value set through a method),
+--- compared leaf by leaf.
 --- @param label "configure" for a project's extensions, "settingsConfigure" for the settings'
 function migrate_blockers.extension_differences(extensions, generated_extensions, where, label)
   local blockers = {}
@@ -226,24 +241,24 @@ function migrate_blockers.extension_differences(extensions, generated_extensions
     local extension = extensions[name]
     local path = label .. "." .. name
     local generated = (generated_extensions or {})[name]
-    if extension.core ~= true and type(extension.value) == "table" and not is_unrendered(extension.value) then
-      if generated == nil then
-        blockers[#blockers + 1] = blocker(path, where, "is an extension the old build registers and the build"
-                                          .. " daukle/gradle generates from the translated keys does not",
-                                          UNCOVERED_ROW)
-      else
-        local differences = {}
-        compare_values(extension.value, generated.value, path, differences)
-        for _, difference in ipairs(differences) do
-          blockers[#blockers + 1] = blocker(difference, where, "differs in the build daukle/gradle generates"
-                                            .. " from the translated keys: the old build set it in a way a"
-                                            .. " configure tree does not carry (a read-only property, a file,"
-                                            .. " a list or a method call)", UNCOVERED_ROW)
-        end
-      end
+    if extension.core ~= true and generated == nil then
+      blockers[#blockers + 1] = blocker(path, where, "is an extension the old build registers and the build"
+                                        .. " daukle/gradle generates from the translated keys does not",
+                                        UNCOVERED_ROW)
+    elseif extension.core ~= true and type(extension.value) == "table" and not is_unrendered(extension.value) then
+      append_all(blockers, difference_blockers(extension.value, generated.value, path, where, DIFFERS
+                                               .. ": the old build set it in a way a configure tree does not"
+                                               .. " carry (a read-only property, a file, a list or a method call)"))
     end
   end
   return blockers
+end
+
+--- A core settings block (toolchain repositories, build caches, settings
+--- repositories) the generated build does not reproduce, which no key says.
+function migrate_blockers.settings_differences(core, generated_core, where)
+  return difference_blockers(core or {}, generated_core or {}, "settings", where, DIFFERS
+                             .. ": it is a block of Gradle's own settings that no daukle/gradle key carries")
 end
 
 return migrate_blockers

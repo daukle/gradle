@@ -105,6 +105,8 @@ def isAssignable = { MetaProperty property, Object raw ->
  * The bounded walk of a third-party extension. A list, a map and a file arrive as one-key tables
  * (`$list`, `$map`, `$file`), because JSON cannot tell an empty list from an object nor a path
  * from a string, and an object names the properties no script can assign in `$readOnly`.
+ * It sees only what an object exposes as a public property (a getter or a public field), so state
+ * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
  */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
@@ -140,7 +142,9 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
         def item = property.getProperty(value)
         out[name] = walk(base, item, depth + 1, seen, budget)
         if (!isAssignable(property, item)) readOnly << name
-      } catch (Throwable ignored) { }
+      } catch (Throwable failure) {
+        out[name] = unrendered('unreadable: ' + failure.class.simpleName)
+      }
     }
     if (out.isEmpty()) return value.toString()
     if (!readOnly.isEmpty()) out['$readOnly'] = readOnly.sort()
@@ -166,13 +170,14 @@ def locationOf = { Class type ->
 def GRADLE_HOME = gradle.gradleHomeDir?.canonicalFile?.toPath()
 
 /**
- * Whether a class ships with Gradle itself, read from where it loaded rather than from its package,
- * because a third-party plugin can live under `org.gradle.` too (the foojay resolver does).
+ * Whether a class is Gradle's own: an `org.gradle.` name loaded from the Gradle distribution. The
+ * name alone is not enough, because a third-party plugin can live under `org.gradle.` too (the
+ * foojay resolver does), and the location alone is not either, because Groovy and Kotlin ship there.
  */
 def isCoreType = { Class type ->
+  if (!type.name.startsWith('org.gradle.')) return false
   def location = locationOf(type)
-  if (location == null || GRADLE_HOME == null) return type.name.startsWith('org.gradle.')
-  location.canonicalFile.toPath().startsWith(GRADLE_HOME)
+  location == null || GRADLE_HOME == null || location.canonicalFile.toPath().startsWith(GRADLE_HOME)
 }
 
 /**
@@ -423,12 +428,33 @@ def applicationExtension = { File base, extension, owner ->
 
 def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtension, application: applicationExtension]
 
+/**
+ * The type that decides whether an extension is the build's or Gradle's: for a container (a
+ * `project.container(Thing)` or `objects.domainObjectContainer(Thing)`), whose own type is always
+ * Gradle's, the type of what it holds, read from the declared type argument, else the container's
+ * element type, else its first element.
+ */
+def deciding = { element, extension ->
+  def type = element.publicType.concreteClass
+  if (!(extension instanceof org.gradle.api.NamedDomainObjectCollection)) return type
+  def held = null
+  try {
+    def arguments = element.publicType.parameterized ? element.publicType.actualTypeArguments : []
+    if (!arguments.isEmpty()) held = arguments[0].concreteClass
+  } catch (Throwable ignored) { }
+  if (held == null || held == Object) {
+    try { held = extension.type } catch (Throwable ignored) { }
+  }
+  if ((held == null || held == Object) && !extension.isEmpty()) held = typeOf(extension.iterator().next())
+  held ?: type
+}
+
 def extensionsOf = { File base, owner ->
   def container = owner.extensions
   container.extensionsSchema.elements.findAll { it.name != 'ext' }.collectEntries { element ->
     def extension = container.findByName(element.name)
     def type = element.publicType.concreteClass
-    def entry = [type: type.name, core: isCoreType(type)]
+    def entry = [type: type.name, core: isCoreType(extension == null ? type : deciding(element, extension))]
     if (extension == null) return [element.name, entry]
     def reader = CORE_EXTENSION_READERS[element.name]
     if (entry.core && reader != null) entry.value = safely { reader(base, extension, owner) }
@@ -518,6 +544,39 @@ def projectOf = { File base, project ->
    dependencies: dependenciesOf(project), tasks: tasksOf(base, project)]
 }
 
+def repositoriesByName = { Iterable repositories ->
+  repositoriesOf(repositories).collectEntries { [it.name, [kind: it.kind, type: it.type, url: it.url]] }
+}
+
+def toolchainRepositoriesOf = { settings ->
+  def management = settings.extensions.findByName('toolchainManagement')
+  def jvm = management?.extensions?.findByName('jvm')
+  if (jvm == null) return [:]
+  jvm.javaRepositories.asList.collectEntries { [it.name, [resolverClass: plain(settings.rootDir, it.resolverClass.getOrNull()?.name)]] }
+}
+
+def buildCacheOf = { File base, cache ->
+  if (cache == null) return null
+  [type: typeOf(cache).name, enabled: cache.enabled, push: cache.push,
+   url: (cache.hasProperty('url') ? cache.url?.toString() : null),
+   directory: (cache.hasProperty('directory') && cache.directory != null ? pathFrom(base, cache.directory) : null)]
+}
+
+/**
+ * The settings blocks Gradle itself provides, read by type, so the migrator can compare them with the
+ * generated build's: the walk is for third-party extensions only, and these are where a hand-written
+ * settings file most often says something no key carries.
+ */
+def settingsCoreOf = { settings ->
+  def base = settings.rootDir
+  [toolchainManagement: safely { [javaRepositories: toolchainRepositoriesOf(settings)] },
+   buildCache: safely { [local: buildCacheOf(base, settings.buildCache.local), remote: buildCacheOf(base, settings.buildCache.remote)] },
+   dependencyResolutionManagement: safely {
+     [repositories: repositoriesByName(settings.dependencyResolutionManagement.repositories),
+      repositoriesMode: plain(base, settings.dependencyResolutionManagement.repositoriesMode)]
+   }]
+}
+
 def settingsFacts = [:]
 gradle.settingsEvaluated { settings ->
   def base = settings.rootDir
@@ -525,6 +584,7 @@ gradle.settingsEvaluated { settings ->
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
   settingsFacts.settingsExtensions = extensionsOf(base, settings)
   settingsFacts.settingsBuildscript = buildscriptOf(settings)
+  settingsFacts.settingsCore = settingsCoreOf(settings)
 }
 
 def outputFor = { invocation ->
@@ -583,6 +643,7 @@ gradle.taskGraph.whenReady {
                settingsPlugins: settingsFacts.settingsPlugins ?: [],
                settingsExtensions: settingsFacts.settingsExtensions ?: [:],
                settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
+               settingsCore: settingsFacts.settingsCore ?: [:],
                projects: gradle.rootProject.allprojects.collect { projectOf(base, it) }]
   model.environmentMatches = environmentMatchesOf(model)
   def file = outputFor(gradle)

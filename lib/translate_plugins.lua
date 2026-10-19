@@ -127,14 +127,19 @@ function configure_tree(state, value, path, surface)
 end
 
 --- One configure block per third-party extension the walk rendered.
---- @implNote an extension whose walk found no property arrives as its
---- `toString`, which is an identity rather than a value, and has no block.
+--- @implNote an extension whose walk found no public property arrives as its
+--- `toString`, an identity rather than a value: whatever state it holds has an
+--- unknown origin, so it blocks rather than passing as empty.
 local function configure_of(state, extensions, label, surface)
   local configure = {}
   for _, name in ipairs(sorted_keys(extensions or {})) do
     local extension = extensions[name]
+    local path = label .. "." .. name
     if extension.core ~= true and type(extension.value) == "table" then
-      configure[name] = configure_value(state, extension.value, label .. "." .. name, false, surface)
+      configure[name] = configure_value(state, extension.value, path, false, surface)
+    elseif extension.core ~= true and extension.value ~= nil then
+      block(state, path, "is a third-party extension with no public property the model could read, so"
+            .. " whatever it holds can be neither carried nor left out", surface)
     end
   end
   if next(configure) == nil then return nil end

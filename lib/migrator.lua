@@ -241,6 +241,9 @@ local function generated_blockers(model, root, generated, where, settings)
   append(blockers, migrate_blockers.third_party_plugins(root.plugins, generated_root.plugins, where, ""))
   append(blockers, migrate_blockers.third_party_plugins(model.settingsPlugins, generated.settingsPlugins, settings,
                                                         "settings "))
+  append(blockers, migrate_blockers.core_plugins({ plugins = model.settingsPlugins },
+                                                 { plugins = generated.settingsPlugins }, settings))
+  append(blockers, migrate_blockers.settings_differences(model.settingsCore, generated.settingsCore, settings))
   append(blockers, migrate_blockers.extension_differences(root.extensions, generated_root.extensions, where,
                                                           "configure"))
   append(blockers, migrate_blockers.extension_differences(model.settingsExtensions, generated.settingsExtensions,
