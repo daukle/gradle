@@ -46,17 +46,17 @@ local function environment_index(model)
   return index
 end
 
---- The model value, or nil with a blocker when it equals an environment
---- variable's value at dump time.
+--- The model value, or nil with a blocker when it holds an environment
+--- variable's value at dump time, whole or inside it.
 ---
 --- @implNote a build that reads a secret at configuration time evaluates it to
---- a plain string, so equality is the only signal the model has, and a value
---- that passes this gate is written into a committed daukle.toml.
+--- a plain string, so the value itself is the only signal the model has, and a
+--- value that passes this gate is written into a committed daukle.toml.
 local function carried(translation, value, construct)
   if type(value) ~= "string" then return value end
   local names = translation.environment[value]
   if names == nil then return value end
-  block(translation, construct, "evaluates to the value of the environment variable "
+  block(translation, construct, "holds the value of the environment variable "
         .. table.concat(names, ", ") .. ", and writing it would commit what may be a secret into"
         .. " daukle.toml")
   return nil

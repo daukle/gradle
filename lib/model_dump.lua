@@ -482,18 +482,20 @@ stringsIn = { Object value, Set found ->
 }
 
 /**
- * Each string of the model that equals an environment variable's value, with the names holding it.
+ * Each string of the model that holds an environment variable's value, whole or inside it (a
+ * token in a repository url), with the names of the variables it holds.
  *
  * @implNote compared here rather than hashed for the migrator, because the plugin has no digest
  * verb; only strings the model already carries are written, so no other variable's value reaches
  * the file. A value shorter than ENVIRONMENT_FLOOR is skipped, so a `17` or a `true` in the
- * environment cannot block a jdk or a flag that merely equals it.
+ * environment cannot block a jdk or a flag that merely holds it.
  */
 def ENVIRONMENT_FLOOR = 8
 def environmentMatchesOf = { Map model ->
-  def namesByValue = [:]
-  System.getenv().each { name, value -> if (value != null && value.length() >= ENVIRONMENT_FLOOR) namesByValue.get(value, []) << name }
-  stringsIn(model, [] as Set).findAll { namesByValue.containsKey(it) }.sort().collect { [value: it, names: namesByValue[it].sort()] }
+  def environment = System.getenv().findAll { name, value -> value != null && value.length() >= ENVIRONMENT_FLOOR }
+  stringsIn(model, [] as Set).sort().collect { string ->
+    [value: string, names: environment.findAll { name, value -> string.contains(value) }.keySet().sort()]
+  }.findAll { !it.names.isEmpty() }
 }
 
 gradle.projectsEvaluated {
