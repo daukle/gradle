@@ -20,10 +20,14 @@
 --- and 9.6.0, D-146.
 local PROPERTY = "daukle.migrate.model"
 
+--- The configuration name the dump gives the launcher rows it resolves itself.
+local IMPLIED_LAUNCHER = "daukleImpliedLauncher"
+
 local SCRIPT = [==[
 import groovy.json.JsonOutput
 
 def MODEL_PROPERTY = ']==] .. PROPERTY .. [==['
+def IMPLIED_LAUNCHER = ']==] .. IMPLIED_LAUNCHER .. [==['
 
 def DENY = ['class', 'convention', 'conventionMapping', 'extensions', 'asDynamicObject', 'project', 'metaClass',
             'properties', 'services', 'objects', 'providers', 'fileOperations', 'layout', 'asMap', 'rootProject',
@@ -294,10 +298,31 @@ def resolvedConfigurationNames = { project ->
   names
 }
 
+def isPlatformModule = { row, String module -> row.group == 'org.junit.platform' && row.module == module }
+
+/**
+ * The JUnit Platform launcher Gradle 8 hands a test run without resolving it, resolved from the
+ * project's own repositories at the engine's version, so it can be pinned like any other row.
+ * Not transitive: everything it needs is on the test runtime classpath beside the engine.
+ */
+def impliedLauncherInto = { project, List resolved, List errors ->
+  def test = project.extensions.findByName('sourceSets')?.findByName('test')
+  if (test == null) return
+  def runtime = resolved.findAll { it.configuration == test.runtimeClasspathConfigurationName }
+  def engine = runtime.find { isPlatformModule(it, 'junit-platform-engine') }
+  if (engine == null || runtime.any { isPlatformModule(it, 'junit-platform-launcher') }) return
+  def launcher = project.configurations.detachedConfiguration(
+      project.dependencies.create("org.junit.platform:junit-platform-launcher:${engine.version}"))
+  launcher.transitive = false
+  try { resolved.addAll(resolvedRows(launcher).collect { row -> row.configuration = IMPLIED_LAUNCHER; row }) }
+  catch (Throwable failure) { errors << [configuration: IMPLIED_LAUNCHER, error: failure.toString()] }
+}
+
 def dependenciesOf = { project ->
   def resolved = []
   def errors = []
   resolvedConfigurationNames(project).each { name -> resolveInto(project.configurations.findByName(name), resolved, errors) }
+  impliedLauncherInto(project, resolved, errors)
   [declared: declaredRows(project.configurations), resolved: resolved, errors: errors]
 }
 
@@ -523,4 +548,4 @@ gradle.taskGraph.whenReady {
 }
 ]==]
 
-return { SCRIPT = SCRIPT, PROPERTY = PROPERTY }
+return { SCRIPT = SCRIPT, PROPERTY = PROPERTY, IMPLIED_LAUNCHER = IMPLIED_LAUNCHER }

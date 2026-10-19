@@ -11,6 +11,8 @@
 
 local translate_model = {}
 
+local model_dump = daukle.require("lib/model_dump")
+
 local SURFACE = "GRADLE-SURFACE.md: "
 local LAYOUT_ROW = SURFACE .. "3. The `java` extension and source layout"
 local CONFIGURATIONS_ROW = SURFACE .. "2. Dependency configurations"
@@ -393,6 +395,8 @@ end
 
 --- @implNote test sees main's `implementation` and `api` on both classpaths and
 --- main's `runtimeOnly` at runtime, so those are not repeated in test's keys.
+--- The launcher the dump resolved for a JUnit Platform engine goes to
+--- `testRuntimeOnly`, where Gradle 8 put it at test time.
 local function test_dependencies(translation, project, rows, set, main_split)
   local both = keys_of(main_split.both)
   local inherited = { both = both, compile = both, runtime = union(both, keys_of(main_split.runtime)) }
@@ -402,6 +406,9 @@ local function test_dependencies(translation, project, rows, set, main_split)
                  processor = "testAnnotationProcessor" }
   for bucket, key in pairs(keys) do
     for _, row in ipairs(split[bucket]) do append_pin(translation, project, buckets, key, row) end
+  end
+  for _, row in ipairs(rows[model_dump.IMPLIED_LAUNCHER] or {}) do
+    append_pin(translation, project, buckets, "testRuntimeOnly", row)
   end
   return buckets
 end
