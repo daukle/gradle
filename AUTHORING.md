@@ -658,8 +658,12 @@ gradle.org.
   a generated file proves what daukle wrote; only a file Gradle made proves Gradle read it
 - a `needs-tools` case asserts **compiled classes**, and the JUnit XML as well when its task is
   `gradle:test`
-- every `needs-tools` case, example included, asserts that no `build.gradle`, `settings.gradle`,
-  `.gradle` or `gradlew` reached the project root
+- every `needs-tools` case but a migrate case, example included, asserts that no `build.gradle`,
+  `settings.gradle`, `.gradle` or `gradlew` reached the project root
+- a case with `migrate` runs `daukle migrate` against a catalog that serves the working tree's
+  plugin, packed as `publish.yml` packs it, from loopback http (python and curl), and asserts the
+  exit code in `expect-exit.txt`, then the `expect-output.txt` and `expect-contains.txt` the other
+  cases use
 
 ```sh
 DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/cases.sh

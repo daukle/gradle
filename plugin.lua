@@ -11,8 +11,8 @@
 --- resolves nothing.
 
 daukle.plugin{
-  api = 1,
-  uses = { "provision", "artifact", "exec", "write", "read", "parse" },
+  api = 3,
+  uses = { "provision", "artifact", "exec", "write", "read", "parse", "list", "json_parse" },
   exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules" },
   --[[ Core scrubs every credential it knows from a child it starts unless the
        plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
@@ -35,7 +35,6 @@ daukle.plugin{
   },
 }
 
-local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
 local settings_file = daukle.require("lib/settings_file")
 local discovery = daukle.require("lib/discovery")
@@ -43,6 +42,8 @@ local source_sets = daukle.require("lib/source_sets")
 local module_graph = daukle.require("lib/modules")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
+local launcher = daukle.require("lib/launcher")
+local migrator = daukle.require("lib/migrator")
 
 local SETTINGS_FILE = "settings.gradle"
 local REPORT_FILE = "discovered.txt"
@@ -67,26 +68,10 @@ daukle.toolchain{
   end,
 }
 
---- @implNote the launcher jar rather than `bin/gradle`, because that is a POSIX
---- shell script and `bin/gradle.bat` a batch file, and neither is a program
---- daukle can start on every host. The jar is what both scripts eventually
---- exec. Starting it with the provisioned java is also what makes JAVA_HOME
---- unnecessary: Gradle reports the daemon JVM as "no JDK specified, using
---- current Java home", which is the one daukle provisioned.
+daukle.migrator{ tool = "gradle", toolchain = "gradle", run = migrator.run }
+
 local function run_gradle(context, config, arguments, options)
-  local pick = distributions.for_version(validation.gradle_version_of(context))
-  local jdk = validation.jdk_for(context, config)
-
-  local gradle_root = daukle.provision{ url = pick.url, sha256 = pick.sha256,
-                                        as = "gradle " .. pick.version }
-  local jdk_root = daukle.provision{ url = jdk.url, sha256 = jdk.sha256,
-                                     as = "temurin " .. validation.jdk_version_of(config) }
-
-  local java = jdk_root:tool(jdk.home .. "/bin/java"
-                             .. (context.host.os == "windows" and ".exe" or ""))
   local argv = {
-    "-classpath", gradle_root:path(pick.home .. "/lib/gradle-launcher-" .. pick.version .. ".jar"),
-    "org.gradle.launcher.GradleMain",
     --[[ "." because a task already runs with its working directory in the
          derived tree, which is how daukle/cmake gets away with "-S .". The
          redirect is still what keeps the project root clean: Gradle treats
@@ -101,7 +86,8 @@ local function run_gradle(context, config, arguments, options)
     "--offline",
   }
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
-  return daukle.exec(java, argv, options)
+  return launcher.run(context, validation.gradle_version_of(context), validation.jdk_version_of(config),
+                      argv, options)
 end
 
 local function gradle_task(name, arguments)

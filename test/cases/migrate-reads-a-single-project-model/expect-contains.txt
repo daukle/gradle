@@ -1,0 +1,3 @@
+build/daukle/gradle/migrate-model.json "version": "2.3.4"
+build/daukle/gradle/migrate-model.json "languageVersion": "17"
+build/daukle/gradle/migrate-model.json "component": "org.apache.commons:commons-lang3:3.14.0"

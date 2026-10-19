@@ -1,0 +1,19 @@
+plugins {
+  id 'java-library'
+}
+
+version = '2.3.4'
+
+java {
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(17)
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  implementation 'org.apache.commons:commons-lang3:3.14.0'
+}
