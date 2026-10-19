@@ -181,9 +181,14 @@ serve_plugin() {
   mkdir -p "$asset_dir"
   # COPYFILE_DISABLE and ustar keep macOS bsdtar from adding AppleDouble or pax
   # members, and core's tar reader takes only regular files and directories.
-  (cd "$root" && COPYFILE_DISABLE=1 tar --format=ustar -cf "$asset_dir/plugin.lua" plugin.lua lib/*.lua)
-  digest=$(sha256sum "$asset_dir/plugin.lua" 2>/dev/null | cut -d' ' -f1)
-  [ -n "$digest" ] || digest=$(shasum -a 256 "$asset_dir/plugin.lua" | cut -d' ' -f1)
+  packed="$work/plugin.tar"
+  (cd "$root" && COPYFILE_DISABLE=1 tar --format=ustar -cf "$packed" plugin.lua lib/*.lua)
+  digest=$(sha256sum "$packed" 2>/dev/null | cut -d' ' -f1)
+  [ -n "$digest" ] || digest=$(shasum -a 256 "$packed" | cut -d' ' -f1)
+  # Served under its own digest because core caches a plugin by its url, and a
+  # port an earlier run used would hand back that run's lib/.
+  mkdir -p "$asset_dir/$digest"
+  mv "$packed" "$asset_dir/$digest/plugin.lua"
   port_file="$work/server-port"
   rm -f "$port_file"
   "$python" -c "$PLUGIN_SERVER" "$asset_dir" "$port_file" >"$work/server.log" 2>&1 &
@@ -192,7 +197,7 @@ serve_plugin() {
   port=
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     [ -s "$port_file" ] && port=$(cat "$port_file") &&
-      curl -fsS "http://127.0.0.1:$port/plugin.lua" -o /dev/null 2>/dev/null && break
+      curl -fsS "http://127.0.0.1:$port/$digest/plugin.lua" -o /dev/null 2>/dev/null && break
     port=
     kill -0 "$server" 2>/dev/null || break
     sleep 1
@@ -203,7 +208,7 @@ serve_plugin() {
   fi
   catalog="$work/catalog.json"
   "$python" -c 'import json,sys; c=json.load(open(sys.argv[1])); c.update(id="gradle", asset={"url":sys.argv[2],"sha256":sys.argv[3]}); json.dump({"plugins":[c]}, open(sys.argv[4],"w"))' \
-    "$root/catalog.json" "http://127.0.0.1:$port/plugin.lua" "$digest" "$catalog"
+    "$root/catalog.json" "http://127.0.0.1:$port/$digest/plugin.lua" "$digest" "$catalog"
 }
 
 # A migrate case asserts its exit code (expect-exit.txt), then what the output
