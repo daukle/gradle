@@ -127,17 +127,27 @@ local function major_of(version)
   return string.match(version, "^(%d+)")
 end
 
+--- The release a pre-release version leads to: "8.12-rc-1" and
+--- "8.12-milestone-2" are both 8.12, else nil for a plain version.
+local function released(version)
+  return string.match(version, "^(.-)%-rc%-%d+$") or string.match(version, "^(.-)%-milestone%-%d+$")
+end
+
 --- The pin to suggest for an unpinned version: the smallest pinned version
 --- above it in the same major, else the largest pinned below it, else the
---- oldest pin.
+--- oldest pin. A pre-release is compared as its release, which itself counts
+--- as above it.
 ---
 --- @implNote an upgrade within a major is the usual safe move, which is why it
 --- wins over a closer version below.
 local function nearest(version)
+  local release = released(version)
+  local base = release or version
   local below = nil
   for _, pinned in ipairs(ascending()) do
-    if precedes(version, pinned) and major_of(pinned) == major_of(version) then return pinned end
-    if precedes(pinned, version) then below = pinned end
+    local above = precedes(base, pinned) or (release ~= nil and pinned == release)
+    if above and major_of(pinned) == major_of(base) then return pinned end
+    if precedes(pinned, base) then below = pinned end
   end
   return below or oldest()
 end

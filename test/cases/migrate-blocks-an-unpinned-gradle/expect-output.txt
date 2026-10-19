@@ -1,1 +1,1 @@
-distributionUrl: names Gradle 8.12, which daukle/gradle does not pin; the nearest pinned version is 8.13
+distributionUrl: names Gradle 8.12, which daukle/gradle does not pin; the nearest pinned version is 8.13, and moving the build to it is not this migrator's decision, because a Gradle release can change what a build does (surface: GRADLE-SURFACE.md: 6. What this file does NOT yet cover, said plainly)

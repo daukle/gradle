@@ -7,6 +7,7 @@ local distributions = daukle.require("lib/distributions")
 local SURFACE = "GRADLE-SURFACE.md: "
 local BOUNDARY_ROW = SURFACE .. 'The boundary: what "100% of Gradle" does not include'
 local PACKAGING_ROW = SURFACE .. "4. Packaging and publishing"
+local UNCOVERED_ROW = SURFACE .. "6. What this file does NOT yet cover, said plainly"
 local UNKNOWN_SCRIPT = "<unknown script>"
 
 local CORE_PLUGIN_ROWS = {
@@ -51,13 +52,13 @@ function migrate_blockers.unpinned_gradle(version, where)
   return blocker("distributionUrl", where, "names Gradle " .. version .. ", which daukle/gradle does not"
                  .. " pin; the nearest pinned version is " .. distributions.nearest(version)
                  .. ", and moving the build to it is not this migrator's decision, because a Gradle"
-                 .. " release can change what a build does")
+                 .. " release can change what a build does", UNCOVERED_ROW)
 end
 
 --- @param url the distributionUrl as the wrapper writes it
 function migrate_blockers.unreadable_distribution(url, where)
   return blocker("distributionUrl", where, "names no Gradle version this migrator can read (" .. url
-                 .. "), and a build that names its Gradle is never moved to a default one")
+                 .. "), and a build that names its Gradle is never moved to a default one", UNCOVERED_ROW)
 end
 
 local function script_names(task)

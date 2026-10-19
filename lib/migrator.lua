@@ -53,12 +53,13 @@ end
 ---
 --- @implNote the version is read from the url's last segment, because a
 --- mirror's own path can hold "gradle-" as well. The url is unescaped as a
---- properties value, where the wrapper writes `https\://`.
+--- properties value, where the wrapper writes `https\://`, and only a line
+--- that starts with the key counts, so a `#distributionUrl=` comment does not.
 local function wrapper_distribution(context)
   local directory = within(context.dir, WRAPPER_DIRECTORY)
   if not has_file(directory, WRAPPER_PROPERTIES) then return nil end
   local text = daukle.read(directory .. "/" .. WRAPPER_PROPERTIES)
-  local url = string.match(text, "distributionUrl%s*[=:]%s*([^\r\n]+)")
+  local url = string.match("\n" .. text, "[\r\n][ \t]*distributionUrl%s*[=:]%s*([^\r\n]+)")
   if url == nil then return nil end
   url = string.gsub(trimmed(url), "\\(.)", "%1")
   local file = string.match(url, "([^/]+)$")
