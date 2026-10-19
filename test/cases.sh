@@ -101,7 +101,10 @@ files_carry_literals() {
 # daukle.toml a migration wrote must carry. Every line of a paragraph must sit
 # in ONE table of it (a header line included), in any order, because core
 # writes a table's keys in Lua's iteration order; a pinned entry's bucket is
-# asserted by putting its header and its url in one paragraph.
+# asserted by putting its header and its url in one paragraph. A line starting
+# with "!" is a prefix no line may start with in a table that carries the
+# paragraph's other lines, so a paragraph of just "!release =" means no table
+# sets release at all.
 MANIFEST_CHECK='
 import sys
 sections, current = [], []
@@ -119,7 +122,10 @@ for line in open(sys.argv[2], encoding="utf-8").read().splitlines():
         paragraphs.append([])
 paragraphs = [paragraph for paragraph in paragraphs if paragraph]
 for paragraph in paragraphs:
-    if not any(all(line in section for line in paragraph) for section in sections):
+    wanted = [line for line in paragraph if not line.startswith("!")]
+    refused = [line[1:] for line in paragraph if line.startswith("!")]
+    carrying = [section for section in sections if all(line in section for line in wanted)]
+    if (wanted and not carrying) or any(line.startswith(prefix) for section in carrying for line in section for prefix in refused):
         print(" / ".join(paragraph))
         sys.exit(1)
 '
@@ -136,7 +142,7 @@ manifest_carries_clauses() {
   fi
   python=$(working_python) || { fail "$name" "no python3 or python that runs"; return 1; }
   if ! missing=$("$python" -c "$MANIFEST_CHECK" "$sandbox/daukle.toml" "$case_dir/expect-manifest.txt"); then
-    fail "$name" "daukle.toml does not carry, in one table: $missing"
+    fail "$name" "daukle.toml does not match, in one table: $missing"
     return 1
   fi
   return 0

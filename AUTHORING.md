@@ -664,7 +664,8 @@ gradle.org.
   plugin, packed as `publish.yml` packs it, from loopback http (python and curl), and asserts the
   exit code in `expect-exit.txt`, then the `expect-output.txt` and `expect-contains.txt` the other
   cases use, then `expect-manifest.txt`: paragraphs whose lines must all sit in one table of the
-  written `daukle.toml`, in any order, since core writes a table's keys in Lua's iteration order
+  written `daukle.toml`, in any order, since core writes a table's keys in Lua's iteration order;
+  a `!` line is a prefix no line of such a table may start with
 
 ```sh
 DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/cases.sh

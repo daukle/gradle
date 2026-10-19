@@ -102,14 +102,35 @@ local function release_level(value)
   return value
 end
 
+local function dump_major(model)
+  local version = (model.jvm or {}).javaVersion or ""
+  return string.match(version, "^1%.(%d+)") or string.match(version, "^(%d+)")
+end
+
+--- The level the build itself set for `raw_key`, or nil when it set none.
+---
+--- @implNote when the raw value cannot be read, a level equal to the dump
+--- daemon's JDK in a build with no toolchain is taken as unset, because that
+--- is where Gradle's evaluated value comes from then.
+local function compatibility_set(translation, project, java, raw_key, evaluated_key)
+  local raw = java[raw_key]
+  if not is_unrendered(raw) then return release_level(raw) end
+  local evaluated = release_level(java[evaluated_key])
+  if language_version(project) == nil and evaluated == dump_major(translation.model) then return nil end
+  return evaluated
+end
+
 local function translate_release(translation, project, compile_task)
   local values = task_values(project, compile_task)
   if values.release ~= nil then
     return carried(translation, release_level(values.release), compile_task .. ".options.release")
   end
   local java = extension_value(project, "java") or {}
-  local source, target = release_level(java.sourceCompatibility), release_level(java.targetCompatibility)
-  if source == nil then return nil end
+  local source_set = compatibility_set(translation, project, java, "rawSourceCompatibility", "sourceCompatibility")
+  local target_set = compatibility_set(translation, project, java, "rawTargetCompatibility", "targetCompatibility")
+  if source_set == nil and target_set == nil then return nil end
+  local source = source_set or release_level(java.sourceCompatibility)
+  local target = target_set or release_level(java.targetCompatibility)
   if target ~= nil and target ~= source then
     block(translation, "java.targetCompatibility", "is " .. target .. " while sourceCompatibility is "
           .. source .. ", and the release key sets both to one level", LAYOUT_ROW)

@@ -308,11 +308,18 @@ def buildscriptOf = { project ->
   [repositories: repositoriesOf(project.buildscript.repositories), resolved: resolved, errors: errors]
 }
 
+/**
+ * @implNote `rawSourceCompatibility` and `rawTargetCompatibility` are internal to
+ * `DefaultJavaPluginExtension` and null when the build set nothing, where the evaluated value is the
+ * toolchain's or the dump daemon's JDK. Measured on 7.6.4, 8.13 and 9.6.0.
+ */
 def javaExtension = { File base, extension, owner ->
   [toolchain: [languageVersion: safely { plain(base, extension.toolchain.languageVersion) },
                vendor: safely { plain(base, extension.toolchain.vendor) }],
    sourceCompatibility: safely { plain(base, extension.sourceCompatibility) },
-   targetCompatibility: safely { plain(base, extension.targetCompatibility) }]
+   targetCompatibility: safely { plain(base, extension.targetCompatibility) },
+   rawSourceCompatibility: safely { plain(base, extension.rawSourceCompatibility) },
+   rawTargetCompatibility: safely { plain(base, extension.rawTargetCompatibility) }]
 }
 
 /**
