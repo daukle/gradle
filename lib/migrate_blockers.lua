@@ -254,11 +254,35 @@ function migrate_blockers.extension_differences(extensions, generated_extensions
   return blockers
 end
 
+local function unrendered_paths(value, path, found)
+  if is_unrendered(value) then
+    found[#found + 1] = { path = path, why = value["$unrendered"] }
+  elseif type(value) == "table" then
+    for _, key in ipairs(union_keys(value, {})) do unrendered_paths(value[key], path .. "." .. key, found) end
+  end
+  return found
+end
+
+local function unreadable_blockers(core, side, where)
+  local blockers = {}
+  for _, unreadable in ipairs(unrendered_paths(core, "settings", {})) do
+    blockers[#blockers + 1] = blocker(unreadable.path, where, "could not be read from " .. side .. " ("
+                                      .. unreadable.why .. "), so it cannot be compared", UNCOVERED_ROW)
+  end
+  return blockers
+end
+
 --- A core settings block (toolchain repositories, build caches, settings
---- repositories) the generated build does not reproduce, which no key says.
+--- repositories) the generated build does not reproduce, which no key says,
+--- or one the dump could not read on either side, which would otherwise
+--- compare as equal.
 function migrate_blockers.settings_differences(core, generated_core, where)
-  return difference_blockers(core or {}, generated_core or {}, "settings", where, DIFFERS
-                             .. ": it is a block of Gradle's own settings that no daukle/gradle key carries")
+  local blockers = unreadable_blockers(core or {}, "the old build", where)
+  append_all(blockers, unreadable_blockers(generated_core or {}, "the build daukle/gradle generates", where))
+  append_all(blockers, difference_blockers(core or {}, generated_core or {}, "settings", where, DIFFERS
+                                           .. ": it is a block of Gradle's own settings that no daukle/gradle"
+                                           .. " key carries"))
+  return blockers
 end
 
 return migrate_blockers

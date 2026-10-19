@@ -548,9 +548,9 @@ def repositoriesByName = { Iterable repositories ->
   repositoriesOf(repositories).collectEntries { [it.name, [kind: it.kind, type: it.type, url: it.url]] }
 }
 
+/** @implNote `toolchainManagement` is a property of `Settings`, not one of its extensions. */
 def toolchainRepositoriesOf = { settings ->
-  def management = settings.extensions.findByName('toolchainManagement')
-  def jvm = management?.extensions?.findByName('jvm')
+  def jvm = settings.toolchainManagement.extensions.findByName('jvm')
   if (jvm == null) return [:]
   jvm.javaRepositories.asList.collectEntries { [it.name, [resolverClass: plain(settings.rootDir, it.resolverClass.getOrNull()?.name)]] }
 }
