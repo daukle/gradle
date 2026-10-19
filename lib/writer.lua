@@ -8,6 +8,7 @@ local composite = daukle.require("lib/composite")
 local source_sets = daukle.require("lib/source_sets")
 
 local BUILD_FILE = "build.gradle"
+local SETTINGS_FILE = "settings.gradle"
 
 --- A copy of `base` carrying `extra` as well, so one table of project-wide
 --- options can serve a root file and every module file without being spelled
@@ -187,6 +188,18 @@ local function write_build_file(context, config, options)
   end
 end
 
+--- The settings.gradle a validated config renders: generate returns it, and
+--- the migrator writes it beside the build file it renders for its task-set
+--- comparison, so both read one renderer.
+local function settings_text(context, config)
+  local record = validation.composite_of(context, config)
+  local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
+  return settings_file.settings(validation.project_name(context), module_graph.declared(context),
+                                applies_settings_plugins, record)
+end
+
 return {
+  SETTINGS_FILE = SETTINGS_FILE,
+  settings_text = settings_text,
   write_build_file = write_build_file,
 }

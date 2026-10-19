@@ -36,16 +36,13 @@ daukle.plugin{
 }
 
 local build_file = daukle.require("lib/build_file")
-local settings_file = daukle.require("lib/settings_file")
 local discovery = daukle.require("lib/discovery")
 local source_sets = daukle.require("lib/source_sets")
-local module_graph = daukle.require("lib/modules")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
 local launcher = daukle.require("lib/launcher")
 local migrator = daukle.require("lib/migrator")
 
-local SETTINGS_FILE = "settings.gradle"
 local REPORT_FILE = "discovered.txt"
 
 --[[ settings.gradle is generated and build.gradle is NOT, and the split is
@@ -60,11 +57,7 @@ daukle.toolchain{
   generate = function(context)
     local config = validation.config_of(context)
     validation.validated(context, config)
-    local record = validation.composite_of(context, config)
-    local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
-    return { [SETTINGS_FILE] = settings_file.settings(validation.project_name(context),
-                                                    module_graph.declared(context),
-                                                    applies_settings_plugins, record) }
+    return { [writer.SETTINGS_FILE] = writer.settings_text(context, config) }
   end,
 }
 

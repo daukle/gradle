@@ -1,9 +1,13 @@
 local model_dump = daukle.require("lib/model_dump")
 local launcher = daukle.require("lib/launcher")
 local translate_model = daukle.require("lib/translate_model")
+local migrate_blockers = daukle.require("lib/migrate_blockers")
+local distributions = daukle.require("lib/distributions")
+local writer = daukle.require("lib/writer")
 
 local INIT_SCRIPT = "migrate-model.gradle"
 local MODEL = "migrate-model.json"
+local GENERATED_MODEL = "migrate-generated-model.json"
 local PROJECT_CACHE = "migrate-cache"
 local WRAPPER_DIRECTORY = "gradle/wrapper"
 local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
@@ -39,18 +43,42 @@ local function has_file(directory, name)
   return false
 end
 
---- The Gradle version the wrapper names, or nil when there is no wrapper.
+local function trimmed(text)
+  return (string.gsub(string.gsub(text, "^%s+", ""), "%s+$", ""))
+end
+
+--- The distribution the wrapper names: nil when there is no wrapper or it
+--- names no url, else { url, version }, version nil when the url is not one
+--- this can read.
 ---
---- @implNote read from the url's last segment, because a mirror's own path can
---- hold "gradle-" as well.
-local function wrapper_version(context)
+--- @implNote the version is read from the url's last segment, because a
+--- mirror's own path can hold "gradle-" as well. The url is unescaped as a
+--- properties value, where the wrapper writes `https\://`.
+local function wrapper_distribution(context)
   local directory = within(context.dir, WRAPPER_DIRECTORY)
   if not has_file(directory, WRAPPER_PROPERTIES) then return nil end
   local text = daukle.read(directory .. "/" .. WRAPPER_PROPERTIES)
   local url = string.match(text, "distributionUrl%s*[=:]%s*([^\r\n]+)")
   if url == nil then return nil end
-  local file = string.match(url, "([^/]+)%s*$")
-  return file ~= nil and string.match(file, "^gradle%-(.+)%-%a+%.zip$") or nil
+  url = string.gsub(trimmed(url), "\\(.)", "%1")
+  local file = string.match(url, "([^/]+)$")
+  return { url = url, version = file ~= nil and string.match(file, "^gradle%-(.+)%-%a+%.zip$") or nil }
+end
+
+--- Why the wrapper's Gradle cannot be provisioned, or nil when it can.
+---
+--- @implNote decided before anything is provisioned: the dump itself runs on
+--- that Gradle, and an unpinned one is never fetched.
+local function gradle_refusal(context, distribution)
+  if distribution == nil then return nil end
+  local where = within(context.dir, WRAPPER_DIRECTORY .. "/" .. WRAPPER_PROPERTIES)
+  if distribution.version == nil then
+    return migrate_blockers.unreadable_distribution(distribution.url, where)
+  end
+  if not distributions.is_pinned(distribution.version) then
+    return migrate_blockers.unpinned_gradle(distribution.version, where)
+  end
+  return nil
 end
 
 local function model_name(build)
@@ -70,9 +98,15 @@ local function tail(text)
   return "..." .. string.sub(text, -STDERR_SHOWN)
 end
 
-local function dump(context)
+local function run_dump(context, gradle_version, cwd, arguments, failure)
+  local result = launcher.run(context, gradle_version, DUMP_JDK, arguments,
+                              { cwd = cwd, capture = true, check = false })
+  if result.code ~= 0 then error(failure .. ":\n" .. tail(result.stderr), 0) end
+end
+
+local function dump(context, gradle_version)
   daukle.write{ path = INIT_SCRIPT, text = model_dump.SCRIPT }
-  local result = launcher.run(context, wrapper_version(context), DUMP_JDK, {
+  run_dump(context, gradle_version, context.dir or ".", {
     "--project-dir", ".",
     "--project-cache-dir", derived_from_instance(context, PROJECT_CACHE),
     "--no-configuration-cache",
@@ -80,11 +114,44 @@ local function dump(context)
     "-D" .. model_dump.PROPERTY .. "=" .. derived_from_instance(context, MODEL),
     "--quiet",
     "help",
-  }, { cwd = context.dir or ".", capture = true, check = false })
-  if result.code ~= 0 then
-    error("Gradle could not configure the build, so there is no model to migrate from:\n"
-          .. tail(result.stderr), 0)
-  end
+  }, "Gradle could not configure the build, so there is no model to migrate from")
+end
+
+--- The context a task of the translated manifest would see, which is what the
+--- plugin's own renderer reads.
+local function generation_context(context, translation, config)
+  return { instance = context.instance, dir = context.dir, root = context.root, host = context.host,
+           project = translation.name, version = translation.version, modules = {},
+           toolchain = { config = config, version = config.version } }
+end
+
+--- The translated config without `jdk`, which picks only the JVM a task runs
+--- Gradle on and is not rendered: the comparison dump runs on the dump's JDK.
+local function rendered_config(config)
+  local copy = {}
+  for key, value in pairs(config) do copy[key] = value end
+  copy.jdk = nil
+  return copy
+end
+
+--- The model of the build `daukle/gradle` renders from the translation,
+--- dumped with the same init script, Gradle and JDK as the old build, so the
+--- run reuses the first one's daemon.
+local function dump_generated(context, translation)
+  local config = rendered_config(translation.config)
+  local generation = generation_context(context, translation, config)
+  writer.write_build_file(generation, config)
+  daukle.write{ path = writer.SETTINGS_FILE, text = writer.settings_text(generation, config) }
+  run_dump(context, config.version, derived(context, "."), {
+    "--project-dir", ".",
+    "--offline",
+    "--no-configuration-cache",
+    "--init-script", INIT_SCRIPT,
+    "-D" .. model_dump.PROPERTY .. "=" .. GENERATED_MODEL,
+    "--quiet",
+    "help",
+  }, "Gradle could not configure the build daukle/gradle generates from the translation")
+  return daukle.json_parse(daukle.read(derived(context, GENERATED_MODEL)))
 end
 
 local OLD_JARS = "migrate-old"
@@ -126,15 +193,32 @@ local function scope_blockers(model, where)
   return blockers
 end
 
+local function append(target, source)
+  for _, item in ipairs(source) do target[#target + 1] = item end
+end
+
+local function refused(context, refusal)
+  return { manifest = { toolchains = { [context.instance] = {} } }, foreign = {}, blockers = { refusal },
+           owned = {} }
+end
+
 local function run(context)
-  dump(context)
+  local distribution = wrapper_distribution(context)
+  local refusal = gradle_refusal(context, distribution)
+  if refusal ~= nil then return refused(context, refusal) end
+  local gradle_version = distribution ~= nil and distribution.version or nil
+  dump(context, gradle_version)
   local model = read_model(context)
   local root = model.projects[1]
   local where = within(context.dir, root.buildFile or ".")
   local translation = translate_model.project(root, { model = model, dir = context.dir, where = where })
-  translation.config.version = wrapper_version(context)
+  translation.config.version = gradle_version
   local blockers = translation.blockers
-  for _, blocker in ipairs(scope_blockers(model, where)) do blockers[#blockers + 1] = blocker end
+  append(blockers, scope_blockers(model, where))
+  append(blockers, migrate_blockers.build_logic(root, where))
+  local generated = dump_generated(context, translation).projects[1]
+  append(blockers, migrate_blockers.core_plugins(root, generated, where))
+  append(blockers, migrate_blockers.task_difference(root, generated, where))
   return {
     manifest = { project = translation.name, version = translation.version,
                  toolchains = { [context.instance] = translation.config } },

@@ -119,4 +119,28 @@ local function for_version(version)
   }
 end
 
-return { for_version = for_version, default = DEFAULT, known = known }
+local function is_pinned(version)
+  return DIGESTS[version] ~= nil
+end
+
+local function major_of(version)
+  return string.match(version, "^(%d+)")
+end
+
+--- The pin to suggest for an unpinned version: the smallest pinned version
+--- above it in the same major, else the largest pinned below it, else the
+--- oldest pin.
+---
+--- @implNote an upgrade within a major is the usual safe move, which is why it
+--- wins over a closer version below.
+local function nearest(version)
+  local below = nil
+  for _, pinned in ipairs(ascending()) do
+    if precedes(version, pinned) and major_of(pinned) == major_of(version) then return pinned end
+    if precedes(pinned, version) then below = pinned end
+  end
+  return below or oldest()
+end
+
+return { for_version = for_version, default = DEFAULT, known = known, is_pinned = is_pinned,
+         nearest = nearest }
