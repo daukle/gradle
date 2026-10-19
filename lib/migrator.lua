@@ -222,6 +222,33 @@ local function append(target, source)
   for _, item in ipairs(source) do target[#target + 1] = item end
 end
 
+local SETTINGS_FILES = { "settings.gradle", "settings.gradle.kts" }
+
+--- The settings file blockers about settings plugins name, else `fallback`.
+local function settings_where(context, fallback)
+  for _, name in ipairs(SETTINGS_FILES) do
+    if has_file(context.dir or ".", name) then return within(context.dir, name) end
+  end
+  return fallback
+end
+
+--- The checks that need the generated build's model: what it applies and
+--- registers that the old build's plugins and extensions did not reproduce.
+local function generated_blockers(model, root, generated, where, settings)
+  local generated_root = generated.projects[1]
+  local blockers = {}
+  append(blockers, migrate_blockers.core_plugins(root, generated_root, where))
+  append(blockers, migrate_blockers.third_party_plugins(root.plugins, generated_root.plugins, where, ""))
+  append(blockers, migrate_blockers.third_party_plugins(model.settingsPlugins, generated.settingsPlugins, settings,
+                                                        "settings "))
+  append(blockers, migrate_blockers.extension_differences(root.extensions, generated_root.extensions, where,
+                                                          "configure"))
+  append(blockers, migrate_blockers.extension_differences(model.settingsExtensions, generated.settingsExtensions,
+                                                          settings, "settingsConfigure"))
+  append(blockers, migrate_blockers.task_difference(root, generated_root, where))
+  return blockers
+end
+
 local function refused(context, refusal)
   return { manifest = { toolchains = { [context.instance] = {} } }, foreign = {}, blockers = { refusal },
            owned = {} }
@@ -237,16 +264,17 @@ local function run(context)
   local root = model.projects[1]
   local where = within(context.dir, root.buildFile or ".")
   local translation = translate_model.project(root, { model = model, dir = context.dir, where = where })
+  local settings = settings_where(context, where)
+  local settings_translation = translate_model.settings({ model = model, dir = context.dir, where = settings })
+  for key, value in pairs(settings_translation.config) do translation.config[key] = value end
   translation.config.version = gradle_version
   local blockers = translation.blockers
+  append(blockers, settings_translation.blockers)
   append(blockers, scope_blockers(model, where))
   append(blockers, migrate_blockers.build_logic(root, where))
   local generated, refusals = dump_generated(context, translation, where)
   append(blockers, refusals)
-  if generated ~= nil then
-    append(blockers, migrate_blockers.core_plugins(root, generated.projects[1], where))
-    append(blockers, migrate_blockers.task_difference(root, generated.projects[1], where))
-  end
+  if generated ~= nil then append(blockers, generated_blockers(model, root, generated, where, settings)) end
   return {
     manifest = { project = translation.name, version = translation.version,
                  toolchains = { [context.instance] = translation.config } },

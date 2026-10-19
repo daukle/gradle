@@ -91,13 +91,30 @@ def safely = { Closure read ->
 
 class WalkBudget { int remaining }
 
+/**
+ * Whether a build script could have assigned the property: a setter, a non-final field, or a lazy
+ * Gradle type, which the Groovy DSL assigns through its own setter.
+ */
+def isAssignable = { MetaProperty property, Object raw ->
+  if (raw instanceof org.gradle.api.provider.HasConfigurableValue) return true
+  if (property instanceof MetaBeanProperty) return property.setter != null
+  !java.lang.reflect.Modifier.isFinal(property.modifiers)
+}
+
+/**
+ * The bounded walk of a third-party extension. A list, a map and a file arrive as one-key tables
+ * (`$list`, `$map`, `$file`), because JSON cannot tell an empty list from an object nor a path
+ * from a string, and an object names the properties no script can assign in `$readOnly`.
+ */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   def value
   try { value = unwrap(raw) } catch (Throwable failure) { return unrendered('unreadable: ' + failure.class.simpleName) }
   if (value == null) return null
-  if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion || value instanceof File
-      || value instanceof org.gradle.api.file.FileSystemLocation || value instanceof org.gradle.api.file.FileCollection) {
+  if (value instanceof File) return ['$file': pathFrom(base, value)]
+  if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
+  if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
+      || value instanceof org.gradle.api.file.FileCollection) {
     return plain(base, value)
   }
   if (LIVE_TYPES.any { it.isInstance(value) }) return unrendered('live object ' + value.getClass().name)
@@ -111,16 +128,23 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
     if (value instanceof org.gradle.api.NamedDomainObjectCollection) {
       return value.names.collectEntries { name -> [name, safely { walk(base, value.getByName(name), depth + 1, seen, budget) }] }
     }
-    if (value instanceof Map) return value.collectEntries { key, item -> [key.toString(), walk(base, item, depth + 1, seen, budget)] }
-    if (value instanceof Iterable) return value.collect { walk(base, it, depth + 1, seen, budget) }.findAll { it != null }
+    if (value instanceof Map) return ['$map': value.collectEntries { key, item -> [key.toString(), walk(base, item, depth + 1, seen, budget)] }]
+    if (value instanceof Iterable) return ['$list': value.collect { walk(base, it, depth + 1, seen, budget) }.findAll { it != null }]
     if (value.getClass().name.startsWith('java.')) return value.toString()
     def out = [:]
+    def readOnly = []
     value.metaClass.properties.each { property ->
       def name = property.name
       if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__')) return
-      try { out[name] = walk(base, property.getProperty(value), depth + 1, seen, budget) } catch (Throwable ignored) { }
+      try {
+        def item = property.getProperty(value)
+        out[name] = walk(base, item, depth + 1, seen, budget)
+        if (!isAssignable(property, item)) readOnly << name
+      } catch (Throwable ignored) { }
     }
-    out.isEmpty() ? value.toString() : out
+    if (out.isEmpty()) return value.toString()
+    if (!readOnly.isEmpty()) out['$readOnly'] = readOnly.sort()
+    out
   } finally {
     seen.remove(identity)
   }
@@ -132,7 +156,24 @@ def typeOf = { Object instance ->
   type.superclass != Object ? type.superclass : (type.interfaces.find { !it.name.startsWith('groovy.') && !it.name.startsWith('org.gradle.api.internal.') } ?: type)
 }
 
-def isCoreType = { Class type -> type.name.startsWith('org.gradle.') }
+def locationOf = { Class type ->
+  def location = null
+  try { location = type.protectionDomain?.codeSource?.location } catch (Throwable ignored) { }
+  if (location == null || location.protocol != 'file') return null
+  new File(location.toURI())
+}
+
+def GRADLE_HOME = gradle.gradleHomeDir?.canonicalFile?.toPath()
+
+/**
+ * Whether a class ships with Gradle itself, read from where it loaded rather than from its package,
+ * because a third-party plugin can live under `org.gradle.` too (the foojay resolver does).
+ */
+def isCoreType = { Class type ->
+  def location = locationOf(type)
+  if (location == null || GRADLE_HOME == null) return type.name.startsWith('org.gradle.')
+  location.canonicalFile.toPath().startsWith(GRADLE_HOME)
+}
 
 /**
  * A class name a script compiles to: a Groovy script's closure (build_<hash>$_run_closure1) or a
@@ -182,10 +223,8 @@ def pluginIdsIn = { File location ->
   found
 }
 def pluginIdsOf = { Class type ->
-  def location = null
-  try { location = type.protectionDomain?.codeSource?.location } catch (Throwable ignored) { }
-  if (location == null || location.protocol != 'file') return []
-  def file = new File(location.toURI())
+  def file = locationOf(type)
+  if (file == null) return []
   if (!pluginIdsByLocation.containsKey(file.path)) {
     pluginIdsByLocation[file.path] = safely { pluginIdsIn(file) }
   }
@@ -201,7 +240,9 @@ def pluginsOf = { File base, Iterable plugins ->
       ids = pluginIdsOf(candidate)
       if (!ids.isEmpty()) type = candidate
     }
-    [type: type.name, ids: ids, core: isCoreType(type), script: scriptOf(base, type)]
+    def location = locationOf(type)
+    [type: type.name, ids: ids, core: isCoreType(type), script: scriptOf(base, type),
+     jar: (location != null && location.isFile() ? location.name : null)]
   }
 }
 
@@ -326,11 +367,11 @@ def dependenciesOf = { project ->
   [declared: declaredRows(project.configurations), resolved: resolved, errors: errors]
 }
 
-def buildscriptOf = { project ->
+def buildscriptOf = { owner ->
   def resolved = []
   def errors = []
-  resolveInto(project.buildscript.configurations.findByName('classpath'), resolved, errors)
-  [repositories: repositoriesOf(project.buildscript.repositories), resolved: resolved, errors: errors]
+  resolveInto(owner.buildscript.configurations.findByName('classpath'), resolved, errors)
+  [repositories: repositoriesOf(owner.buildscript.repositories), resolved: resolved, errors: errors]
 }
 
 /**
@@ -483,6 +524,7 @@ gradle.settingsEvaluated { settings ->
   settingsFacts.pluginManagementRepositories = repositoriesOf(settings.pluginManagement.repositories)
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
   settingsFacts.settingsExtensions = extensionsOf(base, settings)
+  settingsFacts.settingsBuildscript = buildscriptOf(settings)
 }
 
 def outputFor = { invocation ->
@@ -540,6 +582,7 @@ gradle.taskGraph.whenReady {
                pluginManagementRepositories: settingsFacts.pluginManagementRepositories ?: [],
                settingsPlugins: settingsFacts.settingsPlugins ?: [],
                settingsExtensions: settingsFacts.settingsExtensions ?: [:],
+               settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
                projects: gradle.rootProject.allprojects.collect { projectOf(base, it) }]
   model.environmentMatches = environmentMatchesOf(model)
   def file = outputFor(gradle)

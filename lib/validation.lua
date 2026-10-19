@@ -5,6 +5,7 @@ local configurations = daukle.require("lib/configurations")
 local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
 local source_sets = daukle.require("lib/source_sets")
+local extensions = daukle.require("lib/extensions")
 
 local DEFAULT_JDK = "17"
 
@@ -118,24 +119,42 @@ local function checked_builds(context, config)
   return checked, read
 end
 
-local function checked_plugins(entries, key, owners)
-  key = key or "plugins"
-  if entries == nil then return {}, {} end
+local function is_pinned_plugin(entry)
+  return type(entry) == "table" and type(entry.id) == "string" and type(entry.version) == "string"
+end
+
+local function is_included_plugin(entry, owners)
+  return type(entry) == "table" and type(entry.id) == "string" and entry.version == nil
+         and owners ~= nil and owners[entry.id] ~= nil
+end
+
+--- Why `checked_plugins` would refuse this list, or nil.
+local function plugins_problem(entries, key, owners)
+  if entries == nil then return nil end
   if type(entries) ~= "table" then
-    error('"' .. key .. '" must be a list of entries, not a ' .. type(entries), 0)
+    return '"' .. key .. '" must be a list of entries, not a ' .. type(entries)
   end
-  local pinned, included = {}, {}
   for index = 1, #entries do
     local entry = entries[index]
-    local named = type(entry) == "table" and type(entry.id) == "string"
-    if named and type(entry.version) == "string" then
+    if not is_pinned_plugin(entry) and not is_included_plugin(entry, owners) then
+      return '"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
+             .. " applies and the version is what the pinned jars are checked against, or name a"
+             .. ' plugin an included build declares in "gradlePlugins"'
+    end
+  end
+  return nil
+end
+
+local function checked_plugins(entries, key, owners)
+  key = key or "plugins"
+  local problem = plugins_problem(entries, key, owners)
+  if problem ~= nil then error(problem, 0) end
+  local pinned, included = {}, {}
+  for _, entry in ipairs(entries or {}) do
+    if is_pinned_plugin(entry) then
       pinned[#pinned + 1] = entry
-    elseif named and entry.version == nil and owners and owners[entry.id] ~= nil then
-      included[#included + 1] = entry.id
     else
-      error('"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
-            .. " applies and the version is what the pinned jars are checked against, or name a"
-            .. ' plugin an included build declares in "gradlePlugins"', 0)
+      included[#included + 1] = entry.id
     end
   end
   return pinned, included
@@ -196,14 +215,29 @@ local function checked_plugin_set(config, plugins_key, classpath_key, owners)
   return plugins, jars, included
 end
 
---- What `checked_plugin_set` would refuse in each plugin list, as reasons,
---- for a caller that reports a refusal instead of raising it.
+local function plugin_set_problem_of(config, plugins_key, classpath_key, owners)
+  local problem = plugins_problem(config[plugins_key], plugins_key, owners)
+                  or configurations.entries_problem(config[classpath_key], classpath_key)
+  if problem ~= nil then return problem end
+  local _, _, _, set_problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  return set_problem
+end
+
+local CONFIGURE_KEYS = { "settingsConfigure", "configure" }
+
+--- What `validated` would refuse in the plugin lists, their classpaths and the
+--- configure trees, as reasons, for a caller that reports a refusal instead of
+--- raising it.
 local function plugin_set_problems(context, config)
   local _, read = checked_builds(context, config)
   local owners = builds.owners(read)
   local problems = {}
   for _, keys in ipairs({ { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }) do
-    local _, _, _, problem = read_plugin_set(config, keys[1], keys[2], owners)
+    local problem = plugin_set_problem_of(config, keys[1], keys[2], owners)
+    if problem ~= nil then problems[#problems + 1] = problem end
+  end
+  for _, key in ipairs(CONFIGURE_KEYS) do
+    local problem = extensions.configuration_problem(config[key], key)
     if problem ~= nil then problems[#problems + 1] = problem end
   end
   return problems

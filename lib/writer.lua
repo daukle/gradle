@@ -202,8 +202,8 @@ end
 --- than a raise, for the migrator, which reports a refusal as a blocker.
 ---
 --- @implNote the refusals a translated config can meet: its plugin lists and
---- the JUnit launcher. Every other check in `validated` is on a shape the
---- translation never writes.
+--- their classpaths, its configure trees and the JUnit launcher. Every other
+--- check in `validated` is on a shape the translation never writes.
 local function generation_problems(context, config)
   local problems = validation.plugin_set_problems(context, config)
   local launcher = junit.missing_launcher(test_reachable(validation.entries_of_configurations(config, "")))

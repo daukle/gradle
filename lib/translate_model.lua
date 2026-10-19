@@ -12,18 +12,17 @@
 local translate_model = {}
 
 local model_dump = daukle.require("lib/model_dump")
+local translation_state = daukle.require("lib/translation")
+local translate_plugins = daukle.require("lib/translate_plugins")
 
 local SURFACE = "GRADLE-SURFACE.md: "
 local LAYOUT_ROW = SURFACE .. "3. The `java` extension and source layout"
-local CONFIGURATIONS_ROW = SURFACE .. "2. Dependency configurations"
 
 local MAIN = "main"
 local TEST = "test"
 local SOURCES_JAR_TASK = "sourcesJar"
 local JAR_TASK = "jar"
 local UNSPECIFIED = "unspecified"
-local PLUGIN_REPOSITORY_PREFIX = "__plugin_repository__"
-local SNAPSHOT_SUFFIX = "-SNAPSHOT"
 local HIGH_BYTE = "[\128-\255]"
 
 --- @implNote JEP 400: javac reads sources as UTF-8 by default from JDK 18 on.
@@ -34,39 +33,9 @@ local ROOT_KEYS = {
   test = { java = "testSourceRoot", resources = "testResourceRoot" },
 }
 
-local function block(translation, construct, why, surface)
-  local key = construct .. "\0" .. why
-  if translation.blocked[key] then return end
-  translation.blocked[key] = true
-  translation.blockers[#translation.blockers + 1] = { construct = construct, where = translation.where,
-                                                       why = why, surface = surface }
-end
-
-local function environment_index(model)
-  local index = {}
-  for _, match in ipairs(model.environmentMatches or {}) do index[match.value] = match.names end
-  return index
-end
-
---- The model value, or nil with a blocker when it holds an environment
---- variable's value at dump time, whole or inside it.
----
---- @implNote a build that reads a secret at configuration time evaluates it to
---- a plain string, so the value itself is the only signal the model has, and a
---- value that passes this gate is written into a committed daukle.toml.
-local function carried(translation, value, construct)
-  if type(value) ~= "string" then return value end
-  local names = translation.environment[value]
-  if names == nil then return value end
-  block(translation, construct, "holds the value of the environment variable "
-        .. table.concat(names, ", ") .. ", and writing it would commit what may be a secret into"
-        .. " daukle.toml")
-  return nil
-end
-
-local function is_unrendered(value)
-  return type(value) == "table" and value["$unrendered"] ~= nil
-end
+local block = translation_state.block
+local carried = translation_state.carried
+local is_unrendered = translation_state.is_unrendered
 
 local function extension_value(project, name)
   local extension = (project.extensions or {})[name]
@@ -240,69 +209,6 @@ local function union(...)
   return out
 end
 
-local function repository_named(translation, project, name)
-  if name == nil then return nil end
-  local list, wanted = project.repositories or {}, name
-  if string.sub(name, 1, #PLUGIN_REPOSITORY_PREFIX) == PLUGIN_REPOSITORY_PREFIX then
-    list, wanted = translation.model.pluginManagementRepositories or {}, string.sub(name, #PLUGIN_REPOSITORY_PREFIX + 1)
-  end
-  for _, repository in ipairs(list) do
-    if repository.name == wanted then return repository end
-  end
-  return nil
-end
-
-local function with_trailing_slash(url)
-  if string.sub(url, -1) == "/" then return url end
-  return url .. "/"
-end
-
-local function maven_path(row)
-  return (string.gsub(row.group, "%.", "/")) .. "/" .. row.module .. "/" .. row.version .. "/" .. row.fileName
-end
-
---- Why a resolved row cannot be pinned, or nil when it can.
-local function unpinnable(row, repository)
-  if row.kind == "project" then
-    return "is a dependency on another project, which this migrator does not translate yet"
-  end
-  if row.kind ~= "module" then
-    return "has no repository: a files(), flatDir or gradleApi() dependency, which no pinned entry can name"
-  end
-  if row.sha256 == nil then return "resolved to no file, so there is nothing to pin" end
-  if string.sub(row.version, -#SNAPSHOT_SUFFIX) == SNAPSHOT_SUFFIX then
-    return "is a snapshot, which a pinned url and digest cannot follow"
-  end
-  if repository == nil or repository.url == nil then
-    return "resolved from a repository the model names no url for"
-  end
-  if repository.kind ~= "maven" then
-    return "resolved from " .. repository.name .. ", which is not a Maven layout"
-  end
-  if string.sub(repository.url, 1, 5) == "file:" then
-    return "resolved from " .. repository.name .. ", a file: repository that exists on this machine only"
-  end
-  return nil
-end
-
---- The pinned entry for a resolved artifact, in the form `maven:resolve` writes
---- and `daukle/gradle` reads: the repository url plus the Maven layout path,
---- the sha256 of Gradle's cached file, and `as = "<artifact> <version>"`.
-local function pin_of(translation, project, row)
-  local repository = repository_named(translation, project, row.repository)
-  local why = unpinnable(row, repository)
-  if why ~= nil then
-    block(translation, row.component, why, CONFIGURATIONS_ROW)
-    return nil
-  end
-  local parts = { repository.url, row.group, row.module, row.version, row.fileName }
-  for _, part in ipairs(parts) do
-    if carried(translation, part, row.component) == nil then return nil end
-  end
-  return { url = with_trailing_slash(repository.url) .. maven_path(row), sha256 = row.sha256,
-           as = row.module .. " " .. row.version }
-end
-
 local function row_key(row)
   return row.component .. "\0" .. (row.fileName or "")
 end
@@ -363,7 +269,7 @@ local function keys_of(rows)
 end
 
 local function append_pin(translation, project, buckets, key, row)
-  local pin = pin_of(translation, project, row)
+  local pin = translation_state.pin_of(translation, project.repositories, row)
   if pin == nil then return end
   buckets[key] = buckets[key] or {}
   buckets[key][#buckets[key] + 1] = pin
@@ -546,17 +452,25 @@ end
 ---           version = <the project's version, or nil when Gradle's is unspecified>,
 ---           blockers = { { construct, where, why, surface? } } }
 function translate_model.project(project, build)
-  local translation = { model = build.model, dir = build.dir, where = build.where, blockers = {}, blocked = {},
-                        environment = environment_index(build.model) }
+  local translation = translation_state.new(build)
   local config = {}
   config.jdk = carried(translation, language_version(project), "java.toolchain.languageVersion")
   config.release = translate_release(translation, project, main_compile_task(project))
   config.main = translate_main(translation, project)
   if task_named(project, SOURCES_JAR_TASK) ~= nil then config.sourcesJar = true end
   translate_source_sets(translation, project, config)
+  copy_into(config, translate_plugins.project(translation, project))
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
   return { config = config, name = carried(translation, project.name, "rootProject.name"), version = version,
            blockers = translation.blockers }
+end
+
+--- The settings plugins of the build the model describes.
+--- @param build as `translate_model.project` takes it
+--- @return { config = <the settings keys>, blockers = { { construct, where, why, surface? } } }
+function translate_model.settings(build)
+  local translation = translation_state.new(build)
+  return { config = translate_plugins.settings(translation, build.model), blockers = translation.blockers }
 end
 
 return translate_model

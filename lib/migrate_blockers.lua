@@ -147,4 +147,103 @@ function migrate_blockers.core_plugins(project, generated, where)
   return blockers
 end
 
+local function applied_types(plugins)
+  local types = {}
+  for _, plugin in ipairs(plugins or {}) do types[plugin.type] = true end
+  return types
+end
+
+local function missing_plugin_reason(plugin)
+  if plugin.script ~= nil then
+    return "is a plugin class " .. plugin.script .. " compiled, which is build logic written as code"
+  end
+  return "is a third-party plugin the build daukle/gradle generates from the translated keys does not"
+         .. " apply: it has no plugin id, or no jar the classpath resolved carries it"
+end
+
+--- A third-party plugin the old build applies and the generated one does not.
+--- @param label "" for a project's plugins, "settings " for the settings'
+function migrate_blockers.third_party_plugins(plugins, generated_plugins, where, label)
+  local generated = applied_types(generated_plugins)
+  local blockers = {}
+  for _, plugin in ipairs(plugins or {}) do
+    if plugin.core ~= true and not generated[plugin.type] then
+      blockers[#blockers + 1] = blocker(label .. plugin_name(plugin), where, missing_plugin_reason(plugin),
+                                        plugin.script ~= nil and BOUNDARY_ROW or UNCOVERED_ROW)
+    end
+  end
+  return blockers
+end
+
+local READ_ONLY = "$readOnly"
+local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true }
+
+local function union_keys(left, right)
+  local seen, keys = {}, {}
+  for _, side in ipairs({ left, right }) do
+    for key in pairs(side) do
+      if key ~= READ_ONLY and not seen[key] then
+        seen[key] = true
+        keys[#keys + 1] = key
+      end
+    end
+  end
+  table.sort(keys)
+  return keys
+end
+
+local function is_unrendered(value)
+  return type(value) == "table" and value["$unrendered"] ~= nil
+end
+
+local compare_values
+
+local function compare_tables(old, new, path, differences)
+  for _, key in ipairs(union_keys(old, new)) do
+    local key_path = WRAPPERS[key] and path or path .. "." .. key
+    compare_values(old[key], new[key], key_path, differences)
+  end
+end
+
+--- @implNote an unrendered old value is skipped, because the translation
+--- already blocked it by name.
+function compare_values(old, new, path, differences)
+  if is_unrendered(old) then return end
+  if type(old) == "table" and type(new) == "table" then
+    compare_tables(old, new, path, differences)
+  elseif old ~= new then
+    differences[#differences + 1] = path
+  end
+end
+
+--- A third-party extension value the generated build does not reproduce:
+--- what the configure tree could not carry (a read-only property, a file, a
+--- list or a value set through a method), compared leaf by leaf.
+--- @param label "configure" for a project's extensions, "settingsConfigure" for the settings'
+function migrate_blockers.extension_differences(extensions, generated_extensions, where, label)
+  local blockers = {}
+  for _, name in ipairs(union_keys(extensions or {}, {})) do
+    local extension = extensions[name]
+    local path = label .. "." .. name
+    local generated = (generated_extensions or {})[name]
+    if extension.core ~= true and type(extension.value) == "table" and not is_unrendered(extension.value) then
+      if generated == nil then
+        blockers[#blockers + 1] = blocker(path, where, "is an extension the old build registers and the build"
+                                          .. " daukle/gradle generates from the translated keys does not",
+                                          UNCOVERED_ROW)
+      else
+        local differences = {}
+        compare_values(extension.value, generated.value, path, differences)
+        for _, difference in ipairs(differences) do
+          blockers[#blockers + 1] = blocker(difference, where, "differs in the build daukle/gradle generates"
+                                            .. " from the translated keys: the old build set it in a way a"
+                                            .. " configure tree does not carry (a read-only property, a file,"
+                                            .. " a list or a method call)", UNCOVERED_ROW)
+        end
+      end
+    end
+  end
+  return blockers
+end
+
 return migrate_blockers
