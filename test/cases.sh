@@ -97,6 +97,51 @@ files_carry_literals() {
   return 0
 }
 
+# expect-manifest.txt holds paragraphs, separated by a blank line, that the
+# daukle.toml a migration wrote must carry. Every line of a paragraph must sit
+# in ONE table of it (a header line included), in any order, because core
+# writes a table's keys in Lua's iteration order; a pinned entry's bucket is
+# asserted by putting its header and its url in one paragraph.
+MANIFEST_CHECK='
+import sys
+sections, current = [], []
+for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+    if line.startswith("["):
+        sections.append(current)
+        current = []
+    current.append(line)
+sections.append(current)
+paragraphs = [[]]
+for line in open(sys.argv[2], encoding="utf-8").read().splitlines():
+    if line.strip():
+        paragraphs[-1].append(line)
+    elif paragraphs[-1]:
+        paragraphs.append([])
+paragraphs = [paragraph for paragraph in paragraphs if paragraph]
+for paragraph in paragraphs:
+    if not any(all(line in section for line in paragraph) for section in sections):
+        print(" / ".join(paragraph))
+        sys.exit(1)
+'
+
+manifest_carries_clauses() {
+  [ -f "$case_dir/expect-manifest.txt" ] || return 0
+  if ! grep -q . "$case_dir/expect-manifest.txt"; then
+    fail "$name" "expect-manifest.txt is empty, so this case asserts nothing"
+    return 1
+  fi
+  if [ ! -f "$sandbox/daukle.toml" ]; then
+    fail "$name" "expected daukle.toml, which the migration did not write"
+    return 1
+  fi
+  python=$(working_python) || { fail "$name" "no python3 or python that runs"; return 1; }
+  if ! missing=$("$python" -c "$MANIFEST_CHECK" "$sandbox/daukle.toml" "$case_dir/expect-manifest.txt"); then
+    fail "$name" "daukle.toml does not carry, in one table: $missing"
+    return 1
+  fi
+  return 0
+}
+
 # On Windows python3 can be the WindowsApps stub that only opens the Store, so
 # a candidate counts only once it has run.
 working_python() {
@@ -155,9 +200,9 @@ serve_plugin() {
     "$root/catalog.json" "http://127.0.0.1:$port/plugin.lua" "$digest" "$catalog"
 }
 
-# A migrate case asserts its exit code (expect-exit.txt) and then what the
-# output and the files it names carry, with the same expect-output.txt and
-# expect-contains.txt every other case uses.
+# A migrate case asserts its exit code (expect-exit.txt), then what the output
+# and the files it names carry, with the same expect-output.txt and
+# expect-contains.txt every other case uses, then expect-manifest.txt.
 run_migrate_case() {
   serve_plugin || return 0
   status=0
@@ -173,6 +218,7 @@ run_migrate_case() {
   fi
   output_carries_clauses || return 0
   files_carry_literals || return 0
+  manifest_carries_clauses || return 0
   passed=$((passed + 1))
 }
 
@@ -193,7 +239,7 @@ run_case() {
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt"
   if [ -f "$case_dir/migrate" ]; then
-    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt"
+    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
     run_migrate_case
     return
   fi

@@ -1,0 +1,1 @@
+version: evaluates to the value of the environment variable DAUKLE_GRADLE_PROBE

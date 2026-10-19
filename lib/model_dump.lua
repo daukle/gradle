@@ -308,14 +308,24 @@ def buildscriptOf = { project ->
   [repositories: repositoriesOf(project.buildscript.repositories), resolved: resolved, errors: errors]
 }
 
-def javaExtension = { File base, extension ->
+def javaExtension = { File base, extension, owner ->
   [toolchain: [languageVersion: safely { plain(base, extension.toolchain.languageVersion) },
                vendor: safely { plain(base, extension.toolchain.vendor) }],
    sourceCompatibility: safely { plain(base, extension.sourceCompatibility) },
    targetCompatibility: safely { plain(base, extension.targetCompatibility) }]
 }
 
-def sourceSetsExtension = { File base, extension ->
+/**
+ * The files a source set's classpath holds beyond its configuration's own, such as another set's
+ * output added with `compileClasspath += ...`, which no resolved artifact row can show.
+ */
+def filesBeyondConfiguration = { File base, owner, org.gradle.api.file.FileCollection classpath, String configurationName ->
+  def configuration = owner.configurations.findByName(configurationName)
+  def own = configuration != null && configuration.canBeResolved ? configuration.files : [] as Set
+  (classpath.files - own).collect { pathFrom(base, it) }.sort()
+}
+
+def sourceSetsExtension = { File base, extension, owner ->
   extension.collectEntries { set ->
     def others = [:]
     set.extensions.extensionsSchema.elements.each { element ->
@@ -326,25 +336,29 @@ def sourceSetsExtension = { File base, extension ->
                 compileClasspath: set.compileClasspathConfigurationName, runtimeClasspath: set.runtimeClasspathConfigurationName,
                 annotationProcessor: set.annotationProcessorConfigurationName, implementation: set.implementationConfigurationName,
                 compileOnly: set.compileOnlyConfigurationName, runtimeOnly: set.runtimeOnlyConfigurationName,
-                compileJavaTask: set.compileJavaTaskName, classesTask: set.classesTaskName]]
+                compileJavaTask: set.compileJavaTaskName, classesTask: set.classesTaskName,
+                output: safely { set.output.files.collect { pathFrom(base, it) }.sort() },
+                compileClasspathBeyond: safely { filesBeyondConfiguration(base, owner, set.compileClasspath, set.compileClasspathConfigurationName) },
+                runtimeClasspathBeyond: safely { filesBeyondConfiguration(base, owner, set.runtimeClasspath, set.runtimeClasspathConfigurationName) }]]
   }
 }
 
-def applicationExtension = { File base, extension ->
+def applicationExtension = { File base, extension, owner ->
   [mainClass: safely { plain(base, extension.mainClass) }, applicationName: safely { plain(base, extension.applicationName) },
    applicationDefaultJvmArgs: safely { plain(base, extension.applicationDefaultJvmArgs) }]
 }
 
 def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtension, application: applicationExtension]
 
-def extensionsOf = { File base, container ->
+def extensionsOf = { File base, owner ->
+  def container = owner.extensions
   container.extensionsSchema.elements.findAll { it.name != 'ext' }.collectEntries { element ->
     def extension = container.findByName(element.name)
     def type = element.publicType.concreteClass
     def entry = [type: type.name, core: isCoreType(type)]
     if (extension == null) return [element.name, entry]
     def reader = CORE_EXTENSION_READERS[element.name]
-    if (entry.core && reader != null) entry.value = safely { reader(base, extension) }
+    if (entry.core && reader != null) entry.value = safely { reader(base, extension, owner) }
     if (!entry.core) entry.value = safely { walk(base, extension, 0, [] as Set, new WalkBudget(remaining: WALK_BUDGET)) }
     [element.name, entry]
   }
@@ -426,7 +440,7 @@ def projectOf = { File base, project ->
    buildFile: (project.buildFile.isFile() ? pathFrom(base, project.buildFile) : null),
    version: project.version.toString(), group: project.group.toString(),
    parent: project.parent?.path, children: project.childProjects.values().collect { it.path },
-   plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project.extensions),
+   plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
    dependencies: dependenciesOf(project), tasks: tasksOf(base, project)]
 }
@@ -436,7 +450,7 @@ gradle.settingsEvaluated { settings ->
   def base = settings.rootDir
   settingsFacts.pluginManagementRepositories = repositoriesOf(settings.pluginManagement.repositories)
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
-  settingsFacts.settingsExtensions = extensionsOf(base, settings.extensions)
+  settingsFacts.settingsExtensions = extensionsOf(base, settings)
 }
 
 def outputFor = { invocation ->
@@ -450,6 +464,29 @@ def outputFor = { invocation ->
   def identity = invocation.hasProperty('identityPath') ? invocation.identityPath.toString() : ':' + invocation.rootProject.name
   def suffix = identity.replaceAll(/^:/, '').replace(':', '-')
   new File(file.parentFile, (file.name - ~/\.json$/) + '-' + suffix + '.json')
+}
+
+def stringsIn
+stringsIn = { Object value, Set found ->
+  if (value instanceof CharSequence) found << value.toString()
+  else if (value instanceof Map) value.values().each { stringsIn(it, found) }
+  else if (value instanceof Iterable) value.each { stringsIn(it, found) }
+  found
+}
+
+/**
+ * Each string of the model that equals an environment variable's value, with the names holding it.
+ *
+ * @implNote compared here rather than hashed for the migrator, because the plugin has no digest
+ * verb; only strings the model already carries are written, so no other variable's value reaches
+ * the file. A value shorter than ENVIRONMENT_FLOOR is skipped, so a `17` or a `true` in the
+ * environment cannot block a jdk or a flag that merely equals it.
+ */
+def ENVIRONMENT_FLOOR = 8
+def environmentMatchesOf = { Map model ->
+  def namesByValue = [:]
+  System.getenv().each { name, value -> if (value != null && value.length() >= ENVIRONMENT_FLOOR) namesByValue.get(value, []) << name }
+  stringsIn(model, [] as Set).findAll { namesByValue.containsKey(it) }.sort().collect { [value: it, names: namesByValue[it].sort()] }
 }
 
 gradle.projectsEvaluated {
@@ -470,6 +507,7 @@ gradle.taskGraph.whenReady {
                settingsPlugins: settingsFacts.settingsPlugins ?: [],
                settingsExtensions: settingsFacts.settingsExtensions ?: [:],
                projects: gradle.rootProject.allprojects.collect { projectOf(base, it) }]
+  model.environmentMatches = environmentMatchesOf(model)
   def file = outputFor(gradle)
   file.parentFile.mkdirs()
   file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(model)), 'UTF-8')

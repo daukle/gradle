@@ -1,5 +1,6 @@
 local model_dump = daukle.require("lib/model_dump")
 local launcher = daukle.require("lib/launcher")
+local translate_model = daukle.require("lib/translate_model")
 
 local INIT_SCRIPT = "migrate-model.gradle"
 local MODEL = "migrate-model.json"
@@ -25,7 +26,9 @@ end
 --- `--init-script` and `--project-cache-dir` against that.
 local function derived_from_instance(context, name)
   local climb = ""
-  for _ in string.gmatch(context.dir or "", "[^/]+") do climb = climb .. "../" end
+  for segment in string.gmatch(context.dir or "", "[^/]+") do
+    if segment ~= "." then climb = climb .. "../" end
+  end
   return climb .. derived(context, name)
 end
 
@@ -84,14 +87,61 @@ local function dump(context)
   end
 end
 
+local OLD_JARS = "migrate-old"
+local NEW_JARS = "build/libs"
+
+--- The jar to compare, named as the old build's `jar` task names it.
+---
+--- @implNote the old side is written by `build`, which does not exist yet, so
+--- until it does the proof runs the new build and then reports the old jar
+--- missing; that still writes daukle.toml for inspection, which no-proof does
+--- not.
+local function proof_of(context, project)
+  for _, task in ipairs(project.tasks or {}) do
+    local values = task.values
+    if task.name == "jar" and type(values) == "table" and type(values.archiveFileName) == "string" then
+      return {
+        task = context.instance .. ":jar",
+        compare = { {
+          old = derived(context, OLD_JARS .. "/" .. values.archiveFileName),
+          new = derived(context, NEW_JARS .. "/" .. values.archiveFileName),
+          as = "archive",
+        } },
+      }
+    end
+  end
+  return nil
+end
+
+local function scope_blockers(model, where)
+  local blockers = {}
+  for index = 2, #model.projects do
+    blockers[#blockers + 1] = { construct = model.projects[index].path, where = where,
+                                why = "is a subproject, and this migrator translates a single project only so far" }
+  end
+  for _, build in ipairs(model.includedBuilds or {}) do
+    blockers[#blockers + 1] = { construct = build.dir, where = where,
+                                why = "is an included build, and this migrator translates a single project only so far" }
+  end
+  return blockers
+end
+
 local function run(context)
   dump(context)
-  read_model(context)
+  local model = read_model(context)
+  local root = model.projects[1]
+  local where = within(context.dir, root.buildFile or ".")
+  local translation = translate_model.project(root, { model = model, dir = context.dir, where = where })
+  translation.config.version = wrapper_version(context)
+  local blockers = translation.blockers
+  for _, blocker in ipairs(scope_blockers(model, where)) do blockers[#blockers + 1] = blocker end
   return {
-    manifest = { toolchains = { [context.instance] = {} } },
+    manifest = { project = translation.name, version = translation.version,
+                 toolchains = { [context.instance] = translation.config } },
     foreign = {},
-    blockers = {},
+    blockers = blockers,
     owned = {},
+    proof = proof_of(context, root),
   }
 end
 
