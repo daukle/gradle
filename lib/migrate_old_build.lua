@@ -4,6 +4,7 @@
 local migrate_old_build = {}
 
 local launcher = daukle.require("lib/launcher")
+local jdks = daukle.require("java:lib/jdks")
 local distributions = daukle.require("lib/distributions")
 local migrate_jars = daukle.require("lib/migrate_jars")
 local migrate_paths = daukle.require("lib/migrate_paths")
@@ -180,6 +181,16 @@ function migrate_old_build.toolchain_blockers(project, where)
     end
   end
   return blockers
+end
+
+--- The translated `jdk` when daukle/java provides no JDK of it for this host,
+--- which the proof would otherwise raise on, after every blocker was found.
+function migrate_old_build.unprovided_jdk_blockers(context, jdk_version, where)
+  if type(jdk_version) ~= "string" then return {} end
+  local problem = jdks.problem_for_host{ os = context.host.os, arch = context.host.arch, version = jdk_version }
+  if problem == nil then return {} end
+  return { migrate_surface.blocker("java.toolchain.languageVersion", where, "asks for a JDK the proof cannot"
+                                   .. " build the old jars on: " .. problem, JAVA_ROW) }
 end
 
 return migrate_old_build

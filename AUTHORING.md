@@ -739,9 +739,8 @@ Measured details that decide a block:
   `-P` is deprecated on 9.x and on 9.6.0 writes `build/reports/problems/problems-report.html` into
   the project. The old build also fails if any `JavaCompile` does not compile on the provisioned
   JDK; that check covers `JavaCompile` only, not `Javadoc` or `JavaExec`.
-- **A JDK outside `daukle/java`'s table is not yet a blocker.** The lookup that reports it without
-  throwing (`problem_for_host`) is in `daukle/java` development, and this plugin's `requires` moves to
-  the release carrying it as `daukle/java@1.5.0`; until then an unpinned JDK fails in the proof.
+- **A JDK outside `daukle/java`'s table blocks**, through `daukle/java`'s `problem_for_host`, which
+  reports without raising; `for_host` would raise only once the proof ran, after every blocker.
 - A JUnit 5 build's implied `junit-platform-launcher` is resolved by the dump and pinned into
   `testRuntimeOnly`; the plugin itself still never pins one.
 

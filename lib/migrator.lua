@@ -258,6 +258,7 @@ local function run(context)
   built.version = built.version or UNVERSIONED
   local blockers = built.blockers
   append(blockers, project_blockers(built))
+  append(blockers, migrate_old_build.unprovided_jdk_blockers(context, built.config.jdk, built.projects[1].where))
   append(blockers, migrate_owned.blockers(context, model, included))
   local settings_where = within(context.dir, settings)
   local generated, refusals = dump_generated(context, built, built.projects[1].where)
