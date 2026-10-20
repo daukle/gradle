@@ -45,6 +45,221 @@ fail() {
   failed=$((failed + 1))
 }
 
+# One literal per line the run's own output must carry. It is how a case
+# asserts that a value the manifest names reached the TOOL rather than the
+# renderer: "provisioning gradle 9.6.0" is daukle's own line, and nothing
+# else in a build names the Gradle that ran. Both cases named after Gradle 9
+# were green on Gradle 8.13 from the day they were written, because the
+# manifest's version reached generate and no check looked at the task.
+output_carries_clauses() {
+  if [ -f "$case_dir/expect-output.txt" ]; then
+    if ! grep -q . "$case_dir/expect-output.txt"; then
+      fail "$name" "expect-output.txt is empty, so this case asserts nothing"
+      return 1
+    fi
+    while IFS= read -r clause || [ -n "$clause" ]; do
+      [ -n "$clause" ] || continue
+      if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
+        fail "$name" "output does not carry: $clause"
+        return 1
+      fi
+    done < "$case_dir/expect-output.txt"
+  fi
+  return 0
+}
+
+# "<path> <literal>" per line, for an assertion about what is INSIDE a file
+# the tool produced. A zip stores its entry NAMES uncompressed in the central
+# directory, so grepping a jar for an entry name needs no unzip on the runner;
+# its entry CONTENTS are deflated and are not greppable, which is why nothing
+# here asserts a jar MANIFEST and why the fat-jar case proves its Main-Class
+# by RUNNING the jar instead. Measured both ways in daukle/java, D-81.
+files_carry_literals() {
+  if [ -f "$case_dir/expect-contains.txt" ]; then
+    if ! grep -q . "$case_dir/expect-contains.txt"; then
+      fail "$name" "expect-contains.txt is empty, so this case asserts nothing"
+      return 1
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      target=${line%% *}
+      literal=${line#* }
+      if [ ! -f "$sandbox/$target" ]; then
+        fail "$name" "expected $target, which the build did not produce"
+        return 1
+      fi
+      if ! grep -qF "$literal" "$sandbox/$target"; then
+        fail "$name" "$target does not carry: $literal"
+        return 1
+      fi
+    done < "$case_dir/expect-contains.txt"
+  fi
+  return 0
+}
+
+# expect-manifest.txt holds paragraphs, separated by a blank line, that the
+# daukle.toml a migration wrote must carry. Every line of a paragraph must sit
+# in ONE table of it (a header line included), in any order, because core
+# writes a table's keys in Lua's iteration order; a pinned entry's bucket is
+# asserted by putting its header and its url in one paragraph. A line starting
+# with "!" is a prefix no line may start with in a table that carries the
+# paragraph's other lines, so a paragraph of just "!release =" means no table
+# sets release at all.
+MANIFEST_CHECK='
+import sys
+sections, current = [], []
+for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+    if line.startswith("["):
+        sections.append(current)
+        current = []
+    current.append(line)
+sections.append(current)
+paragraphs = [[]]
+for line in open(sys.argv[2], encoding="utf-8").read().splitlines():
+    if line.strip():
+        paragraphs[-1].append(line)
+    elif paragraphs[-1]:
+        paragraphs.append([])
+paragraphs = [paragraph for paragraph in paragraphs if paragraph]
+for paragraph in paragraphs:
+    wanted = [line for line in paragraph if not line.startswith("!")]
+    refused = [line[1:] for line in paragraph if line.startswith("!")]
+    carrying = [section for section in sections if all(line in section for line in wanted)]
+    if (wanted and not carrying) or any(line.startswith(prefix) for section in carrying for line in section for prefix in refused):
+        print(" / ".join(paragraph))
+        sys.exit(1)
+'
+
+manifest_carries_clauses() {
+  [ -f "$case_dir/expect-manifest.txt" ] || return 0
+  if ! grep -q . "$case_dir/expect-manifest.txt"; then
+    fail "$name" "expect-manifest.txt is empty, so this case asserts nothing"
+    return 1
+  fi
+  if [ ! -f "$sandbox/daukle.toml" ]; then
+    fail "$name" "expected daukle.toml, which the migration did not write"
+    return 1
+  fi
+  python=$(working_python) || { fail "$name" "no python3 or python that runs"; return 1; }
+  if ! missing=$("$python" -c "$MANIFEST_CHECK" "$sandbox/daukle.toml" "$case_dir/expect-manifest.txt"); then
+    fail "$name" "daukle.toml does not match, in one table: $missing"
+    return 1
+  fi
+  return 0
+}
+
+# On Windows python3 can be the WindowsApps stub that only opens the Store, so
+# a candidate counts only once it has run.
+working_python() {
+  for candidate in python3 python; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    "$candidate" -c 'import sys' >/dev/null 2>&1 && { echo "$candidate"; return 0; }
+  done
+  return 1
+}
+
+# Port 0 lets the system pick, because a fixed port can fall in a range Windows
+# reserves for Hyper-V and refuses to bind.
+PLUGIN_SERVER='
+import functools, http.server, os, sys
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[1])
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+with open(sys.argv[2] + ".tmp", "w") as out:
+    out.write(str(server.server_port))
+os.replace(sys.argv[2] + ".tmp", sys.argv[2])
+server.serve_forever()
+'
+
+# daukle migrate finds a plugin only through a catalog, whose asset is pinned
+# by url and sha256 and taken over https or loopback http alone. So the plugin
+# is packed exactly as publish.yml packs it and served from 127.0.0.1, once per
+# run. Copied from daukle/node's harness, which measured both constraints.
+serve_plugin() {
+  [ -n "${catalog:-}" ] && return 0
+  python=$(working_python) || { fail "$name" "no python3 or python that runs"; return 1; }
+  asset_dir="$work/asset"
+  mkdir -p "$asset_dir"
+  # COPYFILE_DISABLE and ustar keep macOS bsdtar from adding AppleDouble or pax
+  # members, and core's tar reader takes only regular files and directories.
+  packed="$work/plugin.tar"
+  (cd "$root" && COPYFILE_DISABLE=1 tar --format=ustar -cf "$packed" plugin.lua lib/*.lua)
+  digest=$(sha256sum "$packed" 2>/dev/null | cut -d' ' -f1)
+  [ -n "$digest" ] || digest=$(shasum -a 256 "$packed" | cut -d' ' -f1)
+  # Served under its own digest because core caches a plugin by its url, and a
+  # port an earlier run used would hand back that run's lib/.
+  mkdir -p "$asset_dir/$digest"
+  mv "$packed" "$asset_dir/$digest/plugin.lua"
+  port_file="$work/server-port"
+  rm -f "$port_file"
+  "$python" -c "$PLUGIN_SERVER" "$asset_dir" "$port_file" >"$work/server.log" 2>&1 &
+  server=$!
+  trap 'kill "$server" 2>/dev/null || true' EXIT
+  port=
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -s "$port_file" ] && port=$(cat "$port_file") &&
+      curl -fsS "http://127.0.0.1:$port/$digest/plugin.lua" -o /dev/null 2>/dev/null && break
+    port=
+    kill -0 "$server" 2>/dev/null || break
+    sleep 1
+  done
+  if [ -z "$port" ]; then
+    fail "$name" "the plugin server did not start, so no migrate case can run: $(cat "$work/server.log")"
+    return 1
+  fi
+  catalog="$work/catalog.json"
+  "$python" -c 'import json,sys; c=json.load(open(sys.argv[1])); c.update(id="gradle", asset={"url":sys.argv[2],"sha256":sys.argv[3]}); json.dump({"plugins":[c]}, open(sys.argv[4],"w"))' \
+    "$root/catalog.json" "http://127.0.0.1:$port/$digest/plugin.lua" "$digest" "$catalog"
+}
+
+# One path per line in expect-file.txt that must exist after the run, and in
+# expect-absent.txt that must not: what a migration moved aside and what it
+# kept is asserted on the tree itself, never on the message that reports it.
+tree_has_paths() {
+  for list in expect-file.txt expect-absent.txt; do
+    [ -f "$case_dir/$list" ] || continue
+    if ! grep -q . "$case_dir/$list"; then
+      fail "$name" "$list is empty, so this case asserts nothing"
+      return 1
+    fi
+    while IFS= read -r wanted || [ -n "$wanted" ]; do
+      [ -n "$wanted" ] || continue
+      if [ "$list" = expect-file.txt ] && [ ! -e "$sandbox/$wanted" ]; then
+        fail "$name" "expected $wanted, which the run did not leave"
+        return 1
+      fi
+      if [ "$list" = expect-absent.txt ] && [ -e "$sandbox/$wanted" ]; then
+        fail "$name" "$wanted is still there"
+        return 1
+      fi
+    done < "$case_dir/$list"
+  done
+  return 0
+}
+
+# A migrate case asserts its exit code (expect-exit.txt), then what the output
+# and the files it names carry, with the same expect-output.txt and
+# expect-contains.txt every other case uses, then expect-manifest.txt, then
+# the paths it expects present and absent.
+run_migrate_case() {
+  serve_plugin || return 0
+  status=0
+  (cd "$sandbox" && "$daukle" migrate --catalog "$catalog" >stdout.txt 2>stderr.txt) || status=$?
+  wanted=$(cat "$case_dir/expect-exit.txt")
+  if [ "$status" -ne "$wanted" ]; then
+    fail "$name" "migrate exited $status, wanted $wanted"
+    echo "--- stdout" >&2
+    tail -n 30 "$sandbox/stdout.txt" >&2
+    echo "--- stderr" >&2
+    tail -n 30 "$sandbox/stderr.txt" >&2
+    return 0
+  fi
+  output_carries_clauses || return 0
+  files_carry_literals || return 0
+  manifest_carries_clauses || return 0
+  tree_has_paths || return 0
+  passed=$((passed + 1))
+}
+
 run_case() {
   case_dir=$1
   name=$(basename "$case_dir")
@@ -61,6 +276,12 @@ run_case() {
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt"
+  if [ -f "$case_dir/migrate" ]; then
+    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
+          "$sandbox/expect-absent.txt"
+    run_migrate_case
+    return
+  fi
   mkdir -p "$sandbox/plugins"
   cp "$root/plugin.lua" "$sandbox/plugins/plugin.lua"
   cp -R "$root/lib" "$sandbox/plugins/lib"
@@ -96,25 +317,7 @@ run_case() {
     compare_expected "$case_dir" "$sandbox" "$name" || return 0
   fi
 
-  # One literal per line the run's own output must carry. It is how a case
-  # asserts that a value the manifest names reached the TOOL rather than the
-  # renderer: "provisioning gradle 9.6.0" is daukle's own line, and nothing
-  # else in a build names the Gradle that ran. Both cases named after Gradle 9
-  # were green on Gradle 8.13 from the day they were written, because the
-  # manifest's version reached generate and no check looked at the task.
-  if [ -f "$case_dir/expect-output.txt" ]; then
-    if ! grep -q . "$case_dir/expect-output.txt"; then
-      fail "$name" "expect-output.txt is empty, so this case asserts nothing"
-      return
-    fi
-    while IFS= read -r clause || [ -n "$clause" ]; do
-      [ -n "$clause" ] || continue
-      if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
-        fail "$name" "output does not carry: $clause"
-        return
-      fi
-    done < "$case_dir/expect-output.txt"
-  fi
+  output_carries_clauses || return 0
 
   # One path per line that the TOOL must have produced. The text of a generated
   # file proves what daukle wrote; only a file Gradle made proves Gradle read it,
@@ -129,31 +332,7 @@ run_case() {
     done < "$case_dir/expect-file.txt"
   fi
 
-  # "<path> <literal>" per line, for an assertion about what is INSIDE a file
-  # the tool produced. A zip stores its entry NAMES uncompressed in the central
-  # directory, so grepping a jar for an entry name needs no unzip on the runner;
-  # its entry CONTENTS are deflated and are not greppable, which is why nothing
-  # here asserts a jar MANIFEST and why the fat-jar case proves its Main-Class
-  # by RUNNING the jar instead. Measured both ways in daukle/java, D-81.
-  if [ -f "$case_dir/expect-contains.txt" ]; then
-    if ! grep -q . "$case_dir/expect-contains.txt"; then
-      fail "$name" "expect-contains.txt is empty, so this case asserts nothing"
-      return
-    fi
-    while IFS= read -r line || [ -n "$line" ]; do
-      [ -n "$line" ] || continue
-      target=${line%% *}
-      literal=${line#* }
-      if [ ! -f "$sandbox/$target" ]; then
-        fail "$name" "expected $target, which the build did not produce"
-        return
-      fi
-      if ! grep -qF "$literal" "$sandbox/$target"; then
-        fail "$name" "$target does not carry: $literal"
-        return
-      fi
-    done < "$case_dir/expect-contains.txt"
-  fi
+  files_carry_literals || return 0
 
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails

@@ -1,0 +1,2 @@
+build/daukle/gradle/migrate-generated-model.json "name": "tiTree"
+build/daukle/gradle/migrate-generated-model.json "type": "org.barfuin.gradle.taskinfo.GradleTaskInfoPlugin"

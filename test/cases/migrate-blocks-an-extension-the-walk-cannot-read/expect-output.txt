@@ -1,0 +1,2 @@
+configure.opaque: is a third-party extension with no public property the model could read, so whatever it holds can be neither carried nor left out
+configure.faulty.broken: holds a value the model could not render (unreadable: IllegalStateException), so it can be neither carried nor left out

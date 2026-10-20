@@ -1,0 +1,19 @@
+plugins {
+  id 'java'
+}
+
+repositories {
+  mavenCentral {
+    content {
+      excludeModule('org.junit.platform', 'junit-platform-launcher')
+    }
+  }
+}
+
+dependencies {
+  testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+}
+
+test {
+  useJUnitPlatform()
+}

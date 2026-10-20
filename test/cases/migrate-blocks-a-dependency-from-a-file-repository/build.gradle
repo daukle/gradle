@@ -1,0 +1,13 @@
+plugins {
+  id 'java'
+}
+
+repositories {
+  maven {
+    url = uri('repo')
+  }
+}
+
+dependencies {
+  runtimeOnly 'org.example.daukle:local:1.0'
+}

@@ -1,0 +1,2 @@
+build/daukle/gradle/migrate-old/1/plain.jar
+build/daukle/gradle/build/libs/plain-0.1.0.jar

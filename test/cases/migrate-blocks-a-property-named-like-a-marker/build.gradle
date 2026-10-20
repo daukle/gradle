@@ -1,0 +1,10 @@
+plugins {
+  id 'java'
+}
+
+class Marked {
+  String file = 'notes.txt'
+  String classifier = 'notes'
+}
+
+extensions.create('marked', Marked)

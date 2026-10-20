@@ -1,0 +1,3 @@
+:test.jvmArgs: differs in the build daukle/gradle generates from the translated keys, and no key carries this setting of the task
+:test.maxHeapSize: differs in the build daukle/gradle generates from the translated keys, and no key carries this setting of the task
+:test.systemProperties.greeting: differs in the build daukle/gradle generates from the translated keys, and no key carries this setting of the task

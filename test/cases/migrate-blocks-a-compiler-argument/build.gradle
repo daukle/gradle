@@ -1,0 +1,11 @@
+plugins {
+  id 'java'
+}
+
+compileJava {
+  options.compilerArgs << '-Werror'
+}
+
+javadoc {
+  enabled = false
+}

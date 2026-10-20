@@ -1,0 +1,2 @@
+:compileJava.compilerArgs: differs in the build daukle/gradle generates from the translated keys, and no key carries this setting of the task
+:javadoc.enabled: is false in the old build and true in the build daukle/gradle generates from the translated keys

@@ -1,0 +1,1 @@
+build/daukle/gradle/migrate-model.json "$readOnly": [

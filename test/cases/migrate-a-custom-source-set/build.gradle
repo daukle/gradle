@@ -1,0 +1,17 @@
+plugins {
+  id 'java'
+}
+
+version = '1.0.0'
+
+sourceSets {
+  integration
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  integrationImplementation 'org.apache.commons:commons-lang3:3.14.0'
+}

@@ -1,0 +1,1 @@
+build/daukle/gradle/app/build/libs/app-2.0.0.jar example/app/Banner.class

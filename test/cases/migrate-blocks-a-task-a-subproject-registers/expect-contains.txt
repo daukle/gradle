@@ -1,0 +1,2 @@
+build/daukle/gradle/app/build.gradle implementation project(':core')
+build/daukle/gradle/migrate-model.json "project": ":core"

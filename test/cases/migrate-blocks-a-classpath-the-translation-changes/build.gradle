@@ -1,0 +1,15 @@
+plugins {
+  id 'java'
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  runtimeOnly 'org.apache.commons:commons-lang3:3.14.0'
+}
+
+configurations.testRuntimeClasspath {
+  exclude group: 'org.apache.commons'
+}

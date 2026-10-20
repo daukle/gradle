@@ -1,0 +1,1 @@
+:jar.manifestAttributes.Main-Class: is a jar manifest attribute of the old build, and the `main` key it translates to applies the application plugin, which writes none into the jar

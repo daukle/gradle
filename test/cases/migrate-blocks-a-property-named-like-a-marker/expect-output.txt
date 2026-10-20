@@ -1,0 +1,2 @@
+configure.marked.file: is a property named like a configure marker, which daukle/gradle reads as a marker rather than a value
+the generated build: does not configure:

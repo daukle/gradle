@@ -1,0 +1,9 @@
+plugins {
+  id 'application'
+}
+
+version = '0.3.0'
+
+application {
+  mainClass = 'example.App'
+}

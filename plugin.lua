@@ -11,8 +11,8 @@
 --- resolves nothing.
 
 daukle.plugin{
-  api = 1,
-  uses = { "provision", "artifact", "exec", "write", "read", "parse" },
+  api = 3,
+  uses = { "provision", "artifact", "exec", "write", "read", "parse", "list", "json_parse" },
   exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules" },
   --[[ Core scrubs every credential it knows from a child it starts unless the
        plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
@@ -29,22 +29,21 @@ daukle.plugin{
        DEPENDENT's uses has nothing to cover. ]]
   requires = {
     java = {
-      url = "https://github.com/daukle/java/releases/download/1.1.0/plugin.lua",
-      sha256 = "45deb1bcb490cbd71553a2327f364afedb5e5719f91d0ab593cf3474427153b3",
+      url = "https://github.com/daukle/java/releases/download/1.5.0/plugin.lua",
+      sha256 = "94cecf60ad502541ce8fd1e087e335bf5eff65c67b651b94e21a9979e62b9b88",
     },
   },
 }
 
-local distributions = daukle.require("lib/distributions")
 local build_file = daukle.require("lib/build_file")
-local settings_file = daukle.require("lib/settings_file")
 local discovery = daukle.require("lib/discovery")
 local source_sets = daukle.require("lib/source_sets")
-local module_graph = daukle.require("lib/modules")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
+local launcher = daukle.require("lib/launcher")
+local composite = daukle.require("lib/composite")
+local migrator = daukle.require("lib/migrator")
 
-local SETTINGS_FILE = "settings.gradle"
 local REPORT_FILE = "discovered.txt"
 
 --[[ settings.gradle is generated and build.gradle is NOT, and the split is
@@ -59,34 +58,14 @@ daukle.toolchain{
   generate = function(context)
     local config = validation.config_of(context)
     validation.validated(context, config)
-    local record = validation.composite_of(context, config)
-    local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
-    return { [SETTINGS_FILE] = settings_file.settings(validation.project_name(context),
-                                                    module_graph.declared(context),
-                                                    applies_settings_plugins, record) }
+    return { [writer.SETTINGS_FILE] = writer.settings_text(context, config) }
   end,
 }
 
---- @implNote the launcher jar rather than `bin/gradle`, because that is a POSIX
---- shell script and `bin/gradle.bat` a batch file, and neither is a program
---- daukle can start on every host. The jar is what both scripts eventually
---- exec. Starting it with the provisioned java is also what makes JAVA_HOME
---- unnecessary: Gradle reports the daemon JVM as "no JDK specified, using
---- current Java home", which is the one daukle provisioned.
+daukle.migrator{ tool = "gradle", toolchain = "gradle", run = migrator.run, build = migrator.build }
+
 local function run_gradle(context, config, arguments, options)
-  local pick = distributions.for_version(validation.gradle_version_of(context))
-  local jdk = validation.jdk_for(context, config)
-
-  local gradle_root = daukle.provision{ url = pick.url, sha256 = pick.sha256,
-                                        as = "gradle " .. pick.version }
-  local jdk_root = daukle.provision{ url = jdk.url, sha256 = jdk.sha256,
-                                     as = "temurin " .. validation.jdk_version_of(config) }
-
-  local java = jdk_root:tool(jdk.home .. "/bin/java"
-                             .. (context.host.os == "windows" and ".exe" or ""))
   local argv = {
-    "-classpath", gradle_root:path(pick.home .. "/lib/gradle-launcher-" .. pick.version .. ".jar"),
-    "org.gradle.launcher.GradleMain",
     --[[ "." because a task already runs with its working directory in the
          derived tree, which is how daukle/cmake gets away with "-S .". The
          redirect is still what keeps the project root clean: Gradle treats
@@ -101,7 +80,8 @@ local function run_gradle(context, config, arguments, options)
     "--offline",
   }
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
-  return daukle.exec(java, argv, options)
+  return launcher.run(context, validation.gradle_version_of(context), validation.jdk_version_of(config),
+                      argv, options)
 end
 
 local function gradle_task(name, arguments)
@@ -130,6 +110,35 @@ daukle.task{
     end
     writer.write_build_file(context, config)
     run_gradle(context, config, { "sourcesJar" })
+  end,
+}
+
+local JARS_SCRIPT = "jars.gradle"
+local JARS_TASK = "daukleJars"
+
+--- @implNote an init script rather than a line of the build file, so the
+--- build file every other task renders stays the same.
+local JARS_SCRIPT_TEXT = "gradle.allprojects { project ->\n"
+  .. "  project.tasks.register('" .. JARS_TASK .. "') {\n"
+  .. "    dependsOn(project.tasks.withType(org.gradle.api.tasks.bundling.Jar))\n"
+  .. "  }\n"
+  .. "}\n"
+
+--- Every jar the manifest makes: every task of the `Jar` type in each
+--- project, the sources jar and a plugin's own jar tasks included, and each
+--- included build's, which `gradle:jar` alone leaves to whoever depends on
+--- them. It is the proof a migration runs.
+daukle.task{
+  name = "gradle:jars",
+  run = function(context)
+    local config = validation.config_of(context)
+    writer.write_build_file(context, config)
+    daukle.write{ path = JARS_SCRIPT, text = JARS_SCRIPT_TEXT }
+    local arguments = { "--init-script", JARS_SCRIPT, JARS_TASK }
+    for _, build in ipairs(validation.composite_of(context, config).builds) do
+      arguments[#arguments + 1] = ":" .. composite.build_name_of(build.name) .. ":" .. JARS_TASK
+    end
+    run_gradle(context, config, arguments)
   end,
 }
 

@@ -1,0 +1,15 @@
+project = "example-gradle-multi-project"
+version = "1.0.0"
+
+[modules.greeting]
+!requires =
+
+[modules.app]
+requires = ["greeting"]
+
+[toolchains.gradle]
+version = "8.13"
+!main =
+
+[toolchains.gradle.modules.app]
+main = "com.example.App"

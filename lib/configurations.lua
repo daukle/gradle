@@ -59,20 +59,27 @@ function configurations.test_reachable(entries_of)
   return reachable
 end
 
-function configurations.checked_entries(entries, key)
-  if entries == nil then return {} end
+--- Why `checked_entries` would refuse this list, or nil.
+function configurations.entries_problem(entries, key)
+  if entries == nil then return nil end
   if type(entries) ~= "table" then
-    error('"' .. key .. '" must be a list of pinned entries, not a ' .. type(entries), 0)
+    return '"' .. key .. '" must be a list of pinned entries, not a ' .. type(entries)
   end
   for index = 1, #entries do
     local entry = entries[index]
     if type(entry) ~= "table" or type(entry.url) ~= "string"
        or type(entry.sha256) ~= "string" then
-      error('"' .. key .. '[' .. index .. ']" needs a url and a sha256: every dependency this'
-            .. ' toolchain gives Gradle is pinned before Gradle sees it', 0)
+      return '"' .. key .. '[' .. index .. ']" needs a url and a sha256: every dependency this'
+             .. ' toolchain gives Gradle is pinned before Gradle sees it'
     end
   end
-  return entries
+  return nil
+end
+
+function configurations.checked_entries(entries, key)
+  local problem = configurations.entries_problem(entries, key)
+  if problem ~= nil then error(problem, 0) end
+  return entries or {}
 end
 
 --- Every pinned entry a configuration holds, keyed by its manifest name.

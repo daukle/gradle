@@ -1,0 +1,1 @@
+settings.gradle: tools: is an included build that has no dumped model: the init script never reached its whenReady, so nothing it holds can be translated

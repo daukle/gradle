@@ -1,0 +1,2 @@
+version: holds the value of the environment variable DAUKLE_GRADLE_PROBE
+jar: the proof cannot name its jar: jar names its archive with the value of an environment variable

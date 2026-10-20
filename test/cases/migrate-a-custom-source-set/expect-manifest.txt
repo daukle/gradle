@@ -1,0 +1,3 @@
+[[toolchains.gradle.sourceSets.integration.classpath]]
+url = "https://repo.maven.apache.org/maven2/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.jar"
+as = "commons-lang3 3.14.0"

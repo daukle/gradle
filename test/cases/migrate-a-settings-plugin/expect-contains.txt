@@ -1,0 +1,4 @@
+build/daukle/gradle/settings-plugins.gradle daukleApply('org.gradle.toolchains.foojay-resolver-convention')
+build/daukle/gradle/settings.gradle apply from: 'settings-plugins.gradle'
+build/daukle/gradle/migrate-model.json "resolverClass": "org.gradle.toolchains.foojay.FoojayToolchainResolver"
+build/daukle/gradle/migrate-generated-model.json "resolverClass": "org.gradle.toolchains.foojay.FoojayToolchainResolver"

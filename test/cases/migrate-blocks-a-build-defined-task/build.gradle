@@ -1,0 +1,8 @@
+plugins {
+  id 'java'
+}
+
+tasks.register('bundleNotes', Copy) {
+  from 'notes'
+  into layout.buildDirectory.dir('notes')
+}

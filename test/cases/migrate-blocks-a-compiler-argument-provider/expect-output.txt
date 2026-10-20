@@ -1,0 +1,1 @@
+:compileJava.compilerArgumentProviders: holds an argument provider, which computes its arguments when the task runs, and no key can carry it

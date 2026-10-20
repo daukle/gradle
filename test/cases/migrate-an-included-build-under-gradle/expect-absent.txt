@@ -1,0 +1,6 @@
+gradle/wrapper
+gradle/plugins/build.gradle
+gradle/plugins/settings.gradle
+build.gradle
+settings.gradle
+gradle/libs.versions.toml
