@@ -310,11 +310,12 @@ end
 
 --- A core settings block (toolchain repositories, build caches) the
 --- generated build does not reproduce, which no key says, or one the dump
---- could not read on either side, which would otherwise compare as equal.
+--- could not read on either side, `dependencyResolutionManagement` included,
+--- which would otherwise compare as equal or pin from nothing.
 function migrate_blockers.settings_differences(core, generated_core, where)
   local old, new = compared_settings(core), compared_settings(generated_core)
-  local blockers = unreadable_blockers(old, "the old build", where)
-  append(blockers, unreadable_blockers(new, "the build daukle/gradle generates", where))
+  local blockers = unreadable_blockers(core or {}, "the old build", where)
+  append(blockers, unreadable_blockers(generated_core or {}, "the build daukle/gradle generates", where))
   append(blockers, difference_blockers(old, new, "settings", where, DIFFERS
                                        .. ": it is a block of Gradle's own settings that no daukle/gradle"
                                        .. " key carries"))
