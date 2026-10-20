@@ -88,8 +88,9 @@ local FIRST_GRADLE_PROPERTY_TOOLCHAINS = "9.2.0"
 --- @implNote measured with a toolchain of 21 and the paths naming daukle's
 --- JDK 21: 7.6.4, 8.13, 9.0.0 and 9.1.0 ignore `-D` and resolve the user's
 --- own `~/.gradle/jdks` install, while 9.2.0 to 9.6.0 honour it; `-P` works
---- everywhere but is deprecated on 9.x and makes Gradle write a problems
---- report into the project's own `build/reports`.
+--- everywhere, and on 9.6.0 it is deprecated and makes Gradle write a
+--- problems report into the project's own `build/reports`. On 8.13, 9.0.0
+--- and 9.1.0 `-P` writes no report, so no `--no-problems-report` is passed.
 local function toolchain_arguments(gradle_version, jdk_home)
   local flag = "-P"
   if not distributions.precedes(gradle_version or distributions.default, FIRST_GRADLE_PROPERTY_TOOLCHAINS) then
