@@ -5,14 +5,13 @@ local migrate_comparison = {}
 
 local migrate_blockers = daukle.require("lib/migrate_blockers")
 local migrate_classpaths = daukle.require("lib/migrate_classpaths")
+local migrate_task_values = daukle.require("lib/migrate_task_values")
+local migrate_paths = daukle.require("lib/migrate_paths")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
 
-local SURFACE = "GRADLE-SURFACE.md: "
-local UNCOVERED_ROW = SURFACE .. "6. What this file does NOT yet cover, said plainly"
+local append = tables.append
 local CURRENT_BUILD = ":"
-
-local function append(target, source)
-  for _, item in ipairs(source) do target[#target + 1] = item end
-end
 
 local function project_blockers(old, generated, where, comparison)
   local blockers = {}
@@ -20,6 +19,8 @@ local function project_blockers(old, generated, where, comparison)
   append(blockers, migrate_blockers.third_party_plugins(old.plugins, generated.plugins, where, ""))
   append(blockers, migrate_blockers.extension_differences(old.extensions, generated.extensions, where, "configure"))
   append(blockers, migrate_blockers.task_difference(old, generated, where))
+  append(blockers, migrate_task_values.differences(old, generated, { where = where, root = comparison.root }))
+  append(blockers, migrate_task_values.application(old, generated, where))
   append(blockers, migrate_classpaths.differences(old, generated, { where = where, unpinned = comparison.unpinned,
                                                                     identities = comparison.identities }))
   return blockers
@@ -32,8 +33,9 @@ local function by_path(model)
 end
 
 local function missing(construct, where)
-  return { construct = construct, where = where, why = "has no counterpart in the build daukle/gradle generates"
-           .. " from the translated keys, so nothing it holds could be compared", surface = UNCOVERED_ROW }
+  return migrate_surface.blocker(construct, where, "has no counterpart in the build daukle/gradle generates"
+                                 .. " from the translated keys, so nothing it holds could be compared",
+                                 migrate_surface.UNCOVERED_ROW)
 end
 
 local function settings_blockers(model, generated, settings)
@@ -71,8 +73,10 @@ end
 --- @param generated        the generated root build's model
 --- @param generated_builds the generated included builds' models, by directory, each { identity, model }
 --- @param settings         the path blockers about the settings name
-function migrate_comparison.blockers(model, built, generated, generated_builds, settings)
-  local comparison = { identities = identities_of(built, generated_builds), unpinned = union_unpinned(built.projects) }
+--- @param dir              the directory of the build, relative to the one migrate runs in
+function migrate_comparison.blockers(model, built, generated, generated_builds, settings, dir)
+  local comparison = { identities = identities_of(built, generated_builds), unpinned = union_unpinned(built.projects),
+                       root = dir or "." }
   local blockers = settings_blockers(model, generated, settings)
   local generated_projects = by_path(generated)
   for _, entry in ipairs(built.projects) do
@@ -88,7 +92,8 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
     if counterpart == nil then
       blockers[#blockers + 1] = missing(record.dir, record.where)
     else
-      local build_comparison = { identities = comparison.identities, unpinned = record.unpinned }
+      local build_comparison = { identities = comparison.identities, unpinned = record.unpinned,
+                                 root = migrate_paths.within(dir, record.dir) }
       append(blockers, project_blockers(record.project, counterpart.model.projects[1], record.where, build_comparison))
     end
   end

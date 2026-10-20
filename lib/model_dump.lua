@@ -601,11 +601,22 @@ def javaCompileReader = { File base, task ->
    destinationDirectory: safely { plain(base, task.destinationDirectory) }]
 }
 
+/**
+ * What a forked JVM is started with beside its `jvmArgs`, which Gradle parses a heap size, `-ea` and a
+ * debug flag out of into their own properties.
+ */
+def forkOptionsOf = { File base, task ->
+  [maxHeapSize: safely { plain(base, task.maxHeapSize) }, minHeapSize: safely { plain(base, task.minHeapSize) },
+   enableAssertions: safely { plain(base, task.enableAssertions) }, debug: safely { plain(base, task.debug) }]
+}
+
 def testReader = { File base, task ->
+  forkOptionsOf(base, task) +
   [framework: safely { typeOf(task.options).name }, includes: safely { plain(base, task.includes) },
    excludes: safely { plain(base, task.excludes) }, filterIncludes: safely { plain(base, task.filter.includePatterns) },
    jvmArgs: safely { plain(base, task.jvmArgs) }, systemProperties: safely { plain(base, task.systemProperties) },
-   maxParallelForks: safely { plain(base, task.maxParallelForks) }, forkEvery: safely { plain(base, task.forkEvery) }]
+   maxParallelForks: safely { plain(base, task.maxParallelForks) }, forkEvery: safely { plain(base, task.forkEvery) },
+   testClassesDirs: safely { task.testClassesDirs.files.collect { pathFrom(base, it) }.sort() }]
 }
 
 def javadocReader = { File base, task ->
@@ -614,6 +625,7 @@ def javadocReader = { File base, task ->
 }
 
 def javaExecReader = { File base, task ->
+  forkOptionsOf(base, task) +
   [mainClass: safely { plain(base, task.mainClass) }, args: safely { plain(base, task.args) },
    jvmArgs: safely { plain(base, task.jvmArgs) }, workingDir: safely { plain(base, task.workingDir) }]
 }
