@@ -217,14 +217,16 @@ local function value_blockers(old, new, path, where, why, blockers)
   end
 end
 
---- Blocks an old argument provider list that is not empty, and leaves the
---- field out of the comparison.
+--- Blocks an old argument provider list the generated build does not hold
+--- the same, and leaves the field out of the comparison.
 ---
 --- @implNote a provider computes its arguments only when the task runs, so
---- no key can carry it, even where the generated build holds the same class.
+--- no key can carry one; the same classes on both sides are a plugin's own,
+--- which the generated build applies too (java-gradle-plugin adds one to
+--- `test`), so only a difference blocks.
 local function block_providers(old, new, path, where, blockers)
   for _, field in ipairs(PROVIDER_FIELDS) do
-    if is_list(old[field]) then
+    if is_list(old[field]) and not tables.deep_equal(old[field], new[field]) then
       blockers[#blockers + 1] = blocker(path .. "." .. field, where, "holds an argument provider, which computes"
                                         .. " its arguments when the task runs, and no key can carry it",
                                         UNCOVERED_ROW)
