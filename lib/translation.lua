@@ -3,7 +3,10 @@
 --- becomes.
 local translation = {}
 
-local CONFIGURATIONS_ROW = "GRADLE-SURFACE.md: 2. Dependency configurations"
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
+
+local CONFIGURATIONS_ROW = migrate_surface.CONFIGURATIONS_ROW
 local PLUGIN_REPOSITORY_PREFIX = "__plugin_repository__"
 local SNAPSHOT_SUFFIX = "-SNAPSHOT"
 
@@ -32,8 +35,7 @@ function translation.block(state, construct, why, surface)
   local key = construct .. "\0" .. why
   if state.blocked[key] then return end
   state.blocked[key] = true
-  state.blockers[#state.blockers + 1] = { construct = construct, where = state.where, why = why,
-                                          surface = surface }
+  state.blockers[#state.blockers + 1] = migrate_surface.blocker(construct, state.where, why, surface)
 end
 
 --- The model value, or nil with a blocker when it holds an environment
@@ -48,7 +50,7 @@ function translation.carried(state, value, construct)
   if names == nil then return value end
   translation.block(state, construct, "holds the value of the environment variable "
                     .. table.concat(names, ", ") .. ", and writing it would commit what may be a"
-                    .. " secret into daukle.toml")
+                    .. " secret into daukle.toml", migrate_surface.UNCOVERED_ROW)
   return nil
 end
 
@@ -113,6 +115,32 @@ local function unpinnable(row, repository)
     return "resolved from " .. repository.name .. ", a file: repository that exists on this machine only"
   end
   return nil
+end
+
+local function settings_repositories(state)
+  local management = ((state.model.settingsCore or {}).dependencyResolutionManagement or {})
+  if type(management) ~= "table" or translation.is_unrendered(management) then return {}, nil end
+  local repositories = {}
+  local by_name = type(management.repositories) == "table" and management.repositories or {}
+  for _, name in ipairs(tables.sorted_keys(by_name)) do
+    local repository = by_name[name]
+    repositories[#repositories + 1] = { name = name, kind = repository.kind, type = repository.type,
+                                        url = repository.url }
+  end
+  return repositories, management.repositoriesMode
+end
+
+--- The repositories a project's own rows resolved from: its own, unless
+--- the settings' `dependencyResolutionManagement` decides.
+---
+--- @implNote `PREFER_PROJECT`, Gradle's default, takes the settings'
+--- repositories only when the project declares none; `PREFER_SETTINGS` and
+--- `FAIL_ON_PROJECT_REPOS` always take them.
+function translation.project_repositories(state, project)
+  local own = project.repositories or {}
+  local settings, mode = settings_repositories(state)
+  if mode == "PREFER_SETTINGS" or mode == "FAIL_ON_PROJECT_REPOS" or #own == 0 then return settings end
+  return own
 end
 
 --- The pinned entry for a resolved artifact, in the form `maven:resolve` writes

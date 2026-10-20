@@ -14,7 +14,7 @@ local translation_state = daukle.require("lib/translation")
 
 local block = translation_state.block
 
-local CONFIGURATIONS_ROW = "GRADLE-SURFACE.md: 2. Dependency configurations"
+local CONFIGURATIONS_ROW = daukle.require("lib/migrate_surface").CONFIGURATIONS_ROW
 local PROJECT_EDGE = "project "
 local MODULE_EDGE = "module "
 local GRADLE_PLUGIN_PLUGIN = "org.gradle.java-gradle-plugin"
@@ -120,7 +120,8 @@ local function block_edge(translation, row, place)
 end
 
 local function append_pin(translation, project, buckets, key, row)
-  local pin = translation_state.pin_of(translation, project.repositories, row)
+  local repositories = translation_state.project_repositories(translation, project)
+  local pin = translation_state.pin_of(translation, repositories, row)
   if pin == nil then return end
   buckets[key] = buckets[key] or {}
   buckets[key][#buckets[key] + 1] = pin
