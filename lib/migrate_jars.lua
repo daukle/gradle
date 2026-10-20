@@ -6,6 +6,7 @@ local migrate_jars = {}
 local migrate_paths = daukle.require("lib/migrate_paths")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local composite = daukle.require("lib/composite")
+local model_dump = daukle.require("lib/model_dump")
 local tables = daukle.require("lib/tables")
 
 local within = migrate_paths.within
@@ -45,6 +46,9 @@ local function archive_of(project, name)
   local file, directory = task.values.archiveFileName, task.values.destinationDirectory
   if type(file) ~= "string" then return nil, name .. ".archiveFileName could not be read" end
   if type(directory) ~= "string" then return nil, name .. ".destinationDirectory could not be read" end
+  if model_dump.holds_environment(file) or model_dump.holds_environment(directory) then
+    return nil, name .. " names its archive with the value of an environment variable"
+  end
   return { file = file, directory = directory }
 end
 

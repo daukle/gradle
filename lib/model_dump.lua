@@ -23,6 +23,10 @@ local PROPERTY = "daukle.migrate.model"
 --- The configuration name the dump gives the launcher rows it resolves itself.
 local IMPLIED_LAUNCHER = "daukleImpliedLauncher"
 
+--- What stands in a model string for an environment variable's value: the
+--- marker, the variable's name, and a closing brace.
+local ENVIRONMENT_MARKER = "${env:"
+
 local SCRIPT = [==[
 import groovy.json.JsonOutput
 
@@ -730,29 +734,47 @@ def outputFor = { invocation ->
   new File(file.parentFile, (file.name - ~/\.json$/) + '-' + suffix + '.json')
 }
 
-def stringsIn
-stringsIn = { Object value, Set found ->
-  if (value instanceof CharSequence) found << value.toString()
-  else if (value instanceof Map) value.values().each { stringsIn(it, found) }
-  else if (value instanceof Iterable) value.each { stringsIn(it, found) }
-  found
+def ENVIRONMENT_FLOOR = 8
+def ENVIRONMENT_MARKER = ']==] .. ENVIRONMENT_MARKER .. [==['
+
+/**
+ * A model string with every environment variable value it holds, whole or inside it (a token in a
+ * repository url), replaced by `${env:<name>}`, the longest value first; a string that held one is
+ * remembered in `matches` with the names of the variables it held.
+ */
+def redactedString = { String text, Map environment, Map matches ->
+  def held = environment.findAll { name, value -> text.contains(value) }
+  if (held.isEmpty()) return text
+  def redacted = text
+  held.sort { -it.value.length() }.each { name, value -> redacted = redacted.replace(value, ENVIRONMENT_MARKER + name + '}') }
+  matches[redacted] = held.keySet().sort()
+  redacted
+}
+
+def redacted
+redacted = { Object value, Map environment, Map matches ->
+  if (value instanceof CharSequence) return redactedString(value.toString(), environment, matches)
+  if (value instanceof Map) return value.collectEntries { key, item -> [key, redacted(item, environment, matches)] }
+  if (value instanceof Iterable) return value.collect { redacted(it, environment, matches) }
+  value
 }
 
 /**
- * Each string of the model that holds an environment variable's value, whole or inside it (a
- * token in a repository url), with the names of the variables it holds.
+ * The model with no environment variable's value in it, and `environmentMatches` naming each string
+ * that held one, which the migrator then blocks wherever it would write it.
  *
  * @implNote compared here rather than hashed for the migrator, because the plugin has no digest
- * verb; only strings the model already carries are written, so no other variable's value reaches
- * the file. A value shorter than ENVIRONMENT_FLOOR is skipped, so a `17` or a `true` in the
- * environment cannot block a jdk or a flag that merely holds it.
+ * verb, and redacted because the model file lies in `build/`, where a secret has no place either. A
+ * value shorter than ENVIRONMENT_FLOOR is skipped, so a `17` or a `true` in the environment cannot
+ * block a jdk or a flag that merely holds it. Map keys are not redacted: they are the model's own
+ * structure and Gradle's names.
  */
-def ENVIRONMENT_FLOOR = 8
-def environmentMatchesOf = { Map model ->
+def withoutEnvironment = { Map model ->
   def environment = System.getenv().findAll { name, value -> value != null && value.length() >= ENVIRONMENT_FLOOR }
-  stringsIn(model, [] as Set).sort().collect { string ->
-    [value: string, names: environment.findAll { name, value -> string.contains(value) }.keySet().sort()]
-  }.findAll { !it.names.isEmpty() }
+  def matches = [:]
+  def safe = redacted(model, environment, matches)
+  safe.environmentMatches = matches.keySet().sort().collect { [value: it, names: matches[it]] }
+  safe
 }
 
 gradle.projectsEvaluated {
@@ -775,11 +797,16 @@ gradle.taskGraph.whenReady {
                settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
                settingsCore: settingsFacts.settingsCore ?: [:],
                projects: gradle.rootProject.allprojects.collect { projectOf(base, it) }]
-  model.environmentMatches = environmentMatchesOf(model)
   def file = outputFor(gradle)
   file.parentFile.mkdirs()
-  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(model)), 'UTF-8')
+  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(withoutEnvironment(model))), 'UTF-8')
 }
 ]==]
 
-return { SCRIPT = SCRIPT, PROPERTY = PROPERTY, IMPLIED_LAUNCHER = IMPLIED_LAUNCHER }
+--- Whether a model string held an environment variable's value.
+local function holds_environment(text)
+  return type(text) == "string" and string.find(text, ENVIRONMENT_MARKER, 1, true) ~= nil
+end
+
+return { SCRIPT = SCRIPT, PROPERTY = PROPERTY, IMPLIED_LAUNCHER = IMPLIED_LAUNCHER,
+         holds_environment = holds_environment }
