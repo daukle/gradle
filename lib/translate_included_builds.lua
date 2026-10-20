@@ -11,39 +11,22 @@ local translate_model = daukle.require("lib/translate_model")
 local translation_state = daukle.require("lib/translation")
 local module_graph = daukle.require("lib/modules")
 local builds = daukle.require("lib/builds")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local migrate_paths = daukle.require("lib/migrate_paths")
+local tables = daukle.require("lib/tables")
 
-local SURFACE = "GRADLE-SURFACE.md: "
-local UNCOVERED_ROW = SURFACE .. "6. What this file does NOT yet cover, said plainly"
+local UNCOVERED_ROW = migrate_surface.UNCOVERED_ROW
 local GRADLE_PLUGINS = "gradlePlugins"
 local ROOT_PATH = ":"
 local CURRENT_BUILD = ":"
 
+local append = tables.append
+local sorted_keys = tables.sorted_keys
+local split_keys = tables.split_keys
+local within = migrate_paths.within
+
 local function blocker(construct, where, why)
-  return { construct = construct, where = where, why = why, surface = UNCOVERED_ROW }
-end
-
-local function append(target, source)
-  for _, item in ipairs(source or {}) do target[#target + 1] = item end
-end
-
-local function within(dir, name)
-  if dir == nil or dir == "." then return name end
-  return dir .. "/" .. name
-end
-
-local function sorted_keys(map)
-  local keys = {}
-  for key in pairs(map) do keys[#keys + 1] = key end
-  table.sort(keys, function(left, right) return tostring(left) < tostring(right) end)
-  return keys
-end
-
-local function split_keys(config, keep)
-  local kept, rest = {}, {}
-  for key, value in pairs(config) do
-    if keep[key] then kept[key] = value else rest[key] = value end
-  end
-  return kept, rest
+  return migrate_surface.blocker(construct, where, why, UNCOVERED_ROW)
 end
 
 local function is_inside(path)

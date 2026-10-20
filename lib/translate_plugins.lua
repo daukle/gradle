@@ -8,14 +8,17 @@
 local translate_plugins = {}
 
 local translation_state = daukle.require("lib/translation")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
 
 local block = translation_state.block
 local carried = translation_state.carried
 local is_unrendered = translation_state.is_unrendered
+local as_set = tables.as_set
+local sorted_keys = tables.sorted_keys
 
-local SURFACE = "GRADLE-SURFACE.md: "
-local UNCOVERED_ROW = SURFACE .. "6. What this file does NOT yet cover, said plainly"
-local SETTINGS_PLUGINS_ROW = SURFACE .. "1. The settings file, a settings-level `plugins {}` block"
+local UNCOVERED_ROW = migrate_surface.UNCOVERED_ROW
+local SETTINGS_PLUGINS_ROW = migrate_surface.SETTINGS_PLUGINS_ROW
 local READ_ONLY = "$readOnly"
 local FILE = "$file"
 local COLLECTIONS = { "$list", "$map" }
@@ -23,19 +26,6 @@ local COLLECTIONS = { "$list", "$map" }
 --- The keys `daukle/gradle` reads as a marker rather than a block in a
 --- configure tree, so a property of that name cannot be said.
 local MARKER_KEYS = { file = true, buildOutput = true, env = true }
-
-local function as_set(list)
-  local set = {}
-  for _, item in ipairs(list or {}) do set[item] = true end
-  return set
-end
-
-local function sorted_keys(map)
-  local keys = {}
-  for key in pairs(map) do keys[#keys + 1] = key end
-  table.sort(keys)
-  return keys
-end
 
 local function is_plugin_build_edge(state, edge)
   local build = string.match(edge, "^project (%S+) ")

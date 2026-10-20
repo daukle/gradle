@@ -10,48 +10,26 @@ local translate_build = {}
 local translate_model = daukle.require("lib/translate_model")
 local translate_included_builds = daukle.require("lib/translate_included_builds")
 local module_graph = daukle.require("lib/modules")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local migrate_paths = daukle.require("lib/migrate_paths")
+local tables = daukle.require("lib/tables")
 
-local SURFACE = "GRADLE-SURFACE.md: "
-local UNCOVERED_ROW = SURFACE .. "6. What this file does NOT yet cover, said plainly"
+local append = tables.append
+local split_keys = tables.split_keys
+local within = migrate_paths.within
 local ROOT_PATH = ":"
 
 --- The keys that hold one value for every module, so the modules must agree on it.
 local PROJECT_WIDE_KEYS = { "jdk", "release", "sourcesJar", "plugins", "configure" }
 
-local function blocker(construct, where, why, surface)
-  return { construct = construct, where = where, why = why, surface = surface or UNCOVERED_ROW }
+local function blocker(construct, where, why)
+  return migrate_surface.blocker(construct, where, why, migrate_surface.UNCOVERED_ROW)
 end
 
-local function append(target, source)
-  for _, item in ipairs(source or {}) do target[#target + 1] = item end
-end
-
-local function within(dir, name)
-  if dir == nil or dir == "." then return name end
-  return dir .. "/" .. name
-end
-
-local function deep_equal(left, right)
-  if type(left) ~= "table" or type(right) ~= "table" then return left == right end
-  for key, value in pairs(left) do
-    if not deep_equal(value, right[key]) then return false end
-  end
-  for key in pairs(right) do
-    if left[key] == nil then return false end
-  end
-  return true
-end
+local deep_equal = tables.deep_equal
 
 local function project_where(options, project)
   return within(options.dir, project.buildFile or options.settings)
-end
-
-local function split_keys(config, keep)
-  local kept, rest = {}, {}
-  for key, value in pairs(config) do
-    if keep[key] then kept[key] = value else rest[key] = value end
-  end
-  return kept, rest
 end
 
 local function project_options(model, options, context, where, extra)

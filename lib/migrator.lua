@@ -10,6 +10,8 @@ local migrate_old_build = daukle.require("lib/migrate_old_build")
 local distributions = daukle.require("lib/distributions")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
 
 local INIT_SCRIPT = "migrate-model.gradle"
 local MODEL = "migrate-model.json"
@@ -25,7 +27,6 @@ local DUMP_JDK = "17"
 --- the generated build must be dumped with it, or the proof names a jar the
 --- new build never writes.
 local UNVERSIONED = "0.1.0"
-local STDERR_SHOWN = 2000
 
 local within = migrate_paths.within
 local derived = migrate_paths.derived
@@ -97,16 +98,11 @@ local function included_models(context, model)
   return models
 end
 
-local function tail(text)
-  if #text <= STDERR_SHOWN then return text end
-  return "..." .. string.sub(text, -STDERR_SHOWN)
-end
-
 --- @return Gradle's stderr when the run failed, else nil
 local function run_dump(context, gradle_version, cwd, arguments)
   local result = launcher.run(context, gradle_version, DUMP_JDK, arguments,
                               { cwd = cwd, capture = true, check = false })
-  if result.code ~= 0 then return tail(result.stderr) end
+  if result.code ~= 0 then return launcher.stderr_tail(result) end
   return nil
 end
 
@@ -148,8 +144,8 @@ local GENERATED = "the generated build"
 local function generation_blockers(problems, where)
   local blockers = {}
   for _, problem in ipairs(problems) do
-    blockers[#blockers + 1] = { construct = GENERATED, where = where,
-                                why = "would be refused by daukle/gradle: " .. problem }
+    blockers[#blockers + 1] = migrate_surface.blocker(GENERATED, where, "would be refused by daukle/gradle: "
+                                                      .. problem, migrate_surface.UNCOVERED_ROW)
   end
   return blockers
 end
@@ -197,14 +193,13 @@ local function dump_generated(context, built, where)
     "help",
   })
   if failure ~= nil then
-    return nil, { { construct = GENERATED, where = where, why = "does not configure:\n" .. failure } }
+    return nil, { migrate_surface.blocker(GENERATED, where, "does not configure:\n" .. failure,
+                                          migrate_surface.UNCOVERED_ROW) }
   end
   return daukle.json_parse(daukle.read(derived(context, GENERATED_MODEL))), {}
 end
 
-local function append(target, source)
-  for _, item in ipairs(source) do target[#target + 1] = item end
-end
+local append = tables.append
 
 local SETTINGS_FILES = { "settings.gradle", "settings.gradle.kts" }
 
@@ -270,7 +265,8 @@ local function run(context)
   local generated_models = {}
   if generated ~= nil then
     generated_models = generated_builds(context, built)
-    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models, settings_where))
+    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models, settings_where,
+                                                       context.dir))
   end
   local proof = proof_of(context, built, generated, generated_models, blockers)
   return {

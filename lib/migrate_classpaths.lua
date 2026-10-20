@@ -12,8 +12,10 @@
 local migrate_classpaths = {}
 
 local model_dump = daukle.require("lib/model_dump")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
 
-local CONFIGURATIONS_ROW = "GRADLE-SURFACE.md: 2. Dependency configurations"
+local sorted_keys = tables.sorted_keys
 local CURRENT_BUILD = ":"
 
 local function grouped(project)
@@ -58,13 +60,6 @@ local function signatures(rows, identity_of, skipped)
   return out
 end
 
-local function sorted_keys(map)
-  local keys = {}
-  for key in pairs(map) do keys[#keys + 1] = key end
-  table.sort(keys)
-  return keys
-end
-
 local function test_runtime_configuration(project)
   local sets = ((project.extensions or {}).sourceSets or {}).value
   local test = type(sets) == "table" and sets.test or nil
@@ -87,7 +82,7 @@ local function old_groups(project)
 end
 
 local function blocker(construct, where, why)
-  return { construct = construct, where = where, why = why, surface = CONFIGURATIONS_ROW }
+  return migrate_surface.blocker(construct, where, why, migrate_surface.CONFIGURATIONS_ROW)
 end
 
 local function compare_membership(configuration, old, new, where, blockers)

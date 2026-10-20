@@ -38,4 +38,13 @@ local function jdk_home(context, jdk_version)
   return root:dir(jdk.home)
 end
 
-return { run = run, jdk_home = jdk_home }
+local STDERR_SHOWN = 2000
+
+--- The end of a failed run's stderr, which is where Gradle says why.
+local function stderr_tail(result)
+  local text = result.stderr or ""
+  if #text <= STDERR_SHOWN then return text end
+  return "..." .. string.sub(text, -STDERR_SHOWN)
+end
+
+return { run = run, jdk_home = jdk_home, stderr_tail = stderr_tail }
