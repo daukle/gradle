@@ -15,9 +15,12 @@ local translate_model = {}
 local translation_state = daukle.require("lib/translation")
 local translate_plugins = daukle.require("lib/translate_plugins")
 local translate_dependencies = daukle.require("lib/translate_dependencies")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
 
-local SURFACE = "GRADLE-SURFACE.md: "
-local LAYOUT_ROW = SURFACE .. "3. The `java` extension and source layout"
+local LAYOUT_ROW = migrate_surface.LAYOUT_ROW
+local as_set = tables.as_set
+local sorted_keys = tables.sorted_keys
 
 local MAIN = "main"
 local TEST = "test"
@@ -44,15 +47,8 @@ local function extension_value(project, name)
   return extension.value
 end
 
-local function task_named(project, name)
-  for _, task in ipairs(project.tasks or {}) do
-    if task.name == name then return task end
-  end
-  return nil
-end
-
 local function task_values(project, name)
-  local task = task_named(project, name)
+  local task = tables.named(project.tasks, name)
   if task == nil or is_unrendered(task.values) then return {} end
   return task.values or {}
 end
@@ -177,12 +173,6 @@ local function translate_roots(translation, set_name, kind, sources)
   end
   if same_list(roots, { default_root(translation, set_name, kind) }) then return nil end
   return one_or_list(roots)
-end
-
-local function as_set(list)
-  local set = {}
-  for _, item in ipairs(list or {}) do set[item] = true end
-  return set
 end
 
 --- @implNote a set's classpath is its configuration plus whatever the build
@@ -330,11 +320,13 @@ local function main_compile_task(project)
   return (sets[MAIN] or {}).compileJavaTask or "compileJava"
 end
 
-local function sorted_keys(set)
-  local keys = {}
-  for key in pairs(set) do keys[#keys + 1] = key end
-  table.sort(keys)
-  return keys
+--- Blocks each configuration the dump could not resolve: its rows are
+--- missing from the model, so no key can reproduce it.
+local function block_unresolved(translation, project)
+  for _, failure in ipairs((project.dependencies or {}).errors or {}) do
+    block(translation, tostring(failure.configuration), "could not be resolved in the old build: "
+          .. tostring(failure.error), migrate_surface.CONFIGURATIONS_ROW)
+  end
 end
 
 --- @param project  one PROJECT of the model `migrator.read_model` returns
@@ -347,11 +339,12 @@ end
 ---           blockers = { { construct, where, why, surface? } } }
 function translate_model.project(project, build)
   local translation = translation_state.new(build)
+  block_unresolved(translation, project)
   local config = {}
   config.jdk = carried(translation, language_version(project), "java.toolchain.languageVersion")
   config.release = translate_release(translation, project, main_compile_task(project))
   config.main = translate_main(translation, project)
-  if task_named(project, SOURCES_JAR_TASK) ~= nil then config.sourcesJar = true end
+  if tables.named(project.tasks, SOURCES_JAR_TASK) ~= nil then config.sourcesJar = true end
   translate_source_sets(translation, project, config)
   copy_into(config, translate_plugins.project(translation, project))
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
@@ -367,6 +360,7 @@ end
 --- @return { config = { pluginClasspath? }, name = <the project's name>, unpinned, blockers }
 function translate_model.parent(project, build)
   local translation = translation_state.new(build)
+  block_unresolved(translation, project)
   if extension_value(project, "sourceSets") ~= nil then
     block(translation, project.path, "applies a Java plugin, and with modules daukle/gradle's root and parent"
           .. " projects compile nothing", LAYOUT_ROW)

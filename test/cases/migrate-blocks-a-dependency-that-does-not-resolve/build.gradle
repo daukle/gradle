@@ -1,0 +1,11 @@
+plugins {
+  id 'java'
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  runtimeOnly 'org.example.daukle:does-not-exist:1.0'
+}
