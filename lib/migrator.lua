@@ -3,46 +3,34 @@ local launcher = daukle.require("lib/launcher")
 local translate_build = daukle.require("lib/translate_build")
 local migrate_comparison = daukle.require("lib/migrate_comparison")
 local migrate_blockers = daukle.require("lib/migrate_blockers")
+local migrate_paths = daukle.require("lib/migrate_paths")
+local migrate_jars = daukle.require("lib/migrate_jars")
+local migrate_owned = daukle.require("lib/migrate_owned")
+local migrate_old_build = daukle.require("lib/migrate_old_build")
 local distributions = daukle.require("lib/distributions")
+local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
 
 local INIT_SCRIPT = "migrate-model.gradle"
 local MODEL = "migrate-model.json"
 local GENERATED_MODEL = "migrate-generated-model.json"
-local PROJECT_CACHE = "migrate-cache"
 local WRAPPER_DIRECTORY = "gradle/wrapper"
 local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
 local DUMP_JDK = "17"
+
+--- The version a build that sets none migrates to.
+---
+--- @implNote core's own default for a manifest naming no version, written here
+--- rather than left to core, because the jar's file name follows the version:
+--- the generated build must be dumped with it, or the proof names a jar the
+--- new build never writes.
+local UNVERSIONED = "0.1.0"
 local STDERR_SHOWN = 2000
 
-local function within(dir, name)
-  if dir == nil then return name end
-  return dir .. "/" .. name
-end
-
-local function derived(context, name)
-  return "build/daukle/" .. context.instance .. "/" .. name
-end
-
---- The derived directory as Gradle must be told it.
----
---- @implNote relative to the instance's own directory, not to the process's:
---- `--project-dir` also moves Gradle's current directory, and Gradle resolves
---- `--init-script` and `--project-cache-dir` against that.
-local function derived_from_instance(context, name)
-  local climb = ""
-  for segment in string.gmatch(context.dir or "", "[^/]+") do
-    if segment ~= "." then climb = climb .. "../" end
-  end
-  return climb .. derived(context, name)
-end
-
-local function has_file(directory, name)
-  for _, entry in ipairs(daukle.list(directory) or {}) do
-    if entry.name == name and entry.kind == "file" then return true end
-  end
-  return false
-end
+local within = migrate_paths.within
+local derived = migrate_paths.derived
+local derived_from_instance = migrate_paths.derived_from_instance
+local has_file = migrate_paths.has_file
 
 local function trimmed(text)
   return (string.gsub(string.gsub(text, "^%s+", ""), "%s+$", ""))
@@ -126,7 +114,7 @@ local function dump(context, gradle_version)
   daukle.write{ path = INIT_SCRIPT, text = model_dump.SCRIPT }
   local failure = run_dump(context, gradle_version, context.dir or ".", {
     "--project-dir", ".",
-    "--project-cache-dir", derived_from_instance(context, PROJECT_CACHE),
+    "--project-cache-dir", derived_from_instance(context, migrate_paths.PROJECT_CACHE),
     "--no-configuration-cache",
     "--init-script", derived_from_instance(context, INIT_SCRIPT),
     "-D" .. model_dump.PROPERTY .. "=" .. derived_from_instance(context, MODEL),
@@ -214,45 +202,6 @@ local function dump_generated(context, built, where)
   return daukle.json_parse(daukle.read(derived(context, GENERATED_MODEL))), {}
 end
 
-local OLD_JARS = "migrate-old"
-local NEW_JARS = "build/libs"
-
-local function jar_name(project)
-  for _, task in ipairs(project.tasks or {}) do
-    local values = task.values
-    if task.name == "jar" and type(values) == "table" and type(values.archiveFileName) == "string" then
-      return values.archiveFileName
-    end
-  end
-  return nil
-end
-
-local function under(module, path)
-  if module == nil then return path end
-  return module .. "/" .. path
-end
-
---- One jar to compare per project that becomes the root or a module, named as
---- the old build's `jar` task names it.
----
---- @implNote the old side is written by `build`, which does not exist yet, so
---- until it does the proof runs the new build and then reports the old jars
---- missing; that still writes daukle.toml for inspection, which no-proof does
---- not.
-local function proof_of(context, built)
-  local compare = {}
-  for _, entry in ipairs(built.projects) do
-    local name = jar_name(entry.project)
-    if name ~= nil and (entry.module ~= nil or built.declared == nil) then
-      compare[#compare + 1] = { old = derived(context, OLD_JARS .. "/" .. under(entry.module, name)),
-                                new = derived(context, under(entry.module, NEW_JARS .. "/" .. name)),
-                                as = "archive" }
-    end
-  end
-  if #compare == 0 then return nil end
-  return { task = context.instance .. ":jar", compare = compare }
-end
-
 local function append(target, source)
   for _, item in ipairs(source) do target[#target + 1] = item end
 end
@@ -268,16 +217,34 @@ local function settings_name(context, root)
   return root.buildFile or "."
 end
 
-local function build_logic_blockers(built)
+--- What every translated project says that no key or comparison does: code
+--- a build script compiled, and a toolchain the proof cannot point at the
+--- provisioned JDK.
+local function project_blockers(built)
   local blockers = {}
-  for _, entry in ipairs(built.projects) do append(blockers, migrate_blockers.build_logic(entry.project, entry.where)) end
-  for _, record in ipairs(built.builds) do append(blockers, migrate_blockers.build_logic(record.project, record.where)) end
+  local function add(project, where)
+    append(blockers, migrate_blockers.build_logic(project, where))
+    append(blockers, migrate_old_build.toolchain_blockers(project, where))
+  end
+  for _, entry in ipairs(built.projects) do add(entry.project, entry.where) end
+  for _, record in ipairs(built.builds) do add(record.project, record.where) end
   return blockers
 end
 
 local function refused(context, refusal)
   return { manifest = { toolchains = { [context.instance] = {} } }, foreign = {}, blockers = { refusal },
            owned = {} }
+end
+
+--- The proof, after writing the plan `build` runs the old jars from.
+---
+--- @implNote the old build runs on the JDK the new manifest's tasks run on,
+--- which is the translated `jdk`, not the dump's.
+local function proof_of(context, built, generated, generated_models)
+  local rows = migrate_jars.rows(context, built, generated, generated_models)
+  daukle.write{ path = migrate_jars.PLAN,
+                text = migrate_jars.plan_text(rows, built.config.version, validation.jdk_version_of(built.config)) }
+  return migrate_jars.proof(context, rows)
 end
 
 local function run(context)
@@ -287,27 +254,30 @@ local function run(context)
   local gradle_version = distribution ~= nil and distribution.version or nil
   dump(context, gradle_version)
   local model = read_model(context)
+  local included = included_models(context, model)
   local settings = settings_name(context, model.projects[1])
-  local built = translate_build.build(model, included_models(context, model),
-                                      { dir = context.dir, settings = settings })
+  local built = translate_build.build(model, included, { dir = context.dir, settings = settings })
   built.config.version = gradle_version
+  built.version = built.version or UNVERSIONED
   local blockers = built.blockers
-  append(blockers, build_logic_blockers(built))
+  append(blockers, project_blockers(built))
+  append(blockers, migrate_owned.blockers(context, model, included))
   local settings_where = within(context.dir, settings)
   local generated, refusals = dump_generated(context, built, built.projects[1].where)
   append(blockers, refusals)
+  local generated_models = {}
   if generated ~= nil then
-    append(blockers, migrate_comparison.blockers(model, built, generated, generated_builds(context, built),
-                                                 settings_where))
+    generated_models = generated_builds(context, built)
+    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models, settings_where))
   end
   return {
     manifest = { project = built.name, version = built.version, modules = built.modules,
                  toolchains = { [context.instance] = built.config } },
     foreign = {},
     blockers = blockers,
-    owned = {},
-    proof = proof_of(context, built),
+    owned = migrate_owned.paths(context, model, included),
+    proof = proof_of(context, built, generated, generated_models),
   }
 end
 
-return { run = run, read_model = read_model }
+return { run = run, build = migrate_old_build.build, read_model = read_model }

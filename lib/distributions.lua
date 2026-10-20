@@ -153,4 +153,4 @@ local function nearest(version)
 end
 
 return { for_version = for_version, default = DEFAULT, known = known, is_pinned = is_pinned,
-         nearest = nearest }
+         nearest = nearest, precedes = precedes }

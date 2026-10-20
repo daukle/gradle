@@ -211,9 +211,35 @@ serve_plugin() {
     "$root/catalog.json" "http://127.0.0.1:$port/$digest/plugin.lua" "$digest" "$catalog"
 }
 
+# One path per line in expect-file.txt that must exist after the run, and in
+# expect-absent.txt that must not: what a migration moved aside and what it
+# kept is asserted on the tree itself, never on the message that reports it.
+tree_has_paths() {
+  for list in expect-file.txt expect-absent.txt; do
+    [ -f "$case_dir/$list" ] || continue
+    if ! grep -q . "$case_dir/$list"; then
+      fail "$name" "$list is empty, so this case asserts nothing"
+      return 1
+    fi
+    while IFS= read -r wanted || [ -n "$wanted" ]; do
+      [ -n "$wanted" ] || continue
+      if [ "$list" = expect-file.txt ] && [ ! -e "$sandbox/$wanted" ]; then
+        fail "$name" "expected $wanted, which the run did not leave"
+        return 1
+      fi
+      if [ "$list" = expect-absent.txt ] && [ -e "$sandbox/$wanted" ]; then
+        fail "$name" "$wanted is still there"
+        return 1
+      fi
+    done < "$case_dir/$list"
+  done
+  return 0
+}
+
 # A migrate case asserts its exit code (expect-exit.txt), then what the output
 # and the files it names carry, with the same expect-output.txt and
-# expect-contains.txt every other case uses, then expect-manifest.txt.
+# expect-contains.txt every other case uses, then expect-manifest.txt, then
+# the paths it expects present and absent.
 run_migrate_case() {
   serve_plugin || return 0
   status=0
@@ -230,6 +256,7 @@ run_migrate_case() {
   output_carries_clauses || return 0
   files_carry_literals || return 0
   manifest_carries_clauses || return 0
+  tree_has_paths || return 0
   passed=$((passed + 1))
 }
 
@@ -250,7 +277,8 @@ run_case() {
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt"
   if [ -f "$case_dir/migrate" ]; then
-    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
+    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
+          "$sandbox/expect-absent.txt"
     run_migrate_case
     return
   fi

@@ -1,0 +1,5 @@
+daukle.toml
+build.gradle
+settings.gradle
+gradle/wrapper/gradle-wrapper.properties
+build/daukle/gradle/migrate-old/1/notes-1.0.0.jar

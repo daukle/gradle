@@ -41,6 +41,7 @@ local source_sets = daukle.require("lib/source_sets")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
 local launcher = daukle.require("lib/launcher")
+local composite = daukle.require("lib/composite")
 local migrator = daukle.require("lib/migrator")
 
 local REPORT_FILE = "discovered.txt"
@@ -61,7 +62,7 @@ daukle.toolchain{
   end,
 }
 
-daukle.migrator{ tool = "gradle", toolchain = "gradle", run = migrator.run }
+daukle.migrator{ tool = "gradle", toolchain = "gradle", run = migrator.run, build = migrator.build }
 
 local function run_gradle(context, config, arguments, options)
   local argv = {
@@ -109,6 +110,23 @@ daukle.task{
     end
     writer.write_build_file(context, config)
     run_gradle(context, config, { "sourcesJar" })
+  end,
+}
+
+--- Every jar the manifest makes: each project's, its sources jar with
+--- `sourcesJar = true`, and each included build's, which `gradle:jar` alone
+--- leaves to whoever depends on them. It is the proof a migration runs.
+daukle.task{
+  name = "gradle:jars",
+  run = function(context)
+    local config = validation.config_of(context)
+    writer.write_build_file(context, config)
+    local arguments = { "jar" }
+    if config.sourcesJar == true then arguments[#arguments + 1] = "sourcesJar" end
+    for _, build in ipairs(validation.composite_of(context, config).builds) do
+      arguments[#arguments + 1] = ":" .. composite.build_name_of(build.name) .. ":jar"
+    end
+    run_gradle(context, config, arguments)
   end,
 }
 

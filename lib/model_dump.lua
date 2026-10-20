@@ -484,7 +484,8 @@ def buildscriptOf = { owner ->
  */
 def javaExtension = { File base, extension, owner ->
   [toolchain: [languageVersion: safely { plain(base, extension.toolchain.languageVersion) },
-               vendor: safely { plain(base, extension.toolchain.vendor) }],
+               vendor: safely { plain(base, extension.toolchain.vendor) },
+               implementation: safely { plain(base, extension.toolchain.implementation) }],
    sourceCompatibility: safely { plain(base, extension.sourceCompatibility) },
    targetCompatibility: safely { plain(base, extension.targetCompatibility) },
    rawSourceCompatibility: safely { plain(base, extension.rawSourceCompatibility) },
