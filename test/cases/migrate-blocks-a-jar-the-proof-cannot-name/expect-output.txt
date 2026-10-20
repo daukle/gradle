@@ -1,0 +1,1 @@
+build.gradle: jar: the proof cannot name its jar: jar.archiveFileName could not be read

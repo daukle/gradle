@@ -236,12 +236,14 @@ local function refused(context, refusal)
            owned = {} }
 end
 
---- The proof, after writing the plan `build` runs the old jars from.
+--- The proof, after writing the plan `build` runs the old jars from; a jar
+--- it cannot name is added to `blockers`.
 ---
 --- @implNote the old build runs on the JDK the new manifest's tasks run on,
 --- which is the translated `jdk`, not the dump's.
-local function proof_of(context, built, generated, generated_models)
-  local rows = migrate_jars.rows(context, built, generated, generated_models)
+local function proof_of(context, built, generated, generated_models, blockers)
+  local rows, unnamed = migrate_jars.rows(context, built, generated, generated_models)
+  append(blockers, unnamed)
   daukle.write{ path = migrate_jars.PLAN,
                 text = migrate_jars.plan_text(rows, built.config.version, validation.jdk_version_of(built.config)) }
   return migrate_jars.proof(context, rows)
@@ -270,13 +272,14 @@ local function run(context)
     generated_models = generated_builds(context, built)
     append(blockers, migrate_comparison.blockers(model, built, generated, generated_models, settings_where))
   end
+  local proof = proof_of(context, built, generated, generated_models, blockers)
   return {
     manifest = { project = built.name, version = built.version, modules = built.modules,
                  toolchains = { [context.instance] = built.config } },
     foreign = {},
     blockers = blockers,
     owned = migrate_owned.paths(context, model, included),
-    proof = proof_of(context, built, generated, generated_models),
+    proof = proof,
   }
 end
 

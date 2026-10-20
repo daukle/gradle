@@ -14,6 +14,7 @@ local PLAN = "migrate-old-jars.tsv"
 local COPY_TASK_PREFIX = "daukleMigrateOld"
 local JAR_TASKS = { "jar", "sourcesJar" }
 local ROOT_PATH = ":"
+local UNCOVERED_ROW = "GRADLE-SURFACE.md: 6. What this file does NOT yet cover, said plainly"
 
 migrate_jars.PLAN = PLAN
 
@@ -24,13 +25,18 @@ local function task_named(project, name)
   return nil
 end
 
---- The archive a task of the model writes, relative to its build's root
---- directory, or nil when the task is missing, disabled or unreadable.
+--- The archive an enabled task of the model writes, relative to its
+--- build's root directory: { file, directory }, else nil and why it cannot
+--- be named; nil and no reason when the task is missing or disabled, so it
+--- writes no archive.
 local function archive_of(project, name)
   local task = task_named(project, name)
-  if task == nil or task.enabled == false or type(task.values) ~= "table" then return nil end
+  if task == nil or task.enabled == false then return nil end
+  if task.enabled ~= true then return nil, "whether " .. name .. " is enabled could not be read" end
+  if type(task.values) ~= "table" then return nil, name .. "'s values could not be read" end
   local file, directory = task.values.archiveFileName, task.values.destinationDirectory
-  if type(file) ~= "string" or type(directory) ~= "string" then return nil end
+  if type(file) ~= "string" then return nil, name .. ".archiveFileName could not be read" end
+  if type(directory) ~= "string" then return nil, name .. ".destinationDirectory could not be read" end
   return { file = file, directory = directory }
 end
 
@@ -44,30 +50,52 @@ local function task_path(build_identity, project_path, name)
   return prefix .. ":" .. name
 end
 
+local GENERATED = "the generated build's "
+
 --- Where the new build writes its counterpart of the old archive, relative
---- to the migration's directory; nil when it lies outside the build.
+--- to the migration's directory, else nil and why it cannot be named.
 ---
 --- @implNote with no generated model the old archive's own place stands in:
 --- the run is blocked then, and the proof is only there to be well formed.
+--- A counterpart task the generated build lacks is not a reason here,
+--- because the task-set comparison already blocks it.
 local function new_archive(context, side, name, old)
   local archive = old
-  if side.generated ~= nil then archive = archive_of(side.generated, name) end
-  if archive == nil or not migrate_paths.is_below(archive.directory) then return nil end
+  if side.generated ~= nil then
+    local task = task_named(side.generated, name)
+    if task == nil then return nil, nil end
+    if task.enabled == false then return nil, GENERATED .. name .. " is disabled" end
+    local why
+    archive, why = archive_of(side.generated, name)
+    if archive == nil then return nil, GENERATED .. why end
+  end
+  if not migrate_paths.is_below(archive.directory) then
+    return nil, GENERATED .. name .. " writes to " .. archive.directory .. ", outside its build"
+  end
   return derived(context, within(side.generated_root, archive.directory .. "/" .. archive.file))
+end
+
+local function unnamed(side, name, why)
+  return { construct = name, where = side.where, surface = UNCOVERED_ROW,
+           why = "the proof cannot name its jar: " .. why }
 end
 
 --- One row per jar both sides make, its row number naming its own copy
 --- directory so that no two jars of one file name meet and no copy task's
---- output holds another's.
-local function add_rows(rows, context, side)
+--- output holds another's; a jar the old build makes and the proof cannot
+--- name is a blocker, never a jar left out of the comparison.
+local function add_rows(rows, blockers, context, side)
   for _, name in ipairs(JAR_TASKS) do
-    local old = archive_of(side.project, name)
-    local new = old ~= nil and new_archive(context, side, name, old) or nil
-    if new ~= nil then
+    local old, old_why = archive_of(side.project, name)
+    local new, new_why = nil, nil
+    if old ~= nil then new, new_why = new_archive(context, side, name, old) end
+    local why = old_why or new_why
+    if why ~= nil then
+      blockers[#blockers + 1] = unnamed(side, name, why)
+    elseif new ~= nil then
       local into = OLD_JARS .. "/" .. (#rows + 1)
       rows[#rows + 1] = { cli = task_path(side.identity, side.project.path, copy_task_of(name)),
                           dir = side.dir, task = name, into = migrate_paths.derived_from_instance(context, into),
-                          included = side.identity ~= nil,
                           old = derived(context, into .. "/" .. old.file), new = new }
     end
   end
@@ -82,42 +110,35 @@ end
 --- @param built            what `translate_build.build` returned
 --- @param generated        the generated root build's model, or nil when it did not configure
 --- @param generated_builds the generated included builds' models, by directory, each { identity, model }
---- @return { { cli, dir, task, into, included, old, new } }, in the order the proof lists them;
----         `dir` and `into` relative to the instance's directory, where Gradle runs, `old` and
----         `new` to the directory migrate runs in
+--- @return { { cli, dir, task, into, old, new } }, in the order the proof lists them, `dir` and
+---         `into` relative to the instance's directory, where Gradle runs, `old` and `new` to the
+---         directory migrate runs in; and the blockers for the jars the proof cannot name
 function migrate_jars.rows(context, built, generated, generated_builds)
-  local rows = {}
+  local rows, blockers = {}, {}
   local generated_projects = generated_by_path(generated)
   for _, entry in ipairs(built.projects) do
     if entry.module ~= nil or built.declared == nil then
-      add_rows(rows, context, { project = entry.project, dir = entry.project.dir, generated_root = nil,
-                                generated = generated_projects[entry.project.path] })
+      add_rows(rows, blockers, context, { project = entry.project, dir = entry.project.dir, where = entry.where,
+                                          generated = generated_projects[entry.project.path] })
     end
   end
   for _, record in ipairs(built.builds) do
     local counterpart = generated_builds[record.dir]
-    add_rows(rows, context, { project = record.project, dir = within(record.dir, record.project.dir),
-                              identity = record.identity, generated_root = composite.path_of(record.dir),
-                              generated = counterpart ~= nil and counterpart.model.projects[1] or nil })
+    add_rows(rows, blockers, context, { project = record.project, dir = within(record.dir, record.project.dir),
+                                        where = record.where, identity = record.identity,
+                                        generated_root = composite.path_of(record.dir),
+                                        generated = counterpart ~= nil and counterpart.model.projects[1] or nil })
   end
-  return rows
+  return rows, blockers
 end
 
-local function needs_more_than_main_jars(rows)
-  for _, row in ipairs(rows) do
-    if row.task ~= "jar" or row.included then return true end
-  end
-  return false
-end
-
---- The proof core runs: the main jars alone are `<instance>:jar`'s, and a
---- sources jar or an included build's jar needs `<instance>:jars`.
+--- The proof core runs: `<instance>:jars`, which builds the sources jars
+--- and the included builds' jars as well as the main ones.
 function migrate_jars.proof(context, rows)
   if #rows == 0 then return nil end
   local compare = {}
   for _, row in ipairs(rows) do compare[#compare + 1] = { old = row.old, new = row.new, as = "archive" } end
-  local task = needs_more_than_main_jars(rows) and "jars" or "jar"
-  return { task = context.instance .. ":" .. task, compare = compare }
+  return { task = context.instance .. ":jars", compare = compare }
 end
 
 --- The plan `build` runs and the old build's init script reads, one
