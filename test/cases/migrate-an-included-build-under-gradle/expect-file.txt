@@ -2,3 +2,4 @@ gradle/plugins/src/main/java/com/example/logic/HelloPlugin.java
 build/daukle/migrate/old/gradle/wrapper/gradle-wrapper.properties
 build/daukle/migrate/old/gradle/plugins/build.gradle
 build/daukle/migrate/old/gradle/plugins/settings.gradle
+build/daukle/migrate/old/gradle/libs.versions.toml

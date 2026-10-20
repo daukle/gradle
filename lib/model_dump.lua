@@ -556,9 +556,20 @@ def deciding = { element, extension ->
   held ?: type
 }
 
+/**
+ * Whether an extension is a version catalog's generated accessor, which the model needs nothing of:
+ * every library and plugin it names is already in the resolved rows and the applied plugins.
+ *
+ * @implNote by type, because a build names its catalogs freely: Gradle generates one class per
+ * catalog, `org.gradle.accessors.dm.LibrariesFor<Name>`, measured as the extension's public type for
+ * `libs` and a second catalog `tools` on 7.6.4, 8.13 and 9.6.0.
+ */
+def CATALOG_ACCESSOR_PREFIX = 'org.gradle.accessors.dm.LibrariesFor'
+def isCatalogAccessor = { element -> element.publicType.concreteClass.name.startsWith(CATALOG_ACCESSOR_PREFIX) }
+
 def extensionsOf = { File base, owner ->
   def container = owner.extensions
-  container.extensionsSchema.elements.findAll { it.name != 'ext' }.collectEntries { element ->
+  container.extensionsSchema.elements.findAll { it.name != 'ext' && !isCatalogAccessor(it) }.collectEntries { element ->
     def extension = container.findByName(element.name)
     def type = element.publicType.concreteClass
     def entry = [type: type.name, core: isCoreType(extension == null ? type : deciding(element, extension))]

@@ -1,0 +1,9 @@
+[[toolchains.gradle.plugins]]
+id = "org.barfuin.gradle.taskinfo"
+version = "2.2.0"
+
+[[toolchains.gradle.pluginClasspath]]
+url = "https://plugins.gradle.org/m2/org/barfuin/gradle/taskinfo/gradle-taskinfo/2.2.0/gradle-taskinfo-2.2.0.jar"
+
+[[toolchains.gradle.classpath]]
+url = "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar"
