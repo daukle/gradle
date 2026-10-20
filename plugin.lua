@@ -29,8 +29,8 @@ daukle.plugin{
        DEPENDENT's uses has nothing to cover. ]]
   requires = {
     java = {
-      url = "https://github.com/daukle/java/releases/download/1.1.0/plugin.lua",
-      sha256 = "45deb1bcb490cbd71553a2327f364afedb5e5719f91d0ab593cf3474427153b3",
+      url = "https://github.com/daukle/java/releases/download/1.5.0/plugin.lua",
+      sha256 = "94cecf60ad502541ce8fd1e087e335bf5eff65c67b651b94e21a9979e62b9b88",
     },
   },
 }
