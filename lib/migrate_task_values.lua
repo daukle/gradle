@@ -25,6 +25,7 @@ local TASK_DIFFERS = "differs in the build daukle/gradle generates from the tran
                      .. " carries this setting of the task"
 local APPLICATION_DIFFERS = "differs in the build daukle/gradle generates from the translated keys, and no"
                             .. " key carries this setting of the application extension"
+local PROVIDER_FIELDS = { "jvmArgumentProviders", "compilerArgumentProviders" }
 local MAIN_CLASS_ATTRIBUTE = "manifestAttributes.Main-Class"
 local MAIN_CLASS_DIFFERS = "is a jar manifest attribute of the old build, and the `main` key it translates"
                            .. " to applies the application plugin, which writes none into the jar"
@@ -105,10 +106,12 @@ local function tests_have_sources(classes_dirs, project, root)
 end
 
 --- @implNote the generated build always runs the JUnit Platform, so a test
---- task with no source to run is the same whichever framework it names.
+--- task with no source to run is the same whichever framework, and so
+--- whichever framework filters, it names.
 local function reconcile_test(old, new, context)
   if old.framework ~= new.framework and not tests_have_sources(old.testClassesDirs, context.old, context.root) then
     old.framework, new.framework = nil, nil
+    old.frameworkFilters, new.frameworkFilters = nil, nil
   end
 end
 
@@ -214,6 +217,22 @@ local function value_blockers(old, new, path, where, why, blockers)
   end
 end
 
+--- Blocks an old argument provider list that is not empty, and leaves the
+--- field out of the comparison.
+---
+--- @implNote a provider computes its arguments only when the task runs, so
+--- no key can carry it, even where the generated build holds the same class.
+local function block_providers(old, new, path, where, blockers)
+  for _, field in ipairs(PROVIDER_FIELDS) do
+    if is_list(old[field]) then
+      blockers[#blockers + 1] = blocker(path .. "." .. field, where, "holds an argument provider, which computes"
+                                        .. " its arguments when the task runs, and no key can carry it",
+                                        UNCOVERED_ROW)
+      old[field], new[field] = nil, nil
+    end
+  end
+end
+
 local function task_blockers(task, generated_task, context, blockers)
   local path, where = task.path or task.name, context.where
   if task.enabled ~= generated_task.enabled then
@@ -221,7 +240,14 @@ local function task_blockers(task, generated_task, context, blockers)
                                       .. " build and " .. tostring(generated_task.enabled) .. " in the build"
                                       .. " daukle/gradle generates from the translated keys", UNCOVERED_ROW)
   end
-  if task.reader == nil then return end
+  if task.reader == nil or generated_task.reader == nil then
+    if task.type ~= generated_task.type then
+      blockers[#blockers + 1] = blocker(path, where, "is a " .. tostring(task.type) .. " in the old build and a "
+                                        .. tostring(generated_task.type) .. " in the build daukle/gradle generates",
+                                        UNCOVERED_ROW)
+    end
+    return
+  end
   if generated_task.reader ~= task.reader then
     blockers[#blockers + 1] = blocker(path, where, "is a " .. tostring(task.type) .. " in the old build and a "
                                       .. tostring(generated_task.type) .. " in the build daukle/gradle generates",
@@ -233,6 +259,7 @@ local function task_blockers(task, generated_task, context, blockers)
     return
   end
   local old, new = reconciled(task, generated_task, context)
+  block_providers(old, new, path, where, blockers)
   value_blockers(old, new, path, where, TASK_DIFFERS, blockers)
 end
 

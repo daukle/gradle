@@ -596,12 +596,45 @@ def jarReader = { File base, task ->
    duplicatesStrategy: safely { plain(base, task.duplicatesStrategy) }]
 }
 
+/**
+ * A list of argument providers as their class names: a provider computes its arguments when the task
+ * runs, so its class is all the model can compare.
+ */
+def providerTypesOf = { Iterable providers -> providers.collect { typeOf(it).name } }
+
+/**
+ * The variables a forked JVM is started with that differ from the daemon's own, which every fork
+ * inherits: a variable the build removed reads as `<removed>`.
+ */
+def REMOVED = '<removed>'
+def environmentSetOf = { Map environment ->
+  def set = environment.findAll { name, value -> System.getenv(name.toString()) != value?.toString() }
+                       .collectEntries { name, value -> [name.toString(), value?.toString()] }
+  System.getenv().keySet().findAll { !environment.containsKey(it) }.each { set[it] = REMOVED }
+  set
+}
+
+/** The filters a test framework's options take, by whichever of these names its options type has. */
+def FRAMEWORK_FILTERS = ['includeTags', 'excludeTags', 'includeEngines', 'excludeEngines', 'includeCategories',
+                         'excludeCategories', 'includeGroups', 'excludeGroups']
+def frameworkFiltersOf = { File base, options ->
+  FRAMEWORK_FILTERS.findAll { options.hasProperty(it) }.collectEntries { name ->
+    [name, safely { (options.getProperty(name) as List).collect { it.toString() }.sort() }]
+  }
+}
+
+/** A classpath as a set: each file by its sha256, anything else by its path. */
+def classpathSetOf = { File base, org.gradle.api.file.FileCollection classpath ->
+  classpath.files.collect { file -> file.isFile() ? 'sha256 ' + sha256(file) : pathFrom(base, file) }.sort()
+}
+
 def javaCompileReader = { File base, task ->
   def encoding = task.options.encoding
   [encoding: encoding, encodingSet: encoding != null, release: safely { plain(base, task.options.release) },
    sourceCompatibility: safely { plain(base, task.sourceCompatibility) },
    targetCompatibility: safely { plain(base, task.targetCompatibility) },
    compilerArgs: safely { plain(base, task.options.compilerArgs) },
+   compilerArgumentProviders: safely { providerTypesOf(task.options.compilerArgumentProviders) },
    destinationDirectory: safely { plain(base, task.destinationDirectory) }]
 }
 
@@ -611,7 +644,9 @@ def javaCompileReader = { File base, task ->
  */
 def forkOptionsOf = { File base, task ->
   [maxHeapSize: safely { plain(base, task.maxHeapSize) }, minHeapSize: safely { plain(base, task.minHeapSize) },
-   enableAssertions: safely { plain(base, task.enableAssertions) }, debug: safely { plain(base, task.debug) }]
+   enableAssertions: safely { plain(base, task.enableAssertions) }, debug: safely { plain(base, task.debug) },
+   environment: safely { environmentSetOf(task.environment) },
+   jvmArgumentProviders: safely { providerTypesOf(task.jvmArgumentProviders) }]
 }
 
 def testReader = { File base, task ->
@@ -620,7 +655,9 @@ def testReader = { File base, task ->
    excludes: safely { plain(base, task.excludes) }, filterIncludes: safely { plain(base, task.filter.includePatterns) },
    jvmArgs: safely { plain(base, task.jvmArgs) }, systemProperties: safely { plain(base, task.systemProperties) },
    maxParallelForks: safely { plain(base, task.maxParallelForks) }, forkEvery: safely { plain(base, task.forkEvery) },
-   testClassesDirs: safely { task.testClassesDirs.files.collect { pathFrom(base, it) }.sort() }]
+   testClassesDirs: safely { task.testClassesDirs.files.collect { pathFrom(base, it) }.sort() },
+   ignoreFailures: safely { plain(base, task.ignoreFailures) }, failFast: safely { plain(base, task.failFast) },
+   frameworkFilters: safely { frameworkFiltersOf(base, task.options) }]
 }
 
 def javadocReader = { File base, task ->
@@ -631,7 +668,9 @@ def javadocReader = { File base, task ->
 def javaExecReader = { File base, task ->
   forkOptionsOf(base, task) +
   [mainClass: safely { plain(base, task.mainClass) }, args: safely { plain(base, task.args) },
-   jvmArgs: safely { plain(base, task.jvmArgs) }, workingDir: safely { plain(base, task.workingDir) }]
+   jvmArgs: safely { plain(base, task.jvmArgs) }, workingDir: safely { plain(base, task.workingDir) },
+   classpath: safely { classpathSetOf(base, task.classpath) },
+   standardInput: safely { task.standardInput?.getClass()?.name }]
 }
 
 def TASK_READERS = [[org.gradle.api.tasks.bundling.Jar, 'jar', jarReader],
@@ -808,5 +847,20 @@ local function holds_environment(text)
   return type(text) == "string" and string.find(text, ENVIRONMENT_MARKER, 1, true) ~= nil
 end
 
+--- The names of the environment variables whose values a string held, or nil.
+local function environment_names(text)
+  if not holds_environment(text) then return nil end
+  local names, from = {}, 1
+  while true do
+    local first, last = string.find(text, ENVIRONMENT_MARKER, from, true)
+    if first == nil then break end
+    local close = string.find(text, "}", last + 1, true)
+    if close == nil then break end
+    names[#names + 1] = string.sub(text, last + 1, close - 1)
+    from = close + 1
+  end
+  return names
+end
+
 return { SCRIPT = SCRIPT, PROPERTY = PROPERTY, IMPLIED_LAUNCHER = IMPLIED_LAUNCHER,
-         holds_environment = holds_environment }
+         holds_environment = holds_environment, environment_names = environment_names }

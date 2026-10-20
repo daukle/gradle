@@ -1,0 +1,11 @@
+plugins {
+  id 'java'
+}
+
+class Quiet implements CommandLineArgumentProvider {
+  Iterable<String> asArguments() {
+    ['-Xlint:none']
+  }
+}
+
+compileJava.options.compilerArgumentProviders.add(new Quiet())
