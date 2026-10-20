@@ -1,0 +1,1 @@
+build/daukle/gradle/migrate-old-jars.tsv daukleMigrateOldShadowJar

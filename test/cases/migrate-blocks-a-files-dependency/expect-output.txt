@@ -1,0 +1,1 @@
+has no repository: a files(), flatDir or gradleApi() dependency, which no pinned entry can name (surface: GRADLE-SURFACE.md: 2. Dependency configurations)

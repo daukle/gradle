@@ -1,0 +1,1 @@
+bundleNotes: is a task the old build has and the build daukle/gradle generates from the translated keys does not: the build registered it, or a plugin the translation did not carry did

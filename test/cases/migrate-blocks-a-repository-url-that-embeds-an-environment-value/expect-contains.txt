@@ -1,0 +1,1 @@
+build/daukle/gradle/migrate-model.json https://${env:DAUKLE_GRADLE_PROBE}@repo.maven.apache.org/maven2/

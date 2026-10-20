@@ -1,0 +1,14 @@
+plugins {
+  id 'java'
+  alias(libs.plugins.taskinfo)
+}
+
+version = '1.0.0'
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  implementation libs.gson
+}

@@ -1,0 +1,8 @@
+plugins {
+  id 'java'
+}
+
+test {
+  jvmArgs '-Xmx256m', '-XX:+UseSerialGC'
+  systemProperty 'greeting', 'hello'
+}

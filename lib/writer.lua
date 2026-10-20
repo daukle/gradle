@@ -6,8 +6,10 @@ local configurations = daukle.require("lib/configurations")
 local validation = daukle.require("lib/validation")
 local composite = daukle.require("lib/composite")
 local source_sets = daukle.require("lib/source_sets")
+local builds = daukle.require("lib/builds")
 
 local BUILD_FILE = "build.gradle"
+local SETTINGS_FILE = "settings.gradle"
 
 --- A copy of `base` carrying `extra` as well, so one table of project-wide
 --- options can serve a root file and every module file without being spelled
@@ -187,6 +189,61 @@ local function write_build_file(context, config, options)
   end
 end
 
+--- The settings.gradle a validated config renders: generate returns it, and
+--- the migrator writes it beside the build file it renders for its task-set
+--- comparison, so both read one renderer.
+local function settings_text(context, config)
+  local record = validation.composite_of(context, config)
+  local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
+  return settings_file.settings(validation.project_name(context), module_graph.declared(context),
+                                applies_settings_plugins, record)
+end
+
+local function append_launcher_problem(problems, entries)
+  local launcher = junit.missing_launcher(test_reachable(entries))
+  if launcher ~= nil then problems[#problems + 1] = launcher end
+end
+
+--- The JUnit launcher and the one-main rule, per module and per included
+--- build, since each carries its own test classpath.
+local function per_project_problems(config, declared, problems)
+  local blocks = config.modules or {}
+  local mains = {}
+  for _, module in ipairs(declared) do
+    local block = blocks[module.name] or {}
+    mains[#mains + 1] = { name = module.name, main = block.main }
+    append_launcher_problem(problems, validation.entries_of_configurations(block, "modules." .. module.name .. "."))
+  end
+  local two_mains = module_graph.two_mains_problem(mains)
+  if two_mains ~= nil then problems[#problems + 1] = two_mains end
+  for name, block in pairs(config.builds or {}) do
+    append_launcher_problem(problems, validation.entries_of_configurations(block, "builds." .. name .. "."))
+  end
+end
+
+--- What `write_build_file` would refuse in this config, as reasons rather
+--- than a raise, for the migrator, which reports a refusal as a blocker.
+---
+--- @implNote the refusals a translated config can meet: its module graph and
+--- included builds, its plugin lists and their classpaths, its configure trees,
+--- the JUnit launcher and two modules declaring `main`. Every other check in
+--- `validated` is on a shape the translation never writes. A refused graph or
+--- build list is returned alone, because every later check reads them.
+local function generation_problems(context, config)
+  local graph = module_graph.declared_problem(context)
+  if graph ~= nil then return { graph } end
+  local declared = module_graph.declared(context)
+  local read = builds.read_problem(config, declared, validation.project_name(context))
+  if read ~= nil then return { read } end
+  local problems = validation.plugin_set_problems(context, config)
+  append_launcher_problem(problems, validation.entries_of_configurations(config, ""))
+  per_project_problems(config, declared, problems)
+  return problems
+end
+
 return {
+  SETTINGS_FILE = SETTINGS_FILE,
+  generation_problems = generation_problems,
+  settings_text = settings_text,
   write_build_file = write_build_file,
 }

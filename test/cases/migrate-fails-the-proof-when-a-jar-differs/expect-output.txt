@@ -1,0 +1,2 @@
+daukle migrate: the new build differs from the old one; daukle.toml is kept for inspection and nothing was removed
+member "example/draft.txt" is in the new archive but not the old archive

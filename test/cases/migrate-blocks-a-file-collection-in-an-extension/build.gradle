@@ -1,0 +1,14 @@
+plugins {
+  id 'java'
+}
+
+abstract class ProbeExtension {
+  abstract ConfigurableFileCollection getInputs()
+
+  String getLabel() {
+    'fixed'
+  }
+}
+
+extensions.create('probe', ProbeExtension)
+probe.inputs.from('notes.txt')

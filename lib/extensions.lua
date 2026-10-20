@@ -1,4 +1,8 @@
 local groovy = daukle.require("lib/groovy")
+local tables = daukle.require("lib/tables")
+
+--- @implNote sorted, so a refusal names the same key on every run.
+local sorted_keys = tables.sorted_keys
 
 --[[ A value that cannot be spelled by its Lua type, written as a one-key table
      rather than a magic prefix inside a string, because a prefix is a thing a
@@ -54,8 +58,9 @@ local function groovy_number(value)
   return tostring(value)
 end
 
---- The marker key of a one-key table, or nil when the table is a nested block.
-local function marker_of(value, path)
+--- The marker key of a one-key table, or nil when the table is a nested block,
+--- and why the table can be neither, or nil.
+local function read_marker(value, path)
   local found, keys = nil, 0
   for key in pairs(value) do
     keys = keys + 1
@@ -63,31 +68,106 @@ local function marker_of(value, path)
   end
   if found == nil then return nil end
   if keys > 1 then
-    error('"' .. path .. '" mixes the marker "' .. found .. '" with other keys: a marker holds'
-          .. ' exactly one of ' .. MARKER_NAMES, 0)
+    return found, '"' .. path .. '" mixes the marker "' .. found .. '" with other keys: a marker holds'
+                  .. ' exactly one of ' .. MARKER_NAMES
   end
   if type(value[found]) ~= "string" then
-    error('"' .. path .. "." .. found .. '" must be a string, not a ' .. type(value[found]), 0)
+    return found, '"' .. path .. "." .. found .. '" must be a string, not a ' .. type(value[found])
   end
   if found == "env" and REFUSED_ENV[value[found]] then
-    error('"' .. path .. '" names ' .. value[found] .. ", which daukle keeps to itself: it is"
-          .. " daukle's own credential and no build input", 0)
+    return found, '"' .. path .. '" names ' .. value[found] .. ", which daukle keeps to itself: it is"
+                  .. " daukle's own credential and no build input"
   end
   return found
 end
 
+local function is_block(value, path)
+  return type(value) == "table" and (read_marker(value, path)) == nil
+end
+
+local body_problem
+
+local function block_problem(body, path)
+  if type(body) ~= "table" then
+    return '"' .. path .. '" must be a block or a value, not a ' .. type(body)
+  end
+  return body_problem(body, path)
+end
+
+local function assignment_problem(value, path)
+  local kind = type(value)
+  if kind == "string" or kind == "number" or kind == "boolean" then return nil end
+  if kind == "table" then
+    local _, problem = read_marker(value, path)
+    return problem
+  end
+  return '"' .. path .. '" is a ' .. kind .. ", which no Gradle value can be spelled as"
+end
+
+local function nested_problem(value, path)
+  if not is_list(value) then return block_problem(value, path) end
+  for entry = 1, #value do
+    local problem = block_problem(value[entry], path .. "[" .. entry .. "]")
+    if problem ~= nil then return problem end
+  end
+  return nil
+end
+
+function body_problem(body, path)
+  if is_list(body) then return '"' .. path .. '" is a list where a block was expected' end
+  for _, key in ipairs(sorted_keys(body)) do
+    local value = body[key]
+    if type(key) ~= "string" then return '"' .. path .. '" mixes list entries with named keys' end
+    local item_path = path .. "." .. key
+    local problem
+    if is_block(value, item_path) then
+      problem = nested_problem(value, item_path)
+    else
+      problem = assignment_problem(value, item_path)
+    end
+    if problem ~= nil then return problem end
+  end
+  return nil
+end
+
+--- Why `configuration` would refuse this tree, or nil: the reason rather than
+--- a raise, for the migrator, which reports a refusal as a blocker.
+--- @param label the manifest key the tree came from, so a refusal names the key
+--- the user wrote: "configure" for a project, "settingsConfigure" for settings
+--- @implNote a top-level entry must be a block: a bare value would land at the
+--- top level of the build file, where Groovy reads it as a project property and
+--- Gradle fails with a name that is nobody's.
+local function configuration_problem(configure, label)
+  label = label or "configure"
+  if configure == nil then return nil end
+  if type(configure) ~= "table" then
+    return '"' .. label .. '" must be a table of extension blocks, not a ' .. type(configure)
+  end
+  for _, key in ipairs(sorted_keys(configure)) do
+    local value = configure[key]
+    if type(key) ~= "string" then
+      return '"' .. label .. '" is a list where a table of extension blocks was expected'
+    end
+    local found, problem = nil, nil
+    if type(value) == "table" then found, problem = read_marker(value, label .. "." .. key) end
+    if problem ~= nil then return problem end
+    if type(value) ~= "table" or found ~= nil then
+      return '"' .. label .. '.' .. key .. '" must be a block: ' .. label .. ' names the extension a'
+             .. " plugin registered, and its keys are what that extension takes"
+    end
+  end
+  return body_problem(configure, label)
+end
+
 local render_body
 
-local function render_block(lines, indent, name, body, path, depth)
-  if type(body) ~= "table" then
-    error('"' .. path .. '" must be a block or a value, not a ' .. type(body), 0)
-  end
+local function render_block(lines, indent, name, body, depth)
   lines[#lines + 1] = indent .. name .. " {"
-  render_body(lines, indent .. "  ", body, path, depth)
+  render_body(lines, indent .. "  ", body, depth)
   lines[#lines + 1] = indent .. "}"
 end
 
-local function render_assignment(lines, indent, key, value, path, depth)
+local function render_assignment(lines, indent, key, value, depth)
   local kind = type(value)
   if kind == "string" then
     lines[#lines + 1] = indent .. key .. " = " .. groovy.quoted(value)
@@ -95,11 +175,9 @@ local function render_assignment(lines, indent, key, value, path, depth)
     lines[#lines + 1] = indent .. key .. " = " .. groovy_number(value)
   elseif kind == "boolean" then
     lines[#lines + 1] = indent .. key .. " = " .. tostring(value)
-  elseif kind == "table" then
-    local marker = marker_of(value, path)
-    lines[#lines + 1] = indent .. key .. " = " .. MARKERS[marker](value[marker], depth)
   else
-    error('"' .. path .. '" is a ' .. kind .. ", which no Gradle value can be spelled as", 0)
+    local marker = read_marker(value, key)
+    lines[#lines + 1] = indent .. key .. " = " .. MARKERS[marker](value[marker], depth)
   end
 end
 
@@ -107,17 +185,10 @@ end
      undefined and a generated file a test compares byte for byte may not depend
      on it. Values first is not only cosmetic: a nested closure that reads a
      property of its own extension sees one that was already set. ]]
-function render_body(lines, indent, body, path, depth)
-  if is_list(body) then
-    error('"' .. path .. '" is a list where a block was expected', 0)
-  end
+function render_body(lines, indent, body, depth)
   local values, blocks = {}, {}
   for key in pairs(body) do
-    if type(key) ~= "string" then
-      error('"' .. path .. '" mixes list entries with named keys', 0)
-    end
-    local value = body[key]
-    if type(value) == "table" and marker_of(value, path .. "." .. key) == nil then
+    if is_block(body[key], key) then
       blocks[#blocks + 1] = key
     else
       values[#values + 1] = key
@@ -128,47 +199,30 @@ function render_body(lines, indent, body, path, depth)
 
   for index = 1, #values do
     local key = values[index]
-    render_assignment(lines, indent, key, body[key], path .. "." .. key, depth)
+    render_assignment(lines, indent, key, body[key], depth)
   end
   for index = 1, #blocks do
     local key = blocks[index]
     local value = body[key]
     if is_list(value) then
-      for entry = 1, #value do
-        render_block(lines, indent, key, value[entry], path .. "." .. key .. "[" .. entry .. "]",
-                     depth)
-      end
+      for entry = 1, #value do render_block(lines, indent, key, value[entry], depth) end
     else
-      render_block(lines, indent, key, value, path .. "." .. key, depth)
+      render_block(lines, indent, key, value, depth)
     end
   end
 end
 
---- @param label the manifest key the tree came from, so a refusal names the key
---- the user wrote: "configure" for a project, "settingsConfigure" for settings
+--- @param label as `configuration_problem` takes it
 local function configuration(configure, depth, label)
-  label = label or "configure"
+  local problem = configuration_problem(configure, label)
+  if problem ~= nil then error(problem, 0) end
   if configure == nil then return {} end
-  if type(configure) ~= "table" then
-    error('"' .. label .. '" must be a table of extension blocks, not a ' .. type(configure), 0)
-  end
   local lines = {}
-  for key in pairs(configure) do
-    if type(key) ~= "string" then
-      error('"' .. label .. '" is a list where a table of extension blocks was expected', 0)
-    end
-    --[[ A bare value here would land at the top level of the build file, where
-         Groovy reads it as a project property and Gradle fails with a name that
-         is nobody's: "configure" names an extension, so its entries are blocks. ]]
-    if type(configure[key]) ~= "table" or marker_of(configure[key], label .. "." .. key) ~= nil then
-      error('"' .. label .. '.' .. key .. '" must be a block: ' .. label .. ' names the extension a'
-            .. " plugin registered, and its keys are what that extension takes", 0)
-    end
-  end
-  render_body(lines, "", configure, label, depth)
+  render_body(lines, "", configure, depth)
   return lines
 end
 
 return {
   configuration = configuration,
+  configuration_problem = configuration_problem,
 }

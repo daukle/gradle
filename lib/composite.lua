@@ -10,6 +10,13 @@ function composite.path_of(name)
   return composite.INCLUDED_DIR .. "/" .. name
 end
 
+--- The name Gradle gives the build at `path_of(name)`, which is its
+--- directory's: measured on 7.6.4, 8.13 and 9.6.0, a root project name does
+--- not change it.
+function composite.build_name_of(name)
+  return string.match(name, "([^/]+)$") or name
+end
+
 function composite.plugins_block(ids)
   if #ids == 1 then return { "plugins { id " .. groovy.quoted(ids[1]) .. " }" } end
   local lines = { "plugins {" }

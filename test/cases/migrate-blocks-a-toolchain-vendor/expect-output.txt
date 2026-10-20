@@ -1,0 +1,2 @@
+build.gradle: java.toolchain.vendor: asks for
+which no key picks a vendor for

@@ -1,0 +1,282 @@
+local model_dump = daukle.require("lib/model_dump")
+local launcher = daukle.require("lib/launcher")
+local translate_build = daukle.require("lib/translate_build")
+local migrate_comparison = daukle.require("lib/migrate_comparison")
+local migrate_blockers = daukle.require("lib/migrate_blockers")
+local migrate_paths = daukle.require("lib/migrate_paths")
+local migrate_jars = daukle.require("lib/migrate_jars")
+local migrate_owned = daukle.require("lib/migrate_owned")
+local migrate_old_build = daukle.require("lib/migrate_old_build")
+local distributions = daukle.require("lib/distributions")
+local validation = daukle.require("lib/validation")
+local writer = daukle.require("lib/writer")
+local migrate_surface = daukle.require("lib/migrate_surface")
+local tables = daukle.require("lib/tables")
+
+local INIT_SCRIPT = "migrate-model.gradle"
+local MODEL = "migrate-model.json"
+local GENERATED_MODEL = "migrate-generated-model.json"
+local WRAPPER_DIRECTORY = "gradle/wrapper"
+local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
+local DUMP_JDK = "17"
+
+--- The version a build that sets none migrates to.
+---
+--- @implNote core's own default for a manifest naming no version, written here
+--- rather than left to core, because the jar's file name follows the version:
+--- the generated build must be dumped with it, or the proof names a jar the
+--- new build never writes.
+local UNVERSIONED = "0.1.0"
+
+local within = migrate_paths.within
+local derived = migrate_paths.derived
+local derived_from_instance = migrate_paths.derived_from_instance
+local has_file = migrate_paths.has_file
+
+local function trimmed(text)
+  return (string.gsub(string.gsub(text, "^%s+", ""), "%s+$", ""))
+end
+
+--- The distribution the wrapper names: nil when there is no wrapper or it
+--- names no url, else { url, version }, version nil when the url is not one
+--- this can read.
+---
+--- @implNote the version is read from the url's last segment, because a
+--- mirror's own path can hold "gradle-" as well. The url is unescaped as a
+--- properties value, where the wrapper writes `https\://`, and only a line
+--- that starts with the key counts, so a `#distributionUrl=` comment does not.
+local function wrapper_distribution(context)
+  local directory = within(context.dir, WRAPPER_DIRECTORY)
+  if not has_file(directory, WRAPPER_PROPERTIES) then return nil end
+  local text = daukle.read(directory .. "/" .. WRAPPER_PROPERTIES)
+  local url = string.match("\n" .. text, "[\r\n][ \t]*distributionUrl%s*[=:]%s*([^\r\n]+)")
+  if url == nil then return nil end
+  url = string.gsub(trimmed(url), "\\(.)", "%1")
+  local file = string.match(url, "([^/]+)$")
+  return { url = url, version = file ~= nil and string.match(file, "^gradle%-(.+)%-%a+%.zip$") or nil }
+end
+
+--- Why the wrapper's Gradle cannot be provisioned, or nil when it can.
+---
+--- @implNote decided before anything is provisioned: the dump itself runs on
+--- that Gradle, and an unpinned one is never fetched.
+local function gradle_refusal(context, distribution)
+  if distribution == nil then return nil end
+  local where = within(context.dir, WRAPPER_DIRECTORY .. "/" .. WRAPPER_PROPERTIES)
+  if distribution.version == nil then
+    return migrate_blockers.unreadable_distribution(distribution.url, where)
+  end
+  if not distributions.is_pinned(distribution.version) then
+    return migrate_blockers.unpinned_gradle(distribution.version, where)
+  end
+  return nil
+end
+
+local function model_name(base, build)
+  if build == nil then return base end
+  return (string.gsub(base, "%.json$", "")) .. "-" .. (string.gsub(build, ":", "-")) .. ".json"
+end
+
+--- The model `run` dumped, parsed: the root build's, or with `build` the
+--- included build's of that name (its identity path without the leading colon,
+--- each further colon a hyphen).
+local function read_model(context, build)
+  return daukle.json_parse(daukle.read(derived(context, model_name(MODEL, build))))
+end
+
+local function derived_has(context, name)
+  return has_file("build/daukle/" .. context.instance, name)
+end
+
+--- Each included build's model by the name `includedBuilds` gives it, left
+--- out when the dump wrote none: the translation blocks that build by name.
+local function included_models(context, model)
+  local models = {}
+  for _, entry in ipairs(model.includedBuilds or {}) do
+    if derived_has(context, model_name(MODEL, entry.name)) then models[entry.name] = read_model(context, entry.name) end
+  end
+  return models
+end
+
+--- @return Gradle's stderr when the run failed, else nil
+local function run_dump(context, gradle_version, cwd, arguments)
+  local result = launcher.run(context, gradle_version, DUMP_JDK, arguments,
+                              { cwd = cwd, capture = true, check = false })
+  if result.code ~= 0 then return launcher.stderr_tail(result) end
+  return nil
+end
+
+local function dump(context, gradle_version)
+  daukle.write{ path = INIT_SCRIPT, text = model_dump.SCRIPT }
+  local failure = run_dump(context, gradle_version, context.dir or ".", {
+    "--project-dir", ".",
+    "--project-cache-dir", derived_from_instance(context, migrate_paths.PROJECT_CACHE),
+    "--no-configuration-cache",
+    "--init-script", derived_from_instance(context, INIT_SCRIPT),
+    "-D" .. model_dump.PROPERTY .. "=" .. derived_from_instance(context, MODEL),
+    "--quiet",
+    "help",
+  })
+  if failure ~= nil then
+    error("Gradle could not configure the build, so there is no model to migrate from:\n" .. failure, 0)
+  end
+end
+
+--- The context a task of the translated manifest would see, which is what the
+--- plugin's own renderer reads.
+local function generation_context(context, built, config)
+  return { instance = context.instance, dir = context.dir, root = context.root, host = context.host,
+           project = built.name, version = built.version, modules = built.declared or {},
+           toolchain = { config = config, version = config.version } }
+end
+
+--- The translated config without `jdk`, which picks only the JVM a task runs
+--- Gradle on and is not rendered: the comparison dump runs on the dump's JDK.
+local function rendered_config(config)
+  local copy = {}
+  for key, value in pairs(config) do copy[key] = value end
+  copy.jdk = nil
+  return copy
+end
+
+local GENERATED = "the generated build"
+
+local function generation_blockers(problems, where)
+  local blockers = {}
+  for _, problem in ipairs(problems) do
+    blockers[#blockers + 1] = migrate_surface.blocker(GENERATED, where, "would be refused by daukle/gradle: "
+                                                      .. problem, migrate_surface.UNCOVERED_ROW)
+  end
+  return blockers
+end
+
+local function last_component(path)
+  return string.match(path, "([^/]+)$") or path
+end
+
+--- Each generated included build's model by its directory, found under the
+--- name Gradle gave the build, which is its root project's or its directory's.
+local function generated_builds(context, built)
+  local models = {}
+  for _, record in ipairs(built.builds) do
+    for _, name in ipairs({ record.gradle_name, last_component(record.dir) }) do
+      local file = model_name(GENERATED_MODEL, name)
+      if models[record.dir] == nil and derived_has(context, file) then
+        models[record.dir] = { identity = ":" .. name,
+                               model = daukle.json_parse(daukle.read(derived(context, file))) }
+      end
+    end
+  end
+  return models
+end
+
+--- The model of the build `daukle/gradle` renders from the translation,
+--- dumped with the same init script, Gradle and JDK as the old build, so the
+--- run reuses the first one's daemon; or nil and the blockers that stopped it.
+---
+--- @implNote the writer's refusals are asked for as reasons first, because
+--- the sandbox has no pcall and a raise would discard every blocker found.
+local function dump_generated(context, built, where)
+  local config = rendered_config(built.config)
+  local generation = generation_context(context, built, config)
+  local problems = writer.generation_problems(generation, config)
+  if #problems > 0 then return nil, generation_blockers(problems, where) end
+  writer.write_build_file(generation, config)
+  daukle.write{ path = writer.SETTINGS_FILE, text = writer.settings_text(generation, config) }
+  local failure = run_dump(context, config.version, derived(context, "."), {
+    "--project-dir", ".",
+    "--offline",
+    "--no-configuration-cache",
+    "--init-script", INIT_SCRIPT,
+    "-D" .. model_dump.PROPERTY .. "=" .. GENERATED_MODEL,
+    "--quiet",
+    "help",
+  })
+  if failure ~= nil then
+    return nil, { migrate_surface.blocker(GENERATED, where, "does not configure:\n" .. failure,
+                                          migrate_surface.UNCOVERED_ROW) }
+  end
+  return daukle.json_parse(daukle.read(derived(context, GENERATED_MODEL))), {}
+end
+
+local append = tables.append
+
+local SETTINGS_FILES = { "settings.gradle", "settings.gradle.kts" }
+
+--- The settings file, relative to the instance's directory, that blockers
+--- about settings name; else the root build file, else the directory itself.
+local function settings_name(context, root)
+  for _, name in ipairs(SETTINGS_FILES) do
+    if has_file(context.dir or ".", name) then return name end
+  end
+  return root.buildFile or "."
+end
+
+--- What every translated project says that no key or comparison does: code
+--- a build script compiled, and a toolchain the proof cannot point at the
+--- provisioned JDK.
+local function project_blockers(built)
+  local blockers = {}
+  local function add(project, where)
+    append(blockers, migrate_blockers.build_logic(project, where))
+    append(blockers, migrate_old_build.toolchain_blockers(project, where))
+  end
+  for _, entry in ipairs(built.projects) do add(entry.project, entry.where) end
+  for _, record in ipairs(built.builds) do add(record.project, record.where) end
+  return blockers
+end
+
+local function refused(context, refusal)
+  return { manifest = { toolchains = { [context.instance] = {} } }, foreign = {}, blockers = { refusal },
+           owned = {} }
+end
+
+--- The proof, after writing the plan `build` runs the old jars from; a jar
+--- it cannot name is added to `blockers`.
+---
+--- @implNote the old build runs on the JDK the new manifest's tasks run on,
+--- which is the translated `jdk`, not the dump's.
+local function proof_of(context, built, generated, generated_models, blockers)
+  local rows, unnamed = migrate_jars.rows(context, built, generated, generated_models)
+  append(blockers, unnamed)
+  daukle.write{ path = migrate_jars.PLAN,
+                text = migrate_jars.plan_text(rows, built.config.version, validation.jdk_version_of(built.config)) }
+  return migrate_jars.proof(context, rows)
+end
+
+local function run(context)
+  local distribution = wrapper_distribution(context)
+  local refusal = gradle_refusal(context, distribution)
+  if refusal ~= nil then return refused(context, refusal) end
+  local gradle_version = distribution ~= nil and distribution.version or nil
+  dump(context, gradle_version)
+  local model = read_model(context)
+  local included = included_models(context, model)
+  local settings = settings_name(context, model.projects[1])
+  local built = translate_build.build(model, included, { dir = context.dir, settings = settings })
+  built.config.version = gradle_version
+  built.version = built.version or UNVERSIONED
+  local blockers = built.blockers
+  append(blockers, project_blockers(built))
+  append(blockers, migrate_owned.blockers(context, model, included))
+  local settings_where = within(context.dir, settings)
+  local generated, refusals = dump_generated(context, built, built.projects[1].where)
+  append(blockers, refusals)
+  local generated_models = {}
+  if generated ~= nil then
+    generated_models = generated_builds(context, built)
+    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models, settings_where,
+                                                       context.dir))
+  end
+  local proof = proof_of(context, built, generated, generated_models, blockers)
+  return {
+    manifest = { project = built.name, version = built.version, modules = built.modules,
+                 toolchains = { [context.instance] = built.config } },
+    foreign = {},
+    blockers = blockers,
+    owned = migrate_owned.paths(context, model, included),
+    proof = proof,
+  }
+end
+
+return { run = run, build = migrate_old_build.build, read_model = read_model }

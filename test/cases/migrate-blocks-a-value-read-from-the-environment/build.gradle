@@ -1,0 +1,5 @@
+plugins {
+  id 'java'
+}
+
+version = System.getenv('DAUKLE_GRADLE_PROBE')

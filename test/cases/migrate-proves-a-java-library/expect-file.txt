@@ -1,0 +1,13 @@
+daukle.toml
+src/main/java/example/Tally.java
+src/main/resources/example/tally.properties
+build/daukle/migrate/old/build.gradle
+build/daukle/migrate/old/settings.gradle
+build/daukle/migrate/old/gradle.properties
+build/daukle/migrate/old/gradle/wrapper/gradle-wrapper.properties
+build/daukle/migrate/old/gradlew
+build/daukle/migrate/old/gradlew.bat
+build/daukle/gradle/migrate-old/1/tally-2.0.0.jar
+build/daukle/gradle/migrate-old/2/tally-2.0.0-sources.jar
+build/daukle/gradle/build/libs/tally-2.0.0.jar
+build/daukle/gradle/build/libs/tally-2.0.0-sources.jar

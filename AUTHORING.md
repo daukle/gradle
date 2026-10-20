@@ -642,6 +642,118 @@ The cost taken is that the two plugins' release cycles couple: a `daukle/java` r
 leading component, so the executable sits under the archive's own directory, and `lib/jdks` returns
 `pick.home` for exactly that.
 
+## Migrating a Gradle build
+
+`daukle migrate` in a directory holding a `build.gradle`, `build.gradle.kts`, `settings.gradle` or
+`settings.gradle.kts` (the `catalog.json` detect rule) hands the build to `lib/migrator.lua`, which
+registers as `daukle.migrator{ tool = "gradle", run, build }`. It migrates the WHOLE build or nothing:
+any blocker means no files are touched and the report names each one. Exit codes as the plugin's
+cases assert them: `0` migrated and proved, `3` blocked, `4` migrated but the proof failed, `1` the
+old build or the dump failed.
+
+### What `run` does
+
+1. **Provisions** the Gradle the wrapper names and JDK 17, and runs the old build once with an init
+   script (`lib/model_dump.lua`) that writes the evaluated model as JSON at
+   `gradle.taskGraph.whenReady`. The dump runs on JDK 17 whatever the build's toolchain asks for, so
+   `jvm.*` in the model describes the dump daemon only; an unset `options.encoding` counts as UTF-8
+   only when the toolchain is 18 or newer.
+2. **Translates** the model into a `[toolchains.gradle]` fragment (and `modules.<name>` and
+   `builds.<dir>` for subprojects and included builds), with every dependency already pinned (url and
+   sha256, derived from the repository the resolved component names and Gradle's cached file, no
+   `daukle/maven` involved). A Gradle outside the pin table blocks naming the nearest pin; a build is
+   never moved to a different Gradle.
+3. **Generates** the build `daukle/gradle` would write from that fragment, dumps it with the same init
+   script, and **compares** it with the old model. Whatever differs blocks. Compared: applied plugins;
+   third-party extensions (and a core extension the generated build lacks); the core blocks of
+   `settings.gradle` (`toolchainManagement`, `buildCache`, `dependencyResolutionManagement` apart from
+   its repositories, which the pins already name); the values of every task of a type the dump has a
+   reader for (`Jar`, `JavaCompile`, `Test` including environment and JUnit tag filters, `Javadoc`,
+   `JavaExec`), the `application` extension, and `enabled`; a task type with no reader compares by
+   type only; and each configuration's classpath, by membership and by the order of entries that
+   share a `.class` name.
+4. **Two build-logic signals**, both blocking under the boundary row: a task action compiled from the
+   build script (Groovy `ClosureTaskAction`, Kotlin's script class), and a task the old project has
+   and the generated build lacks. Neither alone suffices: on `intisy/tools/brazier` the action signal
+   finds 17 of 18 build-defined tasks and the difference finds the other. `buildSrc/` blocks whenever
+   it exists. Version catalogs need nothing and are skipped by their
+   `org.gradle.accessors.dm.LibrariesFor` type.
+5. **The environment gate.** A model string that holds an environment variable's value (8 or more
+   characters; shorter values would false-block `17` or `true`) is rewritten in the model file to
+   `${env:NAME}`, so `build/` never holds the secret, and blocks wherever it would be written to
+   `daukle.toml`, including a string derived from one. Map keys are not redacted.
+6. **Owns** `build.gradle(.kts)` of every project, `settings.gradle(.kts)`, `gradle.properties`,
+   `gradle/`, `gradlew`, `gradlew.bat` (and the same under each included build); core moves them aside
+   and deletes them after the proof. An included build sitting at `gradle/` keeps its sources.
+
+### What `build` and the proof do
+
+`build` runs the OLD build's jars on the JDK the new manifest uses, through the provisioned Gradle
+(never `gradlew`), and copies each to `build/daukle/<instance>/migrate-old/<n>/`. The proof is
+`gradle:jars` on the new side, which builds every `Jar` task in the root build and each included
+build, and core compares every jar task BOTH builds have as an archive (a zip's headers carry
+timestamps, its entries do not). A fat jar from a carried plugin is therefore proved. Test counts
+are not compared. The old build writes only each project's own `build/` (and `buildSrc/build` on
+Gradle 8, which blocks anyway).
+
+### What blocks, by `GRADLE-SURFACE.md` row
+
+Every blocker is `construct`, `where`, `why`, and the row, named the way `lib/migrate_surface.lua`
+spells it.
+
+| row | blocks |
+| --- | --- |
+| The boundary: what "100% of Gradle" does not include | a build-defined task or action; `buildSrc/`; a plugin class the build script compiles |
+| 1. The settings file, a settings-level `plugins {}` block | a settings plugin whose configuration cannot be carried |
+| 2. Dependency configurations | an artifact with no repository (`files()`, `gradleApi()`), a non-Maven (Ivy) repository, a `mavenLocal()` or `file:` repository; a configuration the old build could not resolve; a classpath that differs; a project consumed with `api` transitives |
+| 3. The `java` extension and source layout | a source root outside the project; a source set wired to something no key says; source and target levels that differ; a non-UTF-8 encoding (effective encoding not UTF-8 AND a source file holding a byte of 0x80 or above); a toolchain `vendor` or `implementation` that is set |
+| 4. Packaging and publishing | `maven-publish` (and `publishing`), `war`, `ear`, `signing` |
+| 5. Testing | `java-test-fixtures` |
+| 6. What this file does NOT yet cover | everything else: an unpinned or unreadable `distributionUrl`; a third-party plugin the generated build does not apply; a third-party plugin or extension holding a value that cannot be rendered; any difference found by the comparisons above; an environment value; a `gradle.properties` key; an included build's shape; a jar the proof cannot name; a generated build that does not configure |
+
+Measured details that decide a block:
+
+- **Jar manifest `Main-Class` blocks** as `:jar.manifestAttributes.Main-Class`. The `main` key applies
+  the `application` plugin, which writes no such attribute into the jar, so mapping it would only
+  produce a failed proof. Rendering it for every `main` would change every existing project's jars.
+- **`gradle.properties` keys outside the inert set block**, naming the key and never its value. The
+  set: `org.gradle.jvmargs`, `.daemon`, `.parallel`, `.caching`, `.configureondemand`, `.console`,
+  `.logging.level`, `.warning.mode`, `.workers.max`, `.vfs.watch`. Applies to every included build.
+- **Settings-level `dependencyResolutionManagement` repositories** are used by name to pin, following
+  `repositoriesMode`, so the Gradle init template (`FAIL_ON_PROJECT_REPOS` plus `mavenCentral()`)
+  migrates.
+- **A task of a type with a reader** blocks when a value differs, as `<task path>.<field>`
+  (`:test.jvmArgs`, `:run.args`, `:compileJava.compilerArgs`). An argument provider blocks only when
+  the generated build does not hold the same provider classes, because `java-gradle-plugin` adds one
+  to `test` in both builds.
+
+### What a user will notice
+
+- **A build with no version becomes `0.1.0`**, written by the plugin, so its jar is named
+  `<name>-0.1.0.jar` where it was `<name>.jar`, and `project.version` in processed resources changes.
+  The proof does not see the file name. Coupled to core's default; a core change fails the proof.
+- **The Gradle user home is not isolated.** `~/.gradle/init.d` and `~/.gradle/gradle.properties`
+  apply to the old build and to the generated one alike, so they are in neither's difference.
+- **Toolchain installation paths use `-P` below Gradle 9.2.0 and `-D` from 9.2.0.** Measured: `-D` is
+  ignored on 7.6.4, 8.13, 9.0.0 and 9.1.0, which silently resolve the user's own `~/.gradle/jdks`;
+  `-P` is deprecated on 9.x and on 9.6.0 writes `build/reports/problems/problems-report.html` into
+  the project. The old build also fails if any `JavaCompile` does not compile on the provisioned
+  JDK; that check covers `JavaCompile` only, not `Javadoc` or `JavaExec`.
+- **A JDK outside `daukle/java`'s table is not yet a blocker.** The lookup that reports it without
+  throwing (`problem_for_host`) is in `daukle/java` development, and this plugin's `requires` moves to
+  the release carrying it as `daukle/java@1.5.0`; until then an unpinned JDK fails in the proof.
+- A JUnit 5 build's implied `junit-platform-launcher` is resolved by the dump and pinned into
+  `testRuntimeOnly`; the plugin itself still never pins one.
+
+### Recorded, not done
+
+An `applicationName` that differs only by the migration's rename is a false block (the safe
+direction); map keys in `configure` and `systemProperties` are not redacted; redaction rewrites a
+coincidental 8-character environment match; two `Jar` tasks with one archive path fail in the old
+build, loudly. `lib/model_dump.lua` is one large file, to be split into Lua fragment modules.
+Per-module `release`, `plugins` and `configure` in `modules.<name>` are not carried: a module that
+disagrees with the project-wide value blocks, which will dominate real multi-module builds.
+
 ## Tests
 
 `test/cases.sh` runs every directory under `test/cases/` against a real daukle, and the cases that
@@ -658,8 +770,14 @@ gradle.org.
   a generated file proves what daukle wrote; only a file Gradle made proves Gradle read it
 - a `needs-tools` case asserts **compiled classes**, and the JUnit XML as well when its task is
   `gradle:test`
-- every `needs-tools` case, example included, asserts that no `build.gradle`, `settings.gradle`,
-  `.gradle` or `gradlew` reached the project root
+- every `needs-tools` case but a migrate case, example included, asserts that no `build.gradle`,
+  `settings.gradle`, `.gradle` or `gradlew` reached the project root
+- a case with `migrate` runs `daukle migrate` against a catalog that serves the working tree's
+  plugin, packed as `publish.yml` packs it, from loopback http (python and curl), and asserts the
+  exit code in `expect-exit.txt`, then the `expect-output.txt` and `expect-contains.txt` the other
+  cases use, then `expect-manifest.txt`: paragraphs whose lines must all sit in one table of the
+  written `daukle.toml`, in any order, since core writes a table's keys in Lua's iteration order;
+  a `!` line is a prefix no line of such a table may start with
 
 ```sh
 DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/cases.sh

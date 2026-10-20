@@ -1,0 +1,10 @@
+plugins {
+  id 'java'
+}
+
+class Probe implements Plugin<Project> {
+  void apply(Project project) {
+  }
+}
+
+apply plugin: Probe

@@ -1,0 +1,11 @@
+project = "greeter"
+version = "3.1.0"
+
+[toolchains.gradle]
+version = "8.13"
+requiresBuilds = ["greeting"]
+
+[toolchains.gradle.builds.greeting]
+!gradlePlugins =
+
+![[toolchains.gradle.classpath]]

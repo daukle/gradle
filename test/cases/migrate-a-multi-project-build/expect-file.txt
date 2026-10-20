@@ -1,0 +1,6 @@
+app/src/main/java/com/example/App.java
+greeting/src/main/java/com/example/Greeter.java
+build/daukle/migrate/old/build.gradle
+build/daukle/migrate/old/settings.gradle
+build/daukle/migrate/old/app/build.gradle
+build/daukle/migrate/old/greeting/build.gradle

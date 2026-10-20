@@ -1,0 +1,5 @@
+project = "greeter"
+version = "0.3.0"
+
+[toolchains.gradle]
+main = "example.App"

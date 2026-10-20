@@ -1,0 +1,20 @@
+plugins {
+  id 'java'
+}
+
+class Thing {
+  final String name
+  String label
+
+  Thing(String name) {
+    this.name = name
+  }
+}
+
+extensions.add('things', project.container(Thing))
+
+things {
+  alpha {
+    label = 'first'
+  }
+}

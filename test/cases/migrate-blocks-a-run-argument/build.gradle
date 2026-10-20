@@ -1,0 +1,11 @@
+plugins {
+  id 'application'
+}
+
+application {
+  mainClass = 'example.Plain'
+}
+
+run {
+  args 'world'
+}

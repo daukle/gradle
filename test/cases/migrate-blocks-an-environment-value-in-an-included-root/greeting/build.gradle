@@ -1,0 +1,14 @@
+plugins {
+  id 'java-library'
+}
+
+group = 'example'
+version = '1.0'
+
+sourceSets {
+  main {
+    java {
+      srcDirs = ["src/${System.getenv('DAUKLE_GRADLE_PROBE')}/java"]
+    }
+  }
+}

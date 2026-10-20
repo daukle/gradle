@@ -1,0 +1,1 @@
+configure.notes: is an extension the old build registers and the build daukle/gradle generates from the translated keys does not

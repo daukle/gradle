@@ -1,0 +1,9 @@
+plugins {
+  id 'java'
+}
+
+tasks.named('jar') {
+  doLast {
+    println 'packed'
+  }
+}

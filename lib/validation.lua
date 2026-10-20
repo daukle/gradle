@@ -5,6 +5,7 @@ local configurations = daukle.require("lib/configurations")
 local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
 local source_sets = daukle.require("lib/source_sets")
+local extensions = daukle.require("lib/extensions")
 
 local DEFAULT_JDK = "17"
 
@@ -118,24 +119,42 @@ local function checked_builds(context, config)
   return checked, read
 end
 
-local function checked_plugins(entries, key, owners)
-  key = key or "plugins"
-  if entries == nil then return {}, {} end
+local function is_pinned_plugin(entry)
+  return type(entry) == "table" and type(entry.id) == "string" and type(entry.version) == "string"
+end
+
+local function is_included_plugin(entry, owners)
+  return type(entry) == "table" and type(entry.id) == "string" and entry.version == nil
+         and owners ~= nil and owners[entry.id] ~= nil
+end
+
+--- Why `checked_plugins` would refuse this list, or nil.
+local function plugins_problem(entries, key, owners)
+  if entries == nil then return nil end
   if type(entries) ~= "table" then
-    error('"' .. key .. '" must be a list of entries, not a ' .. type(entries), 0)
+    return '"' .. key .. '" must be a list of entries, not a ' .. type(entries)
   end
-  local pinned, included = {}, {}
   for index = 1, #entries do
     local entry = entries[index]
-    local named = type(entry) == "table" and type(entry.id) == "string"
-    if named and type(entry.version) == "string" then
+    if not is_pinned_plugin(entry) and not is_included_plugin(entry, owners) then
+      return '"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
+             .. " applies and the version is what the pinned jars are checked against, or name a"
+             .. ' plugin an included build declares in "gradlePlugins"'
+    end
+  end
+  return nil
+end
+
+local function checked_plugins(entries, key, owners)
+  key = key or "plugins"
+  local problem = plugins_problem(entries, key, owners)
+  if problem ~= nil then error(problem, 0) end
+  local pinned, included = {}, {}
+  for _, entry in ipairs(entries or {}) do
+    if is_pinned_plugin(entry) then
       pinned[#pinned + 1] = entry
-    elseif named and entry.version == nil and owners and owners[entry.id] ~= nil then
-      included[#included + 1] = entry.id
     else
-      error('"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
-            .. " applies and the version is what the pinned jars are checked against, or name a"
-            .. ' plugin an included build declares in "gradlePlugins"', 0)
+      included[#included + 1] = entry.id
     end
   end
   return pinned, included
@@ -147,7 +166,7 @@ end
      applies whatever jar it was handed. The version has to appear in some
      pinned entry, which the Maven layout puts in the url and which a
      hand-written pin can carry in "as". ]]
-local function refuse_a_version_no_pin_carries(plugins, pins, plugins_key, classpath_key)
+local function unpinned_plugin_version(plugins, pins, plugins_key, classpath_key)
   for index = 1, #plugins do
     local version = plugins[index].version
     local pinned = version == nil
@@ -159,30 +178,69 @@ local function refuse_a_version_no_pin_carries(plugins, pins, plugins_key, class
       end
     end
     if not pinned then
-      error('"' .. plugins_key .. '[' .. index .. ']" applies ' .. plugins[index].id .. " "
-            .. version .. ', and no entry in "' .. classpath_key .. '" names that version.'
-            .. ' This check runs on every command, so "maven:resolve" cannot fix it in place:'
-            .. ' remove this entry,'
-            .. " resolve the marker at that version, then put it back. Or correct the version"
-            .. " here", 0)
+      return '"' .. plugins_key .. '[' .. index .. ']" applies ' .. plugins[index].id .. " "
+             .. version .. ', and no entry in "' .. classpath_key .. '" names that version.'
+             .. ' This check runs on every command, so "maven:resolve" cannot fix it in place:'
+             .. ' remove this entry,'
+             .. " resolve the marker at that version, then put it back. Or correct the version"
+             .. " here"
     end
   end
+  return nil
+end
+
+--- Why one plugin list cannot be applied from its classpath, or nil.
+local function plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
+  if #plugins > 0 and #jars == 0 then
+    return '"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
+           .. '" is empty: a plugin is applied from a jar daukle pinned. This check runs on every'
+           .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
+           .. plugins_key .. '" block in the manifest, then add the block'
+  end
+  return unpinned_plugin_version(config[plugins_key] or {}, jars, plugins_key, classpath_key)
+end
+
+local function read_plugin_set(config, plugins_key, classpath_key, owners)
+  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
+  local jars = checked_classpath(config[classpath_key], classpath_key)
+  return plugins, jars, included, plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
 end
 
 --- One plugin list and the classpath it is applied from, checked together:
 --- the project's `plugins` and `pluginClasspath`, or the settings twins.
 --- @return the pinned plugin entries, the pinned classpath entries and the included ids
 local function checked_plugin_set(config, plugins_key, classpath_key, owners)
-  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
-  local jars = checked_classpath(config[classpath_key], classpath_key)
-  if #plugins > 0 and #jars == 0 then
-    error('"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
-          .. '" is empty: a plugin is applied from a jar daukle pinned. This check runs on every'
-          .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
-          .. plugins_key .. '" block in the manifest, then add the block', 0)
-  end
-  refuse_a_version_no_pin_carries(config[plugins_key] or {}, jars, plugins_key, classpath_key)
+  local plugins, jars, included, problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  if problem ~= nil then error(problem, 0) end
   return plugins, jars, included
+end
+
+local function plugin_set_problem_of(config, plugins_key, classpath_key, owners)
+  local problem = plugins_problem(config[plugins_key], plugins_key, owners)
+                  or configurations.entries_problem(config[classpath_key], classpath_key)
+  if problem ~= nil then return problem end
+  local _, _, _, set_problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  return set_problem
+end
+
+local CONFIGURE_KEYS = { "settingsConfigure", "configure" }
+
+--- What `validated` would refuse in the plugin lists, their classpaths and the
+--- configure trees, as reasons, for a caller that reports a refusal instead of
+--- raising it.
+local function plugin_set_problems(context, config)
+  local _, read = checked_builds(context, config)
+  local owners = builds.owners(read)
+  local problems = {}
+  for _, keys in ipairs({ { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }) do
+    local problem = plugin_set_problem_of(config, keys[1], keys[2], owners)
+    if problem ~= nil then problems[#problems + 1] = problem end
+  end
+  for _, key in ipairs(CONFIGURE_KEYS) do
+    local problem = extensions.configuration_problem(config[key], key)
+    if problem ~= nil then problems[#problems + 1] = problem end
+  end
+  return problems
 end
 
 local function composite_of(context, config)
@@ -269,6 +327,7 @@ return {
   composite_of = composite_of,
   project_name = project_name,
   checked_plugins = checked_plugins,
+  plugin_set_problems = plugin_set_problems,
   settings_plugins_of = settings_plugins_of,
   validated = validated,
 }
