@@ -1,4 +1,8 @@
 local groovy = daukle.require("lib/groovy")
+local tables = daukle.require("lib/tables")
+
+--- @implNote sorted, so a refusal names the same key on every run.
+local sorted_keys = tables.sorted_keys
 
 --[[ A value that cannot be spelled by its Lua type, written as a one-key table
      rather than a magic prefix inside a string, because a prefix is a thing a
@@ -107,14 +111,6 @@ local function nested_problem(value, path)
     if problem ~= nil then return problem end
   end
   return nil
-end
-
---- The keys of a table in a stable order, so a refusal names the same key on every run.
-local function sorted_keys(body)
-  local keys = {}
-  for key in pairs(body) do keys[#keys + 1] = key end
-  table.sort(keys, function(left, right) return tostring(left) < tostring(right) end)
-  return keys
 end
 
 function body_problem(body, path)
