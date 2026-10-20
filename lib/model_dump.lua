@@ -619,7 +619,7 @@ def FRAMEWORK_FILTERS = ['includeTags', 'excludeTags', 'includeEngines', 'exclud
                          'excludeCategories', 'includeGroups', 'excludeGroups']
 def frameworkFiltersOf = { File base, options ->
   FRAMEWORK_FILTERS.findAll { options.hasProperty(it) }.collectEntries { name ->
-    [name, safely { (options.getProperty(name) as List).collect { it.toString() }.sort() }]
+    [name, safely { (options."${name}" as List).collect { it.toString() }.sort() }]
   }
 }
 
