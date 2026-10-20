@@ -3,6 +3,7 @@
 local migrate_owned = {}
 
 local migrate_paths = daukle.require("lib/migrate_paths")
+local migrate_surface = daukle.require("lib/migrate_surface")
 
 local within = migrate_paths.within
 
@@ -11,7 +12,6 @@ local GRADLE_DIRECTORY = "gradle"
 local WRAPPER_DIRECTORY = "wrapper"
 local CATALOG_SUFFIX = ".versions.toml"
 local BUILD_SOURCE = "buildSrc"
-local BOUNDARY_ROW = 'GRADLE-SURFACE.md: The boundary: what "100% of Gradle" does not include'
 
 local function add(owned, seen, path)
   if seen[path] then return end
@@ -21,7 +21,7 @@ end
 
 local function lies_under(path, directory)
   local prefix = directory .. "/"
-  return string.sub(path, 1, #prefix) == prefix
+  return path == directory or string.sub(path, 1, #prefix) == prefix
 end
 
 local function holds_a_build(directory, build_directories)
@@ -101,9 +101,79 @@ function migrate_owned.paths(context, model, included_models)
   return owned
 end
 
+local GRADLE_PROPERTIES = "gradle.properties"
+
+--- The `gradle.properties` keys that change how Gradle runs and never what a
+--- build produces: the daemon's JVM, the daemon itself, parallel and
+--- on-demand configuration, the build cache, the console, logging,
+--- warnings, the worker count and file-system watching. Any other key is a
+--- project property the build may read, or a Gradle setting with an effect
+--- on the build, and the file is removed after the proof, so it blocks.
+local INERT_PROPERTIES = {
+  ["org.gradle.jvmargs"] = true,
+  ["org.gradle.daemon"] = true,
+  ["org.gradle.parallel"] = true,
+  ["org.gradle.caching"] = true,
+  ["org.gradle.configureondemand"] = true,
+  ["org.gradle.console"] = true,
+  ["org.gradle.logging.level"] = true,
+  ["org.gradle.warning.mode"] = true,
+  ["org.gradle.workers.max"] = true,
+  ["org.gradle.vfs.watch"] = true,
+}
+
+local function is_continued(line)
+  local backslashes = string.match(line, "(\\*)$")
+  return #backslashes % 2 == 1
+end
+
+--- The key of one logical properties line: up to the first unescaped `=`,
+--- `:` or blank, with its escapes undone.
+local function property_key(line)
+  local key, index = {}, 1
+  while index <= #line do
+    local character = string.sub(line, index, index)
+    if character == "\\" then
+      index = index + 1
+      key[#key + 1] = string.sub(line, index, index)
+    elseif character == "=" or character == ":" or string.match(character, "%s") then
+      break
+    else
+      key[#key + 1] = character
+    end
+    index = index + 1
+  end
+  return table.concat(key)
+end
+
+--- The keys a properties file sets, in file order.
+function migrate_owned.property_keys(text)
+  local keys, continued = {}, false
+  for raw in string.gmatch(text .. "\n", "([^\n]*)\n") do
+    local line = string.gsub(string.gsub(raw, "\r$", ""), "^%s+", "")
+    local starts = not continued and line ~= "" and not string.match(line, "^[#!]")
+    if starts then keys[#keys + 1] = property_key(line) end
+    continued = (continued or starts) and is_continued(line)
+  end
+  return keys
+end
+
+local function property_blockers(directory, blockers)
+  if not migrate_paths.has_file(directory, GRADLE_PROPERTIES) then return end
+  local where = within(directory, GRADLE_PROPERTIES)
+  for _, key in ipairs(migrate_owned.property_keys(daukle.read(where))) do
+    if not INERT_PROPERTIES[key] then
+      blockers[#blockers + 1] = migrate_surface.blocker(key, where, "is a property no daukle/gradle key carries,"
+                                                        .. " and the file is removed after the proof",
+                                                        migrate_surface.UNCOVERED_ROW)
+    end
+  end
+end
+
 --- A `buildSrc/` in the root build or an included one: Gradle compiles it
 --- before the build and puts it on every build script's classpath, and no
 --- dumped value says what it did, so it can be neither translated nor removed.
+--- And each `gradle.properties` key outside INERT_PROPERTIES.
 function migrate_owned.blockers(context, model, included_models)
   local directories = { context.dir or "." }
   for _, build in ipairs(included_builds(context, model, included_models)) do
@@ -111,12 +181,13 @@ function migrate_owned.blockers(context, model, included_models)
   end
   local blockers = {}
   for _, directory in ipairs(directories) do
+    property_blockers(directory, blockers)
     if migrate_paths.has_entry(directory, BUILD_SOURCE, "directory") then
-      blockers[#blockers + 1] = { construct = BUILD_SOURCE, where = within(directory, BUILD_SOURCE),
-                                  surface = BOUNDARY_ROW,
-                                  why = "is build logic Gradle compiles before the build, and the migration"
-                                        .. " cannot show that every effect it has was translated, so it is"
-                                        .. " neither carried over nor removed" }
+      blockers[#blockers + 1] = migrate_surface.blocker(BUILD_SOURCE, within(directory, BUILD_SOURCE),
+                                                        "is build logic Gradle compiles before the build, and the"
+                                                        .. " migration cannot show that every effect it has was"
+                                                        .. " translated, so it is neither carried over nor removed",
+                                                        migrate_surface.BOUNDARY_ROW)
     end
   end
   return blockers

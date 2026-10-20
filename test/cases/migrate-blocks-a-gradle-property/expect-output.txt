@@ -1,0 +1,1 @@
+greeting: is a property no daukle/gradle key carries, and the file is removed after the proof
