@@ -8,14 +8,19 @@ local distributions = daukle.require("lib/distributions")
 local migrate_jars = daukle.require("lib/migrate_jars")
 local migrate_paths = daukle.require("lib/migrate_paths")
 
+local migrate_surface = daukle.require("lib/migrate_surface")
+
 local derived_from_instance = migrate_paths.derived_from_instance
 
 local INIT_SCRIPT = "migrate-old-build.gradle"
 local PLAN_PROPERTY = "daukle.migrate.jars"
 local JDK_PROPERTY = "daukle.migrate.jdk"
-local STDERR_SHOWN = 2000
-local SURFACE = "GRADLE-SURFACE.md: "
-local JAVA_ROW = SURFACE .. "3. The `java` extension and source layout"
+local JAVA_ROW = migrate_surface.LAYOUT_ROW
+
+--- The plan column `name` as the init script indexes a split line.
+local function column(name)
+  return tostring(migrate_jars.PLAN_COLUMNS[name] - 1)
+end
 
 --- Registers, in each project the plan names, one Copy task per planned jar
 --- task, and refuses a run in which any JavaCompile would use another JDK
@@ -27,9 +32,18 @@ local JAVA_ROW = SURFACE .. "3. The `java` extension and source layout"
 --- @implNote the plan's paths are relative to the directory migrate runs
 --- Gradle in, which is the outermost build's current directory.
 migrate_old_build.SCRIPT = [==[
-def PLAN_PROPERTY = 'daukle.migrate.jars'
-def JDK_PROPERTY = 'daukle.migrate.jdk'
-def COPY_TASK_PREFIX = 'daukleMigrateOld'
+def PLAN_PROPERTY = ']==] .. PLAN_PROPERTY .. [==['
+def JDK_PROPERTY = ']==] .. JDK_PROPERTY .. [==['
+def COPY_TASK_PREFIX = ']==] .. migrate_jars.COPY_TASK_PREFIX .. [==['
+def JAR_ROW = ']==] .. migrate_jars.JAR_ROW .. [==['
+def KIND = ]==] .. column("kind") .. [==[
+
+def DIR = ]==] .. column("dir") .. [==[
+
+def TASK = ]==] .. column("task") .. [==[
+
+def INTO = ]==] .. column("into") .. [==[
+
 
 def outermost = gradle
 while (outermost.parent != null) outermost = outermost.parent
@@ -48,13 +62,13 @@ def resolved = { String path ->
 def copyTaskOf = { String name -> COPY_TASK_PREFIX + name.substring(0, 1).toUpperCase() + name.substring(1) }
 
 gradle.projectsEvaluated {
-  def rows = resolved(requested(PLAN_PROPERTY)).readLines('UTF-8')*.split('\t', -1).findAll { it[0] == 'jar' }
+  def rows = resolved(requested(PLAN_PROPERTY)).readLines('UTF-8')*.split('\t', -1).findAll { it[KIND] == JAR_ROW }
   gradle.rootProject.allprojects.each { project ->
     def directory = project.projectDir.canonicalFile
-    rows.findAll { resolved(it[2]) == directory }.each { row ->
-      def jar = project.tasks.named(row[3])
-      def into = resolved(row[4])
-      project.tasks.register(copyTaskOf(row[3]), Copy) { copy ->
+    rows.findAll { resolved(it[DIR]) == directory }.each { row ->
+      def jar = project.tasks.named(row[TASK])
+      def into = resolved(row[INTO])
+      project.tasks.register(copyTaskOf(row[TASK]), Copy) { copy ->
         copy.from(jar)
         copy.into(into)
       }
@@ -74,11 +88,6 @@ gradle.taskGraph.whenReady { graph ->
   }
 }
 ]==]
-
-local function tail(text)
-  if #text <= STDERR_SHOWN then return text end
-  return "..." .. string.sub(text, -STDERR_SHOWN)
-end
 
 local FIRST_GRADLE_PROPERTY_TOOLCHAINS = "9.2.0"
 
@@ -129,7 +138,7 @@ function migrate_old_build.build(context)
   local result = launcher.run(context, plan.gradle, plan.jdk, arguments_of(context, plan, jdk_home),
                               { cwd = context.dir or ".", capture = true, check = false })
   if result.code ~= 0 then
-    error("Gradle could not build the old jars:\n" .. tail(result.stderr), 0)
+    error("Gradle could not build the old jars:\n" .. launcher.stderr_tail(result), 0)
   end
 end
 
@@ -163,10 +172,11 @@ function migrate_old_build.toolchain_blockers(project, where)
   if toolchain == nil then return blockers end
   for _, constraint in ipairs(CONSTRAINTS) do
     if not constraint.unconstrained[toolchain[constraint.key]] then
-      blockers[#blockers + 1] = { construct = "java.toolchain." .. constraint.key, where = where, surface = JAVA_ROW,
-                                  why = "asks for " .. described(toolchain[constraint.key]) .. ", and the proof"
-                                        .. " builds the old jars on the one JDK daukle provisions, which no key"
-                                        .. " picks " .. constraint.picks .. " for" }
+      blockers[#blockers + 1] = migrate_surface.blocker("java.toolchain." .. constraint.key, where,
+                                                        "asks for " .. described(toolchain[constraint.key])
+                                                        .. ", and the proof builds the old jars on the one JDK"
+                                                        .. " daukle provisions, which no key picks "
+                                                        .. constraint.picks .. " for", JAVA_ROW)
     end
   end
   return blockers

@@ -1,0 +1,14 @@
+plugins {
+  id 'java'
+  id 'com.gradleup.shadow' version '9.3.2'
+}
+
+version = '1.0.0'
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  implementation 'org.apache.commons:commons-lang3:3.14.0'
+}

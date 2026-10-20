@@ -113,18 +113,30 @@ daukle.task{
   end,
 }
 
---- Every jar the manifest makes: each project's, its sources jar with
---- `sourcesJar = true`, and each included build's, which `gradle:jar` alone
---- leaves to whoever depends on them. It is the proof a migration runs.
+local JARS_SCRIPT = "jars.gradle"
+local JARS_TASK = "daukleJars"
+
+--- @implNote an init script rather than a line of the build file, so the
+--- build file every other task renders stays the same.
+local JARS_SCRIPT_TEXT = "gradle.allprojects { project ->\n"
+  .. "  project.tasks.register('" .. JARS_TASK .. "') {\n"
+  .. "    dependsOn(project.tasks.withType(org.gradle.api.tasks.bundling.Jar))\n"
+  .. "  }\n"
+  .. "}\n"
+
+--- Every jar the manifest makes: every task of the `Jar` type in each
+--- project, the sources jar and a plugin's own jar tasks included, and each
+--- included build's, which `gradle:jar` alone leaves to whoever depends on
+--- them. It is the proof a migration runs.
 daukle.task{
   name = "gradle:jars",
   run = function(context)
     local config = validation.config_of(context)
     writer.write_build_file(context, config)
-    local arguments = { "jar" }
-    if config.sourcesJar == true then arguments[#arguments + 1] = "sourcesJar" end
+    daukle.write{ path = JARS_SCRIPT, text = JARS_SCRIPT_TEXT }
+    local arguments = { "--init-script", JARS_SCRIPT, JARS_TASK }
     for _, build in ipairs(validation.composite_of(context, config).builds) do
-      arguments[#arguments + 1] = ":" .. composite.build_name_of(build.name) .. ":jar"
+      arguments[#arguments + 1] = ":" .. composite.build_name_of(build.name) .. ":" .. JARS_TASK
     end
     run_gradle(context, config, arguments)
   end,

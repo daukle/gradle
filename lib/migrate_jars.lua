@@ -4,7 +4,9 @@
 local migrate_jars = {}
 
 local migrate_paths = daukle.require("lib/migrate_paths")
+local migrate_surface = daukle.require("lib/migrate_surface")
 local composite = daukle.require("lib/composite")
+local tables = daukle.require("lib/tables")
 
 local within = migrate_paths.within
 local derived = migrate_paths.derived
@@ -12,17 +14,23 @@ local derived = migrate_paths.derived
 local OLD_JARS = "migrate-old"
 local PLAN = "migrate-old-jars.tsv"
 local COPY_TASK_PREFIX = "daukleMigrateOld"
-local JAR_TASKS = { "jar", "sourcesJar" }
+local JAR_READER = "jar"
+local JAR_ROW = "jar"
 local ROOT_PATH = ":"
-local UNCOVERED_ROW = "GRADLE-SURFACE.md: 6. What this file does NOT yet cover, said plainly"
+
+--- The fields of a jar row of the plan, in the order they are written.
+local PLAN_FIELDS = { "kind", "cli", "dir", "task", "into" }
 
 migrate_jars.PLAN = PLAN
+migrate_jars.COPY_TASK_PREFIX = COPY_TASK_PREFIX
+migrate_jars.JAR_ROW = JAR_ROW
+
+--- Each field of a jar row by name, as its column number in the plan.
+migrate_jars.PLAN_COLUMNS = {}
+for index, name in ipairs(PLAN_FIELDS) do migrate_jars.PLAN_COLUMNS[name] = index end
 
 local function task_named(project, name)
-  for _, task in ipairs((project or {}).tasks or {}) do
-    if task.name == name then return task end
-  end
-  return nil
+  return tables.named((project or {}).tasks, name)
 end
 
 --- The archive an enabled task of the model writes, relative to its
@@ -76,8 +84,18 @@ local function new_archive(context, side, name, old)
 end
 
 local function unnamed(side, name, why)
-  return { construct = name, where = side.where, surface = UNCOVERED_ROW,
-           why = "the proof cannot name its jar: " .. why }
+  return migrate_surface.blocker(name, side.where, "the proof cannot name its jar: " .. why,
+                                 migrate_surface.UNCOVERED_ROW)
+end
+
+--- The old project's tasks of the `Jar` type: `jar`, `sourcesJar`, and any
+--- a plugin registers, such as a fat jar.
+local function jar_tasks(project)
+  local names = {}
+  for _, task in ipairs(project.tasks or {}) do
+    if task.reader == JAR_READER then names[#names + 1] = task.name end
+  end
+  return names
 end
 
 --- One row per jar both sides make, its row number naming its own copy
@@ -85,7 +103,7 @@ end
 --- output holds another's; a jar the old build makes and the proof cannot
 --- name is a blocker, never a jar left out of the comparison.
 local function add_rows(rows, blockers, context, side)
-  for _, name in ipairs(JAR_TASKS) do
+  for _, name in ipairs(jar_tasks(side.project)) do
     local old, old_why = archive_of(side.project, name)
     local new, new_why = nil, nil
     if old ~= nil then new, new_why = new_archive(context, side, name, old) end
@@ -132,8 +150,8 @@ function migrate_jars.rows(context, built, generated, generated_builds)
   return rows, blockers
 end
 
---- The proof core runs: `<instance>:jars`, which builds the sources jars
---- and the included builds' jars as well as the main ones.
+--- The proof core runs: `<instance>:jars`, which builds every jar task of
+--- every project and included build.
 function migrate_jars.proof(context, rows)
   if #rows == 0 then return nil end
   local compare = {}
@@ -141,19 +159,27 @@ function migrate_jars.proof(context, rows)
   return { task = context.instance .. ":jars", compare = compare }
 end
 
+local TAB = "\t"
+
+local function jar_line(row)
+  local fields = {}
+  for index, name in ipairs(PLAN_FIELDS) do
+    fields[index] = name == "kind" and JAR_ROW or row[name]
+  end
+  return table.concat(fields, TAB)
+end
+
 --- The plan `build` runs and the old build's init script reads, one
 --- tab-separated row per line: the Gradle and JDK versions, then each jar.
 function migrate_jars.plan_text(rows, gradle_version, jdk_version)
-  local lines = { "gradle\t" .. (gradle_version or ""), "jdk\t" .. jdk_version }
-  for _, row in ipairs(rows) do
-    lines[#lines + 1] = table.concat({ "jar", row.cli, row.dir, row.task, row.into }, "\t")
-  end
+  local lines = { "gradle" .. TAB .. (gradle_version or ""), "jdk" .. TAB .. jdk_version }
+  for _, row in ipairs(rows) do lines[#lines + 1] = jar_line(row) end
   return table.concat(lines, "\n") .. "\n"
 end
 
 local function fields_of(line)
   local fields = {}
-  for field in string.gmatch(line .. "\t", "([^\t]*)\t") do fields[#fields + 1] = field end
+  for field in string.gmatch(line .. TAB, "([^\t]*)\t") do fields[#fields + 1] = field end
   return fields
 end
 
@@ -164,7 +190,7 @@ function migrate_jars.read_plan(context)
     local fields = fields_of(line)
     if fields[1] == "gradle" and fields[2] ~= "" then plan.gradle = fields[2] end
     if fields[1] == "jdk" then plan.jdk = fields[2] end
-    if fields[1] == "jar" then plan.tasks[#plan.tasks + 1] = fields[2] end
+    if fields[1] == JAR_ROW then plan.tasks[#plan.tasks + 1] = fields[migrate_jars.PLAN_COLUMNS.cli] end
   end
   return plan
 end
