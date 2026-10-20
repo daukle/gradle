@@ -199,9 +199,6 @@ local function settings_text(context, config)
                                 applies_settings_plugins, record)
 end
 
---- What `write_build_file` would refuse in this config, as reasons rather
---- than a raise, for the migrator, which reports a refusal as a blocker.
----
 local function append_launcher_problem(problems, entries)
   local launcher = junit.missing_launcher(test_reachable(entries))
   if launcher ~= nil then problems[#problems + 1] = launcher end
@@ -224,6 +221,9 @@ local function per_project_problems(config, declared, problems)
   end
 end
 
+--- What `write_build_file` would refuse in this config, as reasons rather
+--- than a raise, for the migrator, which reports a refusal as a blocker.
+---
 --- @implNote the refusals a translated config can meet: its module graph and
 --- included builds, its plugin lists and their classpaths, its configure trees,
 --- the JUnit launcher and two modules declaring `main`. Every other check in

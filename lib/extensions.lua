@@ -109,9 +109,18 @@ local function nested_problem(value, path)
   return nil
 end
 
+--- The keys of a table in a stable order, so a refusal names the same key on every run.
+local function sorted_keys(body)
+  local keys = {}
+  for key in pairs(body) do keys[#keys + 1] = key end
+  table.sort(keys, function(left, right) return tostring(left) < tostring(right) end)
+  return keys
+end
+
 function body_problem(body, path)
   if is_list(body) then return '"' .. path .. '" is a list where a block was expected' end
-  for key, value in pairs(body) do
+  for _, key in ipairs(sorted_keys(body)) do
+    local value = body[key]
     if type(key) ~= "string" then return '"' .. path .. '" mixes list entries with named keys' end
     local item_path = path .. "." .. key
     local problem
@@ -138,7 +147,8 @@ local function configuration_problem(configure, label)
   if type(configure) ~= "table" then
     return '"' .. label .. '" must be a table of extension blocks, not a ' .. type(configure)
   end
-  for key, value in pairs(configure) do
+  for _, key in ipairs(sorted_keys(configure)) do
+    local value = configure[key]
     if type(key) ~= "string" then
       return '"' .. label .. '" is a list where a table of extension blocks was expected'
     end
