@@ -1,0 +1,9 @@
+plugins {
+  id 'java'
+}
+
+class Notes {
+  final String text = 'kept'
+}
+
+extensions.create('notes', Notes)
