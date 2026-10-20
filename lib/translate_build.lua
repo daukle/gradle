@@ -1,25 +1,19 @@
 --- A whole dumped build translated: its projects into one project or into
---- core `[modules]` plus `modules.<name>` blocks, its included builds into
---- `builds.<dir>`, and its settings plugins.
+--- core `[modules]` plus `modules.<name>` blocks, its settings plugins, and its
+--- included builds through lib/translate_included_builds.
 ---
 --- @implNote a module is named by its directory, and Gradle's path for it is
 --- derived from that name, so a project whose path is not its directory's
 --- blocks: its jar and every `project(...)` edge would change name.
---- @implNote an included build's `group` and `version` are not carried: the
---- outer build reached it through a coordinate Gradle substituted, and the
---- generated build substitutes `daukle.included:<name>` instead, so neither
---- names anything the outer build's output holds.
 local translate_build = {}
 
 local translate_model = daukle.require("lib/translate_model")
+local translate_included_builds = daukle.require("lib/translate_included_builds")
 local module_graph = daukle.require("lib/modules")
-local builds = daukle.require("lib/builds")
 
 local SURFACE = "GRADLE-SURFACE.md: "
 local UNCOVERED_ROW = SURFACE .. "6. What this file does NOT yet cover, said plainly"
-local GRADLE_PLUGINS = "gradlePlugins"
 local ROOT_PATH = ":"
-local CURRENT_BUILD = ":"
 
 --- The keys that hold one value for every module, so the modules must agree on it.
 local PROJECT_WIDE_KEYS = { "jdk", "release", "sourcesJar", "plugins", "configure" }
@@ -37,13 +31,6 @@ local function within(dir, name)
   return dir .. "/" .. name
 end
 
-local function sorted_keys(map)
-  local keys = {}
-  for key in pairs(map) do keys[#keys + 1] = key end
-  table.sort(keys, function(left, right) return tostring(left) < tostring(right) end)
-  return keys
-end
-
 local function deep_equal(left, right)
   if type(left) ~= "table" or type(right) ~= "table" then return left == right end
   for key, value in pairs(left) do
@@ -53,27 +40,6 @@ local function deep_equal(left, right)
     if left[key] == nil then return false end
   end
   return true
-end
-
-local function is_inside(path)
-  return path ~= nil and path ~= "." and path ~= ".." and string.sub(path, 1, 3) ~= "../"
-         and string.sub(path, 1, 1) ~= "/" and string.match(path, "^%a:/") == nil
-end
-
-local function gradle_path(name)
-  return ROOT_PATH .. (string.gsub(name, "/", ":"))
-end
-
---- Why `dir` cannot name a module or an included build whose Gradle path is
---- `path` (nil for an included build), or nil.
-local function name_problem(dir, path)
-  if not is_inside(dir) then return "lies at " .. tostring(dir) .. ", outside the project's root" end
-  local problem = module_graph.problem_of(dir)
-  if problem ~= nil then return "lies in a directory whose name " .. problem end
-  if path ~= nil and gradle_path(dir) ~= path then
-    return "lies in " .. dir .. ", and with modules a project's Gradle path is its directory's, " .. gradle_path(dir)
-  end
-  return nil
 end
 
 local function project_where(options, project)
@@ -88,119 +54,6 @@ local function split_keys(config, keep)
   return kept, rest
 end
 
-local function gradle_plugins_of(project, where, blockers)
-  local extension = (project.extensions or {}).gradlePlugin
-  local value = extension ~= nil and extension.value or nil
-  if type(value) ~= "table" or type(value.plugins) ~= "table" then return nil end
-  local entries = {}
-  for _, name in ipairs(sorted_keys(value.plugins)) do
-    local plugin = value.plugins[name]
-    local construct = "gradlePlugin.plugins." .. name
-    if type(plugin.id) ~= "string" or type(plugin.implementationClass) ~= "string" then
-      blockers[#blockers + 1] = blocker(construct, where, "names no id or implementation class the model could read")
-    else
-      if plugin.displayName ~= nil or plugin.description ~= nil then
-        blockers[#blockers + 1] = blocker(construct, where, "sets a display name or a description, which a"
-                                          .. " gradlePlugins entry cannot carry")
-      end
-      entries[#entries + 1] = { id = plugin.id, implementationClass = plugin.implementationClass }
-    end
-  end
-  if #entries == 0 then return nil end
-  return entries
-end
-
-local function has_third_party(plugins)
-  for _, plugin in ipairs(plugins or {}) do
-    if plugin.core ~= true then return true end
-  end
-  return false
-end
-
---- One included build's root project as a `builds.<dir>` block, or nil and
---- the reason it cannot be one.
-local function included_block(entry, model, options, blockers)
-  if model == nil then
-    return nil, "has no dumped model: the init script never reached its whenReady, so nothing it holds"
-                .. " can be translated"
-  end
-  if #(model.projects or {}) ~= 1 then
-    return nil, "has subprojects, and an included build block describes one project"
-  end
-  if #(model.includedBuilds or {}) > 0 then return nil, "includes builds of its own" end
-  if has_third_party(model.settingsPlugins) then
-    return nil, "applies settings plugins of its own, which a build block cannot say"
-  end
-  local project = model.projects[1]
-  local where = within(options.dir, entry.dir .. "/" .. (project.buildFile or "."))
-  local translation = translate_model.project(project, { model = model, dir = options.dir, where = where,
-                                                         prefix = entry.dir .. "/", name = entry.dir })
-  append(blockers, translation.blockers)
-  local block, rest = split_keys(translation.config, builds.KEYS)
-  for _, key in ipairs(sorted_keys(rest)) do
-    if key ~= "jdk" then
-      blockers[#blockers + 1] = blocker(key, where, "is set in an included build, and an included build block"
-                                        .. " takes only source roots, release and dependency keys")
-    end
-  end
-  if #translation.requiredBuilds > 0 then
-    blockers[#blockers + 1] = blocker("requiresBuilds", where, "is an included build that depends on another"
-                                      .. " included build, which a build block cannot say")
-  end
-  block[GRADLE_PLUGINS] = gradle_plugins_of(project, where, blockers)
-  return { dir = entry.dir, gradle_name = (string.gsub(entry.dir, "/", "-")), project = project, where = where,
-           block = block, jdk = rest.jdk, unpinned = translation.unpinned }
-end
-
---- @return the build records, the set of plugin ids they declare, and old identity path -> record
-local function included_builds(model, included_models, options, blockers)
-  local records, ids, by_identity = {}, {}, {}
-  local settings = within(options.dir, options.settings)
-  for _, entry in ipairs(model.includedBuilds or {}) do
-    local problem = name_problem(entry.dir, nil)
-    local record = nil
-    if problem == nil then record, problem = included_block(entry, included_models[entry.name], options, blockers) end
-    if problem ~= nil then
-      blockers[#blockers + 1] = blocker(tostring(entry.dir), settings, "is an included build that " .. problem)
-    else
-      record.identity = CURRENT_BUILD .. entry.name
-      records[#records + 1] = record
-      by_identity[record.identity] = record
-      for _, plugin in ipairs(record.block[GRADLE_PLUGINS] or {}) do ids[plugin.id] = true end
-    end
-  end
-  return records, ids, by_identity
-end
-
-local function plugin_builds_of(records)
-  local identities = {}
-  for _, record in ipairs(records) do
-    if record.block[GRADLE_PLUGINS] ~= nil then identities[record.identity] = true end
-  end
-  return identities
-end
-
---- The included builds a project's main classpaths hold, by directory; one
---- that supplies plugins blocks, because a plugin build is applied, not
---- depended on.
-local function required_builds_of(translation, by_identity, where, blockers)
-  local dirs = {}
-  for _, identity in ipairs(translation.requiredBuilds) do
-    local record = by_identity[identity]
-    if record == nil then
-      blockers[#blockers + 1] = blocker("build " .. identity, where, "is an included build the model names no"
-                                        .. " directory for")
-    elseif record.block[GRADLE_PLUGINS] ~= nil then
-      blockers[#blockers + 1] = blocker("build " .. identity, where, "supplies plugins and is depended on as well,"
-                                        .. " and a gradlePlugins build is only applied")
-    else
-      dirs[#dirs + 1] = record.dir
-    end
-  end
-  if #dirs == 0 then return nil end
-  return dirs
-end
-
 local function project_options(model, options, context, where, extra)
   local out = { model = model, dir = options.dir, where = where, includedPluginIds = context.ids,
                 includedPluginBuilds = context.plugin_builds }
@@ -213,7 +66,8 @@ local function translate_single(model, options, context, blockers)
   local where = project_where(options, root)
   local translation = translate_model.project(root, project_options(model, options, context, where))
   append(blockers, translation.blockers)
-  translation.config.requiresBuilds = required_builds_of(translation, context.by_identity, where, blockers)
+  translation.config.requiresBuilds = translate_included_builds.required(translation, context.by_identity, where,
+                                                                         blockers)
   return { config = translation.config, name = translation.name, version = translation.version,
            projects = { { project = root, where = where, unpinned = translation.unpinned } } }
 end
@@ -241,14 +95,16 @@ local function is_parent_of_a_module(project, modules)
   return false
 end
 
---- The subprojects that become modules, sorted, and the blockers for those that cannot.
-local function module_projects(model, options, blockers)
+--- The subprojects that become modules, sorted, and the blockers for those
+--- that cannot, whose paths go into `refused`.
+local function module_projects(model, options, blockers, refused)
   local modules, names = {}, {}
   for index = 2, #model.projects do
     local project = model.projects[index]
     if is_java(project) then
-      local problem = name_problem(project.dir, project.path)
+      local problem = translate_included_builds.directory_problem(project.dir, project.path)
       if problem ~= nil then
+        refused[project.path] = true
         blockers[#blockers + 1] = blocker(project.path, project_where(options, project), problem)
       else
         modules[project.dir] = project
@@ -269,18 +125,32 @@ local function union_by_url(target, entries, seen)
   end
 end
 
-local function module_requires(translation, module_of_path, where, blockers)
+local function module_requires(translation, context, where, blockers)
   local requires = {}
   for _, path in ipairs(translation.requires) do
-    local name = module_of_path[path]
+    local name = context.module_of_path[path]
     if name == nil then
-      blockers[#blockers + 1] = blocker(path, where, "is a project the classpaths hold that becomes no module:"
-                                        .. " it applies no Java plugin")
+      local reason = context.refused[path] and "it is blocked above" or "it applies no Java plugin"
+      blockers[#blockers + 1] = blocker(path, where, "is a project the classpaths hold that becomes no module: "
+                                        .. reason)
     else
       requires[#requires + 1] = name
     end
   end
   return requires
+end
+
+--- A plugin list as id -> version, because two modules applying the same
+--- plugins in another order render the same lines in every module.
+local function plugin_set(plugins)
+  local set = {}
+  for _, entry in ipairs(plugins or {}) do set[entry.id] = entry.version or true end
+  return set
+end
+
+local function agrees(key, left, right)
+  if key == "plugins" then return deep_equal(plugin_set(left), plugin_set(right)) end
+  return deep_equal(left, right)
 end
 
 --- Blocks a project-wide key two modules disagree about, and returns the agreed values.
@@ -291,7 +161,7 @@ local function project_wide(module_results, blockers)
     agreed[key] = first.rest[key]
     for index = 2, #module_results do
       local other = module_results[index]
-      if not deep_equal(first.rest[key], other.rest[key]) then
+      if not agrees(key, first.rest[key], other.rest[key]) then
         blockers[#blockers + 1] = blocker(key, other.where, "differs between the modules " .. first.name .. " and "
                                           .. other.name .. ", and it is a key every module shares")
       end
@@ -318,9 +188,9 @@ local function translate_module(model, project, name, options, context, blockers
     name = name, inheritedBuildscript = ancestors_buildscript(project, context.by_path) }))
   append(blockers, translation.blockers)
   local block, rest = split_keys(translation.config, module_graph.MODULE_KEYS)
-  block.requiresBuilds = required_builds_of(translation, context.by_identity, where, blockers)
+  block.requiresBuilds = translate_included_builds.required(translation, context.by_identity, where, blockers)
   return { name = name, project = project, where = where, block = block, rest = rest, version = translation.version,
-           requires = module_requires(translation, context.module_of_path, where, blockers),
+           requires = module_requires(translation, context, where, blockers),
            unpinned = translation.unpinned }
 end
 
@@ -346,7 +216,8 @@ local function translate_parents(model, options, context, names, blockers, plugi
 end
 
 local function translate_modules(model, options, context, blockers)
-  local modules, names = module_projects(model, options, blockers)
+  context.refused = {}
+  local modules, names = module_projects(model, options, blockers, context.refused)
   context.module_of_path = {}
   for _, name in ipairs(names) do context.module_of_path[modules[name].path] = name end
   local plugin_classpath, seen = {}, {}
@@ -393,11 +264,11 @@ end
 --- @param options         { dir = <context.dir>, settings = <the settings file, relative to dir> }
 --- @return { config = <the [toolchains.gradle] keys>, name, version, modules = <core's [modules]>,
 ---           declared = { { name, requires } }, projects = { { project, where, module? } },
----           builds = { { dir, gradle_name, project, where } }, blockers }
+---           builds = { { dir, gradle_name, identity, project, where } }, blockers }
 function translate_build.build(model, included_models, options)
   local blockers = {}
-  local records, ids, by_identity = included_builds(model, included_models, options, blockers)
-  local context = { ids = ids, plugin_builds = plugin_builds_of(records), by_identity = by_identity,
+  local included = translate_included_builds.read(model, included_models, options, blockers)
+  local context = { ids = included.ids, plugin_builds = included.plugin_builds, by_identity = included.by_identity,
                     by_path = by_path_of(model) }
   local result
   if #model.projects == 1 then
@@ -409,18 +280,9 @@ function translate_build.build(model, included_models, options)
                                                             within(options.dir, options.settings)))
   append(blockers, settings.blockers)
   for key, value in pairs(settings.config) do result.config[key] = value end
-  if #records > 0 then
-    result.config.builds = {}
-    for _, record in ipairs(records) do
-      result.config.builds[record.dir] = record.block
-      if record.jdk ~= nil and record.jdk ~= result.config.jdk then
-        blockers[#blockers + 1] = blocker("jdk", record.where, "differs from the outer build's, and an included"
-                                          .. " build runs on the outer build's JDK")
-      end
-    end
-  end
+  result.config.builds = translate_included_builds.config(included.records, result.config.jdk, blockers)
   result.modules = core_modules(result.declared)
-  result.builds = records
+  result.builds = included.records
   result.blockers = blockers
   return result
 end
