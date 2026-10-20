@@ -5,8 +5,10 @@
 ---
 --- @implNote an entry is compared by its file's sha256, because the generated
 --- build holds the same bytes as a file from daukle's cache rather than as a
---- module, and a project by its build and path. Order is not compared: the
---- writer renders configurations in its own fixed order.
+--- module, and a project by its build and path. Order is compared only between
+--- two entries holding a class of the same name, which the dump marks, because
+--- there the earlier entry wins; elsewhere the writer's grouping by key
+--- reorders entries with no effect.
 local migrate_classpaths = {}
 
 local model_dump = daukle.require("lib/model_dump")
@@ -40,10 +42,18 @@ local function display(row)
   return row.fileName or row.component
 end
 
+--- A configuration's entries as signatures: `display` maps each to how a
+--- blocker names it, `order` lists them by first appearance, `overlaps` to the
+--- digests of the earlier entries holding a class of the same name.
 local function signatures(rows, identity_of, skipped)
-  local out = {}
+  local out = { display = {}, order = {}, overlaps = {} }
   for _, row in ipairs(rows or {}) do
-    if not skipped[row.component] then out[signature(row, identity_of)] = display(row) end
+    local key = signature(row, identity_of)
+    if not skipped[row.component] and out.display[key] == nil then
+      out.display[key] = display(row)
+      out.order[#out.order + 1] = key
+      out.overlaps[key] = row.overlaps
+    end
   end
   return out
 end
@@ -80,7 +90,7 @@ local function blocker(construct, where, why)
   return { construct = construct, where = where, why = why, surface = CONFIGURATIONS_ROW }
 end
 
-local function compare_one(configuration, old, new, where, blockers)
+local function compare_membership(configuration, old, new, where, blockers)
   for _, key in ipairs(sorted_keys(old)) do
     if new[key] == nil then
       blockers[#blockers + 1] = blocker(configuration .. " " .. old[key], where, "is on it in the old build and"
@@ -95,6 +105,31 @@ local function compare_one(configuration, old, new, where, blockers)
   end
 end
 
+--- Blocks an entry the generated build puts ahead of an earlier entry of
+--- the old build that holds a class of the same name.
+local function compare_precedence(configuration, old, new, where, blockers)
+  local position = {}
+  for index, key in ipairs(new.order) do position[key] = index end
+  for _, key in ipairs(old.order) do
+    for _, digest in ipairs(old.overlaps[key] or {}) do
+      local earlier = "file " .. digest
+      if position[key] ~= nil and position[earlier] ~= nil and position[key] < position[earlier] then
+        blockers[#blockers + 1] = blocker(configuration .. " " .. old.display[key], where, "holds a class of the same"
+                                          .. " name as " .. (old.display[earlier] or digest) .. ", which the old build"
+                                          .. " loads first and the build daukle/gradle generates from the translated"
+                                          .. " keys loads after it")
+      end
+    end
+  end
+end
+
+local function configuration_names(old, new)
+  local names = {}
+  for name in pairs(old) do names[name] = true end
+  for name in pairs(new) do names[name] = true end
+  return sorted_keys(names)
+end
+
 --- @param options { where, unpinned = <set of components already blocked>,
 ---                  identities = <old build identity path -> generated identity path> }
 function migrate_classpaths.differences(old_project, generated_project, options)
@@ -103,9 +138,11 @@ function migrate_classpaths.differences(old_project, generated_project, options)
   local new = grouped(generated_project)
   local same = {}
   for _, identity in pairs(options.identities) do same[identity] = identity end
-  for _, configuration in ipairs(sorted_keys(old)) do
-    compare_one(configuration, signatures(old[configuration], options.identities, options.unpinned or {}),
-                signatures(new[configuration], same, {}), options.where, blockers)
+  for _, configuration in ipairs(configuration_names(old, new)) do
+    local old_entries = signatures(old[configuration], options.identities, options.unpinned or {})
+    local new_entries = signatures(new[configuration], same, {})
+    compare_membership(configuration, old_entries.display, new_entries.display, options.where, blockers)
+    compare_precedence(configuration, old_entries, new_entries, options.where, blockers)
   end
   return blockers
 end

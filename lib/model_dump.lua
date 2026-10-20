@@ -335,13 +335,50 @@ def viaOf = { configuration ->
   via
 }
 
+def classNamesByFile = [:]
+def classNamesOf = { File file ->
+  classNamesByFile.computeIfAbsent(file.path) {
+    def names = [] as Set
+    if (!file.isFile() || !file.name.endsWith('.jar')) return names
+    try {
+      def zip = new java.util.zip.ZipFile(file)
+      try {
+        zip.entries().each { entry ->
+          def name = entry.name
+          if (!entry.directory && name.endsWith('.class') && !name.startsWith('META-INF/') && !name.endsWith('module-info.class')) names << name
+        }
+      } finally { zip.close() }
+    } catch (Throwable ignored) { }
+    names
+  }
+}
+
+/**
+ * Names on each row the sha256 of every earlier row of the same configuration holding a class of the same
+ * name, which is where the order of a classpath decides what is loaded.
+ * @implNote only jars are read: a project's classes directory does not exist before the build runs.
+ */
+def markOverlaps = { List rows, List files ->
+  def owner = [:]
+  rows.eachWithIndex { row, index ->
+    def overlaps = [] as LinkedHashSet
+    classNamesOf(files[index]).each { name ->
+      def earlier = owner.putIfAbsent(name, index)
+      if (earlier != null && earlier != index && rows[earlier].sha256 != null) overlaps << rows[earlier].sha256
+    }
+    row.overlaps = overlaps as List
+  }
+  rows
+}
+
 def resolvedRows = { configuration ->
   def repositories = [:]
   configuration.incoming.resolutionResult.allComponents.each { component ->
     repositories[component.id.displayName] = repositoryOf(component)
   }
   def via = viaOf(configuration)
-  configuration.incoming.artifacts.artifacts.collect { artifact ->
+  def artifacts = configuration.incoming.artifacts.artifacts as List
+  markOverlaps(artifacts.collect { artifact ->
     def identifier = artifact.id.componentIdentifier
     def file = artifact.file
     def row = [configuration: configuration.name, component: identifier.displayName, kind: identifierKind(identifier),
@@ -358,7 +395,7 @@ def resolvedRows = { configuration ->
       row.build = buildOf(identifier)
     }
     row
-  }
+  }, artifacts.collect { it.file })
 }
 
 def resolveInto = { configuration, List resolved, List errors ->
