@@ -131,13 +131,13 @@ local function write_build_file(context, config, options)
   validation.validated(context, config)
   local composite_record = validation.composite_of(context, config)
   local without_named = options ~= nil and options.without_named or false
+  local bare = options ~= nil and options.bare or false
   local function named_of(named)
-    if without_named then return {} end
+    if bare or without_named then return {} end
     return named
   end
   write_settings_plugins(config, composite_record.owners)
   write_included_builds(composite_record.builds, named_of)
-  local bare = options ~= nil and options.bare or false
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]
   local configure = config.configure
