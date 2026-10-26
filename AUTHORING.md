@@ -44,6 +44,7 @@ daukle gradle:test
 daukle gradle:jar
 daukle gradle:run                # needs "main"
 daukle gradle:discover           # what your applied plugins contribute
+daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, see below
 ```
 
 ## Keys
@@ -80,7 +81,7 @@ builds do not take it: they are separate builds with versions of their own. Sinc
 
 ## The tasks a plugin contributes
 
-`plugin.lua` declares seven tasks of its own, plus one per test set (see **Source sets**), and a
+`plugin.lua` declares nine tasks of its own, plus one per test set (see **Source sets**), and a
 Gradle plugin contributes its own. **The two
 halves are kept apart**, because only one of them needs Gradle:
 
@@ -129,9 +130,47 @@ an acronym rule would be per-plugin knowledge in the one place this design refus
 **The spec said `publishGithub` and `publishgithub` collide. They do not**: the hyphen is inserted
 only at a lowercase-to-uppercase boundary, so the second stays `publishgithub`. The real collision
 is `publishGithub` against a Gradle task literally named `publish-github`, and that pair is refused
-by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, `version` or
-`discover`. A duplicate task name is fatal on **every** command in a project, so it is refused where
-the name is read rather than where it is used.
+by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, `version`,
+`discover`, `sources-jar` or `resolve-tools`. A duplicate task name is fatal on **every** command
+in a project, so it is refused where the name is read rather than where it is used.
+
+## The tools a core plugin downloads by default
+
+`checkstyle`, `jacoco`, `pmd` and their kind download a tool when Gradle resolves their
+configuration, and the generated build declares no repository. One command pins them:
+
+```sh
+daukle gradle:resolve-tools --resolve   # writes and commits daukle/gradle/tools.lua
+```
+
+```lua
+-- daukle.lua, added AFTER the first run, for the reason given for classpath.lua above
+daukle.include("daukle/gradle/tools.lua")
+```
+
+**It asks Gradle and knows no plugin.** It renders the build with every `configurations.<name>`
+pin left out, runs Gradle once with an init script, and records each configuration whose declared
+set is empty and whose `incoming.dependencies` is not. Then it pins each closure with
+`daukle/maven`'s exported resolver from Maven Central into `configurations.<name>`. A pinned
+configuration's default is off, so the build fetches nothing. Leaving the pins out of the render
+is what makes a second run stable and a `toolVersion` bump visible: with them in, the pinned files
+would hide the default the next run must read.
+
+- **Project-wide when every module reports the same coordinates**, otherwise under
+  `modules.<name>`, because a project-wide pin is rendered into every module.
+- **A configuration you fill yourself is skipped**: one set under `configurations` anywhere in
+  `daukle.toml`, or named by the `into` of a `[[toolchains.maven.resolve]]` entry. That is how a
+  compiler configuration such as `zinc` is given a closure the default cannot supply. The task does
+  not recognise such configurations, and Gradle's own failure is the message.
+- **Outside `--resolve` it is refused before Gradle starts**, because core allows a committed write
+  only in a resolve run.
+- **Measured**: the init script reads every declared set before any `incoming`, because reading
+  `incoming` runs the default action, which fills the declared set. A coordinate an ancestor
+  configuration also reports is left to the ancestor. A configuration that cannot be declared
+  against (`canBeDeclared`, Gradle 8.2 and later) is skipped: 9.6.0's `scala` plugin reports
+  `scala-library` on `compileClasspath`. On 7.6.4 and 9.6.0 this reports exactly the tool
+  configurations. A pinned file keeps its Maven name, because Gradle 7.6.4 reads the jacoco agent's
+  version from it.
 
 ## `version` lives in TWO places, and reading one of them shipped the wrong Gradle
 

@@ -1,0 +1,2 @@
+daukle/gradle/tools.lua "checkstyle"
+daukle/gradle/tools.lua "jacocoAgent"

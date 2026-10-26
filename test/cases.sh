@@ -300,7 +300,7 @@ run_case() {
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
-         "$sandbox/expect-lacks.txt"
+         "$sandbox/expect-lacks.txt" "$sandbox/resolve"
   if [ -f "$case_dir/migrate" ]; then
     rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
           "$sandbox/expect-absent.txt"
@@ -313,6 +313,8 @@ run_case() {
 
   command=sync
   [ -f "$case_dir/task" ] && command=$(cat "$case_dir/task")
+  # A run that may pin an unpinned url or write a committed file, which core allows only then.
+  [ -f "$case_dir/resolve" ] && command="$command --resolve"
 
   if [ -f "$case_dir/expect-error.txt" ]; then
     if (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
