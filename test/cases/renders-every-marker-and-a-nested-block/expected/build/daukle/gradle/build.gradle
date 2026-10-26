@@ -8,12 +8,12 @@ version = '1.0.0'
 
 sourceSets {
   main {
-    java      { srcDirs = [new File(file('../../..'), 'src/main/java')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/main/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/main/java')) }
+    resources { srcDirs(new File(file('../../..'), 'src/main/resources')) }
   }
   test {
-    java      { srcDirs = [new File(file('../../..'), 'src/test/java')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/test/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/test/java')) }
+    resources { srcDirs(new File(file('../../..'), 'src/test/resources')) }
   }
 }
 
@@ -32,6 +32,7 @@ test { useJUnitPlatform() }
 ext {
   daukleProbeEnv = System.getenv('DAUKLE_GRADLE_PROBE') ?: ''
   daukleProbeFile = new File(file('../../..'), 'notes.txt')
+  daukleProbeFiles = configurations['compileClasspath']
   daukleProbeFlag = true
   daukleProbeNumber = 7
   daukleProbeOutput = layout.buildDirectory.file('libs/renamed.jar').get().asFile
@@ -45,6 +46,25 @@ test {
   reports {
     junitXml {
       required = false
+    }
+  }
+}
+
+def daukleRealDir = file('../../..')
+def daukleIsConvention = { File dir ->
+  dir.toPath().startsWith(projectDir.toPath()) &&
+    !dir.toPath().startsWith(layout.buildDirectory.get().asFile.toPath())
+}
+sourceSets.each { set ->
+  def directorySets = set.extensions.extensionsSchema.elements
+    .collect { set.extensions.getByName(it.name) }
+    .findAll { it instanceof SourceDirectorySet }
+  if (!(set.name in ['main', 'test'])) {
+    directorySets += [set.java, set.resources]
+  }
+  directorySets.each { directories ->
+    directories.srcDirs.findAll(daukleIsConvention).each { dir ->
+      directories.srcDir(new File(daukleRealDir, projectDir.toPath().relativize(dir.toPath()).toString()))
     }
   }
 }

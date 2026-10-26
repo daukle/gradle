@@ -8,26 +8,26 @@ version = '1.0.0'
 
 sourceSets {
   main {
-    java      { srcDirs = [new File(file('../../..'), 'src/main/java')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/main/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/main/java')) }
+    resources { srcDirs(new File(file('../../..'), 'src/main/resources')) }
   }
   test {
-    java      { srcDirs = [new File(file('../../..'), 'src/test/java')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/test/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/test/java')) }
+    resources { srcDirs(new File(file('../../..'), 'src/test/resources')) }
   }
   create('bench') {
-    java      { srcDirs = [new File(file('../../..'), 'src/bench/java')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/bench/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/bench/java')) }
+    resources { srcDirs(new File(file('../../..'), 'src/bench/resources')) }
   }
   create('integrationTest') {
-    java      { srcDirs = [new File(file('../../..'), 'src/integrationTest/java')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/integrationTest/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/integrationTest/java')) }
+    resources { srcDirs(new File(file('../../..'), 'src/integrationTest/resources')) }
     compileClasspath += sourceSets.main.output
     runtimeClasspath += sourceSets.main.output
   }
   create('tools') {
-    java      { srcDirs = [new File(file('../../..'), 'src/tools/java'), new File(file('../../..'), 'generated/tools')] }
-    resources { srcDirs = [new File(file('../../..'), 'src/tools/resources')] }
+    java      { srcDirs(new File(file('../../..'), 'src/tools/java'), new File(file('../../..'), 'generated/tools')) }
+    resources { srcDirs(new File(file('../../..'), 'src/tools/resources')) }
   }
 }
 
@@ -52,4 +52,23 @@ tasks.register('integrationTest', Test) {
   testClassesDirs = sourceSets['integrationTest'].output.classesDirs
   classpath = sourceSets['integrationTest'].runtimeClasspath
   useJUnitPlatform()
+}
+
+def daukleRealDir = file('../../..')
+def daukleIsConvention = { File dir ->
+  dir.toPath().startsWith(projectDir.toPath()) &&
+    !dir.toPath().startsWith(layout.buildDirectory.get().asFile.toPath())
+}
+sourceSets.each { set ->
+  def directorySets = set.extensions.extensionsSchema.elements
+    .collect { set.extensions.getByName(it.name) }
+    .findAll { it instanceof SourceDirectorySet }
+  if (!(set.name in ['main', 'test', 'bench', 'integrationTest', 'tools'])) {
+    directorySets += [set.java, set.resources]
+  }
+  directorySets.each { directories ->
+    directories.srcDirs.findAll(daukleIsConvention).each { dir ->
+      directories.srcDir(new File(daukleRealDir, projectDir.toPath().relativize(dir.toPath()).toString()))
+    }
+  }
 }

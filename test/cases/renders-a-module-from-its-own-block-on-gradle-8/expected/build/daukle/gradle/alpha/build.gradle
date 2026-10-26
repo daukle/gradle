@@ -11,12 +11,12 @@ version = '1.0.0'
 
 sourceSets {
   main {
-    java      { srcDirs = [new File(file('../../../..'), 'alpha/java')] }
-    resources { srcDirs = [new File(file('../../../..'), 'alpha/assets')] }
+    java      { srcDirs(new File(file('../../../..'), 'alpha/java')) }
+    resources { srcDirs(new File(file('../../../..'), 'alpha/assets')) }
   }
   test {
-    java      { srcDirs = [new File(file('../../../..'), 'alpha/test-java')] }
-    resources { srcDirs = [new File(file('../../../..'), 'alpha/test-assets')] }
+    java      { srcDirs(new File(file('../../../..'), 'alpha/test-java')) }
+    resources { srcDirs(new File(file('../../../..'), 'alpha/test-assets')) }
   }
 }
 
@@ -34,6 +34,25 @@ test { useJUnitPlatform() }
 
 ext {
   daukleProbeFile = new File(file('../../../..'), 'notes.txt')
+}
+
+def daukleRealDir = new File(file('../../../..'), 'alpha')
+def daukleIsConvention = { File dir ->
+  dir.toPath().startsWith(projectDir.toPath()) &&
+    !dir.toPath().startsWith(layout.buildDirectory.get().asFile.toPath())
+}
+sourceSets.each { set ->
+  def directorySets = set.extensions.extensionsSchema.elements
+    .collect { set.extensions.getByName(it.name) }
+    .findAll { it instanceof SourceDirectorySet }
+  if (!(set.name in ['main', 'test'])) {
+    directorySets += [set.java, set.resources]
+  }
+  directorySets.each { directories ->
+    directories.srcDirs.findAll(daukleIsConvention).each { dir ->
+      directories.srcDir(new File(daukleRealDir, projectDir.toPath().relativize(dir.toPath()).toString()))
+    }
+  }
 }
 
 application {

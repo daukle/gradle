@@ -31,9 +31,13 @@ local MARKERS = {
   env = function(text)
     return "System.getenv(" .. groovy.quoted(text) .. ") ?: ''"
   end,
+  -- not `configuration`: `dependencyInsight { configuration = '...' }` would then read as a marker
+  filesOf = function(text)
+    return "configurations[" .. groovy.quoted(text) .. "]"
+  end,
 }
 
-local MARKER_NAMES = '"file", "buildOutput" or "env"'
+local MARKER_NAMES = '"file", "buildOutput", "env" or "filesOf"'
 
 --[[ daukle's own token is the one core credential this plugin does not declare,
      so core scrubs it from Gradle's environment and the rendered `?: ''` would
@@ -196,15 +200,40 @@ local function value_problem(value, path)
   return list_problem(value, path)
 end
 
+local function is_identifier(key)
+  return string.match(key, "^[%a_][%w_]*$") ~= nil
+end
+
+--- Why a key cannot be written into the build, or nil (D-175).
+---
+--- @implNote a block name that is not an identifier, such as a container
+--- element `my-mod`, is written quoted, which Gradle 7.6.4 and 9.6.0 read as the
+--- same call; a call or an assignment has no quoted spelling Groovy accepts.
+local function key_problem(key, value, path)
+  local where = '"' .. path .. "." .. key .. '"'
+  if is_block(value) then
+    if key == "" or string.find(key, "[%c\\]") ~= nil then
+      return where .. " is not a block name: it is written into the build quoted, which cannot"
+             .. " carry a backslash or a control character"
+    end
+    return nil
+  end
+  if is_identifier(key) then return nil end
+  if is_call_kind(value) then
+    return where .. " is not a method name: it is written into the build as a Gradle identifier,"
+           .. " so letters, digits and underscores only"
+  end
+  return where .. " is not a property name: it is written into the build as a Gradle identifier,"
+         .. " so letters, digits and underscores only"
+end
+
 function body_problem(body, path)
   if is_list(body) then return '"' .. path .. '" is a list where a block was expected' end
   for _, key in ipairs(sorted_keys(body)) do
     if type(key) ~= "string" then return '"' .. path .. '" mixes list entries with named keys' end
-    if is_call_kind(body[key]) and string.match(key, "^[%a_][%w_]*$") == nil then
-      return '"' .. path .. "." .. key .. '" is not a method name: it is written into the build as'
-             .. " a Gradle identifier, so letters, digits and underscores only"
-    end
-    local problem = value_problem(body[key], path .. "." .. key)
+    local problem = key_problem(key, body[key], path)
+    if problem ~= nil then return problem end
+    problem = value_problem(body[key], path .. "." .. key)
     if problem ~= nil then return problem end
   end
   return nil
@@ -242,6 +271,7 @@ end
 local render_body
 
 local function render_block(lines, indent, name, body, depth)
+  if not is_identifier(name) then name = groovy.quoted(name) end
   lines[#lines + 1] = indent .. name .. " {"
   render_body(lines, indent .. "  ", body, depth)
   lines[#lines + 1] = indent .. "}"
