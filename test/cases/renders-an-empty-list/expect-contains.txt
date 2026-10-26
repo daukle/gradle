@@ -1,1 +1,0 @@
-build/daukle/gradle/build.gradle   applicationDefaultJvmArgs = []

@@ -96,11 +96,8 @@ local function entry_kind(entry)
 end
 
 --- @return "assignment", "call", "block", or the kind of a list's first entry
---- @implNote an empty table is an empty list: TOML cannot tell `[]` from `{}`
---- once core has turned it into Lua, and an empty block configures nothing.
 local function value_kind(value)
   if type(value) ~= "table" then return "assignment" end
-  if next(value) == nil then return "values" end
   if is_call(value) then return "call" end
   if read_marker(value, "") ~= nil then return "assignment" end
   if is_list(value) then return entry_kind(value[1]) end
@@ -178,7 +175,6 @@ local ENTRY_PROBLEM = {
 }
 
 local function list_problem(value, path)
-  if next(value) == nil then return nil end
   local problem = list_mix_problem(value, path)
   if problem ~= nil then return problem end
   local check = ENTRY_PROBLEM[entry_kind(value[1])]
