@@ -69,6 +69,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 | `plugins` | a list of `{ id, version }`, one `apply plugin:` line each. An entry with NO `version` names a plugin an included build declares and renders as `id '<x>'` in the `plugins {}` block instead; one no included build declares is a plugin Gradle's own distribution provides, applied by id with no jar and no pin, and Gradle itself refuses an id it does not know. See **Included builds** below |
 | `pluginClasspath` | pinned entries the versioned plugins are applied FROM, normally written by `daukle/maven` into its own resolution |
 | `configure` | a free-form tree, one Groovy block per extension |
+| `configurations` | pinned entries for a configuration by its own name, `configurations.<name>`, for any name the ten keys above do not model. Rendered after them, project-wide and per module and build. See **Core plugins** below |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for `Settings` rather than for a project: plugins applied in the settings phase, the pinned jars they come from, and their extension blocks. See **Settings plugins** below |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
 | `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds`, `sourceSets` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them. **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
@@ -134,6 +135,30 @@ by name, as is any mapped name equal to one of `classes`, `test`, `jar`, `run`, 
 `discover`, `sources-jar` or `resolve-tools`. A duplicate task name is fatal on **every** command
 in a project, so it is refused where the name is read rather than where it is used.
 
+## Core plugins
+
+Any plugin Gradle's own distribution ships is applied by id with no `version`, no jar and no pin, and
+this plugin keeps no list of ids: Gradle refuses one it does not know, and its message is the
+message. It is configured with the same `configure` tree as any plugin, including method calls and
+plain lists (see **A method call, and a plain list**).
+
+```toml
+[toolchains.gradle]
+plugins = [{ id = "distribution" }, { id = "jacoco" }]
+
+[toolchains.gradle.configure.jacocoTestReport]
+dependsOn = [{ call = ["test"] }]
+
+[[toolchains.gradle.configurations.jacocoAnt]]    # any configuration by name, pinned like classpath
+url = "..."
+sha256 = "..."
+```
+
+A plugin that downloads a tool when Gradle resolves one of its configurations needs that
+configuration pinned, because the generated build declares no repository. `configurations.<name>`
+is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need
+into the committed `daukle/gradle/tools.lua`, which `daukle.lua` includes. See the next section.
+
 ## The tools a core plugin downloads by default
 
 `checkstyle`, `jacoco`, `pmd` and their kind download a tool when Gradle resolves their
@@ -152,16 +177,21 @@ daukle.include("daukle/gradle/tools.lua")
 pin left out, runs Gradle once with an init script, and records each configuration whose declared
 set is empty and whose `incoming.dependencies` is not. Then it pins each closure with
 `daukle/maven`'s exported resolver from Maven Central into `configurations.<name>`. A pinned
-configuration's default is off, so the build fetches nothing. Leaving the pins out of the render
+configuration's default is off, so the build fetches nothing. Leaving the pins out of the render, the file the task leaves behind included,
 is what makes a second run stable and a `toolVersion` bump visible: with them in, the pinned files
 would hide the default the next run must read.
 
 - **Project-wide when every module reports the same coordinates**, otherwise under
   `modules.<name>`, because a project-wide pin is rendered into every module.
 - **A configuration you fill yourself is skipped**: one set under `configurations` anywhere in
-  `daukle.toml`, or named by the `into` of a `[[toolchains.maven.resolve]]` entry. That is how a
-  compiler configuration such as `zinc` is given a closure the default cannot supply. The task does
-  not recognise such configurations, and Gradle's own failure is the message.
+  `daukle.toml`, one pinned by hand in `daukle.lua`, or one named by the `into` of a
+  `[[toolchains.maven.resolve]]` entry. That is how a compiler configuration such as `zinc` is given
+  a closure the default cannot supply. **A hand pin belongs in `daukle.toml` or `daukle.lua`, never
+  in `tools.lua`**, which the next run rewrites. A pin in `daukle.lua` is recognised by its `url`
+  being absent from the previous `tools.lua`, since the merged config does not say which file a pin
+  came from.
+- **Only the main build is reported**: an included build or `buildSrc` has its own root project at
+  path `:`, so the init script skips any build with a parent.
 - **Outside `--resolve` it is refused before Gradle starts**, because core allows a committed write
   only in a resolve run.
 - **Measured**: the init script reads every declared set before any `incoming`, because reading
