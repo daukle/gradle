@@ -154,6 +154,11 @@ url = "..."
 sha256 = "..."
 ```
 
+A source directory a plugin gives a source set by convention is read from the project, with no
+`srcDirs` line: `groovy`'s `src/main/groovy`, `antlr`'s `src/main/antlr`, a `testFixtures` set's
+`src/testFixtures/java`. One it generates into the build directory, such as `antlr`'s parser, is
+compiled with the set it was added to.
+
 A plugin that downloads a tool when Gradle resolves one of its configurations needs that
 configuration pinned, because the generated build declares no repository. `configurations.<name>`
 is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need

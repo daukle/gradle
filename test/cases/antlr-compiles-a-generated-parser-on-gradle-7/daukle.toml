@@ -9,9 +9,7 @@ gradle = "./plugins"
 
 [toolchains.gradle]
 release = "8"
-version = "9.6.0"
+version = "7.6.4"
 plugins = [{ id = "antlr" }]
 tasks = ["generateGrammarSource"]
 
-[toolchains.gradle.configure.sourceSets.main.antlr]
-srcDirs = [{ file = "src/main/antlr" }]
