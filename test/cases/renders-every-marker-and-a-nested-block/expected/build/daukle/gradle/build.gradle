@@ -32,6 +32,7 @@ test { useJUnitPlatform() }
 ext {
   daukleProbeEnv = System.getenv('DAUKLE_GRADLE_PROBE') ?: ''
   daukleProbeFile = new File(file('../../..'), 'notes.txt')
+  daukleProbeFiles = configurations['compileClasspath']
   daukleProbeFlag = true
   daukleProbeNumber = 7
   daukleProbeOutput = layout.buildDirectory.file('libs/renamed.jar').get().asFile
