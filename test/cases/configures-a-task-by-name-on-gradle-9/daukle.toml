@@ -1,0 +1,16 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# `jar` is a task, not an extension: a configure key names either.
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+
+[toolchains.gradle.configure.jar]
+archiveBaseName = "renamed"

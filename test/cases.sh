@@ -97,6 +97,30 @@ files_carry_literals() {
   return 0
 }
 
+# The negation of expect-contains.txt, same "<path> <literal>" lines: an entry
+# a configuration must keep OUT of an archive cannot be proved by presence.
+files_lack_literals() {
+  [ -f "$case_dir/expect-lacks.txt" ] || return 0
+  if ! grep -q . "$case_dir/expect-lacks.txt"; then
+    fail "$name" "expect-lacks.txt is empty, so this case asserts nothing"
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    target=${line%% *}
+    literal=${line#* }
+    if [ ! -f "$sandbox/$target" ]; then
+      fail "$name" "expected $target, which the build did not produce"
+      return 1
+    fi
+    if grep -qF "$literal" "$sandbox/$target"; then
+      fail "$name" "$target carries: $literal"
+      return 1
+    fi
+  done < "$case_dir/expect-lacks.txt"
+  return 0
+}
+
 # expect-manifest.txt holds paragraphs, separated by a blank line, that the
 # daukle.toml a migration wrote must carry. Every line of a paragraph must sit
 # in ONE table of it (a header line included), in any order, because core
@@ -275,7 +299,8 @@ run_case() {
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
-         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt"
+         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
+         "$sandbox/expect-lacks.txt" "$sandbox/resolve"
   if [ -f "$case_dir/migrate" ]; then
     rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
           "$sandbox/expect-absent.txt"
@@ -288,6 +313,8 @@ run_case() {
 
   command=sync
   [ -f "$case_dir/task" ] && command=$(cat "$case_dir/task")
+  # A run that may pin an unpinned url or write a committed file, which core allows only then.
+  [ -f "$case_dir/resolve" ] && command="$command --resolve"
 
   if [ -f "$case_dir/expect-error.txt" ]; then
     if (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
@@ -301,6 +328,7 @@ run_case() {
       fail "$name" "message does not carry: $clause"
       return
     fi
+    output_carries_clauses || return 0
     passed=$((passed + 1))
     return
   fi
@@ -333,6 +361,7 @@ run_case() {
   fi
 
   files_carry_literals || return 0
+  files_lack_literals || return 0
 
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails

@@ -1,0 +1,14 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# daukle keeps no list of core ids, so a typo reaches Gradle and Gradle says so.
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "checkstlye" }]

@@ -1,0 +1,3 @@
+daukle/gradle/tools.lua owner["checkstyle"]
+daukle/gradle/tools.lua as = "checkstyle 10.12.0",
+daukle/gradle/tools.lua /com/puppycrawl/tools/checkstyle/10.12.0/checkstyle-10.12.0.jar

@@ -50,8 +50,11 @@ local function with_paths(sets)
 end
 
 --- The cache paths per configuration, which is the shape the renderer takes.
-local function jars_of(entries, plugin_jars)
-  local jars = { plugin = plugin_jars }
+local function jars_of(entries, plugin_jars, named)
+  local jars = { plugin = plugin_jars, named = {} }
+  for index, configuration in ipairs(named) do
+    jars.named[index] = { name = configuration.name, paths = paths_of(configuration.entries) }
+  end
   for index = 1, #configurations.all do
     local key = configurations.all[index].key
     jars[key] = paths_of(entries[key])
@@ -76,7 +79,7 @@ end
 --- @implNote written on every run, the bare discovery render included:
 --- settings.gradle includes every declared build, so Gradle fails on any run
 --- that starts without them.
-local function write_included_builds(checked)
+local function write_included_builds(checked, named_of)
   for index = 1, #checked do
     local build = checked[index]
     local at = composite.path_of(build.name)
@@ -84,7 +87,8 @@ local function write_included_builds(checked)
     daukle.write{ path = at .. "/settings.gradle",
                   text = settings_file.included_settings(build.gradle_name) }
     daukle.write{ path = at .. "/" .. BUILD_FILE,
-                  text = build_file.included(build.name, build.layout, jars_of(build.entries, {}),
+                  text = build_file.included(build.name, build.layout,
+                                             jars_of(build.entries, {}, named_of(build.named)),
                                              { release = build.release, plugins = {},
                                                gradle_plugins = build.gradle_plugins,
                                                group = (not build.plugin_build)
@@ -106,7 +110,8 @@ end
 --- suppress the apply lines and the configure blocks, and it names the marker
 --- the generated listing task prints with. Everything else about the two files
 --- is identical on purpose, so the difference between their task lists is what
---- the plugins contributed and nothing else.
+--- the plugins contributed and nothing else. `without_named` leaves every
+--- `configurations.<name>` pin out, so Gradle reports the default a pin would hide.
 ---
 --- @implNote `release`, `plugins` and `configure` are project-wide and are
 --- rendered into EVERY module rather than into an `allprojects {}` block: the
@@ -125,9 +130,14 @@ local function write_build_file(context, config, options)
        so a check that only ran there would be a check a user can walk past. ]]
   validation.validated(context, config)
   local composite_record = validation.composite_of(context, config)
-  write_settings_plugins(config, composite_record.owners)
-  write_included_builds(composite_record.builds)
+  local without_named = options ~= nil and options.without_named or false
   local bare = options ~= nil and options.bare or false
+  local function named_of(named)
+    if bare or without_named then return {} end
+    return named
+  end
+  write_settings_plugins(config, composite_record.owners)
+  write_included_builds(composite_record.builds, named_of)
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]
   local configure = config.configure
@@ -142,12 +152,17 @@ local function write_build_file(context, config, options)
                       or paths_of(validation.checked_classpath(config.pluginClasspath,
                                                                "pluginClasspath"))
   local project_options = module_graph.project_options(config)
+  local pinned_plugins, core_plugins = {}, {}
+  if not bare then
+    local pinned, _, core = validation.checked_plugins(config.plugins, "plugins",
+                                                       composite_record.owners)
+    pinned_plugins, core_plugins = pinned, core
+  end
   local project_wide = { release = project_options.release,
                          sources_jar = project_options.sources_jar,
                          version = context.version,
-                         plugins = bare and {}
-                                   or validation.checked_plugins(config.plugins, "plugins",
-                                                                 composite_record.owners),
+                         plugins = pinned_plugins,
+                         core_plugins = core_plugins,
                          included_plugins = bare and {} or composite_record.project_ids,
                          configure = configure,
                          discover = options ~= nil and options.discover or nil }
@@ -157,7 +172,8 @@ local function write_build_file(context, config, options)
     return daukle.write{
       path = BUILD_FILE,
       text = build_file.render(validation.layout_of(config),
-                               jars_of(entries, plugin_jars),
+                               jars_of(entries, plugin_jars,
+                                       named_of(configurations.named(config, ""))),
                                extended(project_wide,
                                         { main = project_options.main,
                                           required_builds = composite_record.required,
@@ -174,7 +190,7 @@ local function write_build_file(context, config, options)
     daukle.write{
       path = module.name .. "/" .. BUILD_FILE,
       text = build_file.module(module.name, module.layout,
-                               jars_of(module.entries, {}),
+                               jars_of(module.entries, {}, named_of(module.named)),
                                extended(project_wide,
                                         { main = module.main,
                                           requires = module.requires,

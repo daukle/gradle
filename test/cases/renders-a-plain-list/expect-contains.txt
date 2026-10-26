@@ -1,0 +1,1 @@
+build/daukle/gradle/build.gradle   applicationDefaultJvmArgs = ['-Xmx1g', '-Dfile.encoding=UTF-8']

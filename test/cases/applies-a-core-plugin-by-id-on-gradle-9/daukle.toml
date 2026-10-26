@@ -1,0 +1,15 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# project-report is part of Gradle's own distribution: no version, no pin, no jar.
+# It is the fixture because htmlDependencyReport exists only once it is applied.
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "project-report" }]

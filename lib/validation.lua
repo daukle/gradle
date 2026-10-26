@@ -76,6 +76,7 @@ local entries_of_configurations = configurations.entries_of
 --- writer's: two loops over the same blocks would drift.
 local function checked_modules(config, declared, read)
   local blocks = module_graph.blocks_of(config, declared)
+  local project_wide = configurations.named(config, "")
   local checked = {}
   for index = 1, #declared do
     local name = declared[index].name
@@ -89,6 +90,7 @@ local function checked_modules(config, declared, read)
       layout = module_graph.layout_of(name, block),
       main = string_key(block, "main", nil, scope .. "main"),
       entries = entries_of_configurations(block, scope),
+      named = configurations.overridden(project_wide, configurations.named(block, scope)),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
     }
@@ -102,6 +104,8 @@ local function project_name(context)
   return (name:match("([^/]+)$") or name)
 end
 
+--- @implNote an included build takes only its own `configurations`, never the project-wide ones:
+--- the plugin that adds a configuration is applied to the project, not inside an included build.
 local function checked_builds(context, config)
   local declared = module_graph.declared(context)
   local read = builds.read(config, declared, project_name(context), MANIFEST)
@@ -114,7 +118,8 @@ local function checked_builds(context, config)
       plugin_build = #build.gradle_plugins > 0, gradle_plugins = build.gradle_plugins,
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
-      entries = entries_of_configurations(build.block, scope) }
+      entries = entries_of_configurations(build.block, scope),
+      named = configurations.named(build.block, scope) }
   end
   return checked, read
 end
@@ -128,6 +133,41 @@ local function is_included_plugin(entry, owners)
          and owners ~= nil and owners[entry.id] ~= nil
 end
 
+local function is_core_plugin(entry, owners)
+  return type(entry) == "table" and type(entry.id) == "string" and entry.version == nil
+         and not is_included_plugin(entry, owners)
+end
+
+--- @implNote only the project's `plugins` takes an id with no version and no owner: Gradle
+--- resolves it from its own distribution and says so itself when it cannot, so daukle keeps no
+--- list of ids. The settings list has no such form and keeps requiring a version.
+local function takes_core_plugins(key)
+  return key == "plugins"
+end
+
+local function is_acceptable_plugin(entry, key, owners)
+  return is_pinned_plugin(entry) or is_included_plugin(entry, owners)
+         or (takes_core_plugins(key) and is_core_plugin(entry, owners))
+end
+
+local function has_invalid_version(entry)
+  return type(entry) == "table" and type(entry.id) == "string"
+         and entry.version ~= nil and type(entry.version) ~= "string"
+end
+
+local function unacceptable_plugin_message(key, index, entry)
+  if has_invalid_version(entry) then
+    return '"' .. key .. '[' .. index .. '].version" must be a string, not a ' .. type(entry.version)
+  end
+  if takes_core_plugins(key) then
+    return '"' .. key .. '[' .. index .. ']" needs an "id": the id is what Gradle applies, with a'
+           .. ' "version" when a pinned jar carries it'
+  end
+  return '"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
+         .. " applies and the version is what the pinned jars are checked against, or name a"
+         .. ' plugin an included build declares in "gradlePlugins"'
+end
+
 --- Why `checked_plugins` would refuse this list, or nil.
 local function plugins_problem(entries, key, owners)
   if entries == nil then return nil end
@@ -135,29 +175,29 @@ local function plugins_problem(entries, key, owners)
     return '"' .. key .. '" must be a list of entries, not a ' .. type(entries)
   end
   for index = 1, #entries do
-    local entry = entries[index]
-    if not is_pinned_plugin(entry) and not is_included_plugin(entry, owners) then
-      return '"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
-             .. " applies and the version is what the pinned jars are checked against, or name a"
-             .. ' plugin an included build declares in "gradlePlugins"'
+    if not is_acceptable_plugin(entries[index], key, owners) then
+      return unacceptable_plugin_message(key, index, entries[index])
     end
   end
   return nil
 end
 
+--- @return the pinned entries, the ids an included build owns, and the ids Gradle itself decides
 local function checked_plugins(entries, key, owners)
   key = key or "plugins"
   local problem = plugins_problem(entries, key, owners)
   if problem ~= nil then error(problem, 0) end
-  local pinned, included = {}, {}
+  local pinned, included, core = {}, {}, {}
   for _, entry in ipairs(entries or {}) do
     if is_pinned_plugin(entry) then
       pinned[#pinned + 1] = entry
-    else
+    elseif is_included_plugin(entry, owners) then
       included[#included + 1] = entry.id
+    else
+      core[#core + 1] = entry.id
     end
   end
-  return pinned, included
+  return pinned, included, core
 end
 
 --[[ The jar a plugin is applied from is pinned somewhere else entirely, by
@@ -201,18 +241,18 @@ local function plugin_set_problem(plugins, jars, config, plugins_key, classpath_
 end
 
 local function read_plugin_set(config, plugins_key, classpath_key, owners)
-  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
+  local plugins, included, core = checked_plugins(config[plugins_key], plugins_key, owners)
   local jars = checked_classpath(config[classpath_key], classpath_key)
-  return plugins, jars, included, plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
+  return plugins, jars, included, plugin_set_problem(plugins, jars, config, plugins_key, classpath_key), core
 end
 
 --- One plugin list and the classpath it is applied from, checked together:
 --- the project's `plugins` and `pluginClasspath`, or the settings twins.
---- @return the pinned plugin entries, the pinned classpath entries and the included ids
+--- @return the pinned plugin entries, the pinned classpath entries, the included ids and the core ids
 local function checked_plugin_set(config, plugins_key, classpath_key, owners)
-  local plugins, jars, included, problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  local plugins, jars, included, problem, core = read_plugin_set(config, plugins_key, classpath_key, owners)
   if problem ~= nil then error(problem, 0) end
-  return plugins, jars, included
+  return plugins, jars, included, core
 end
 
 local function plugin_set_problem_of(config, plugins_key, classpath_key, owners)
@@ -289,6 +329,7 @@ local function validated(context, config)
   local record = composite_of(context, config)
   source_sets.refuse_task_collisions(config, checked_modules(config, declared, record.read))
   entries_of_configurations(config, "")
+  configurations.named(config, "")
   module_graph.project_options(config)
   checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)
   checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath", record.owners)

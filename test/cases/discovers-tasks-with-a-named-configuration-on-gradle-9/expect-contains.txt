@@ -1,0 +1,1 @@
+build/daukle/gradle/discovered.txt war -> gradle:war

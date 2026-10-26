@@ -253,8 +253,12 @@ end
 
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
-  main = true, requiresBuilds = true, sourceSets = true,
+  main = true, requiresBuilds = true, sourceSets = true, configurations = true,
 }
+
+--- Module keys that stay legal beside declared modules: one pinned closure
+--- serves every module, and a module's own entry replaces it by name.
+local PROJECT_WIDE_KEYS = { configurations = true }
 
 for index = 1, #configurations.all do
   MODULE_KEYS[configurations.all[index].key] = true
@@ -306,7 +310,7 @@ end
 function modules.refuse_a_module_key_project_wide(config, declared)
   if #declared == 0 then return end
   for key in pairs(MODULE_KEYS) do
-    if config[key] ~= nil then
+    if config[key] ~= nil and not PROJECT_WIDE_KEYS[key] then
       error('"' .. key .. '" belongs to a module and this project declares modules, so it has'
             .. ' to live in "[toolchains.gradle.modules.<name>]": a project-wide "' .. key
             .. '" would apply to every module at once', 0)

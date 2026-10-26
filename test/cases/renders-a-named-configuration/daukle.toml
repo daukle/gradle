@@ -1,0 +1,18 @@
+schema = 1
+project = "example/shop"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+plugins = [{ id = "war" }]
+
+[[toolchains.gradle.configurations.providedCompile]]
+url = "https://repo1.maven.org/maven2/javax/servlet/javax.servlet-api/4.0.1/javax.servlet-api-4.0.1.jar"
+sha256 = "83a03dd877d3674576f0da7b90755c8524af099ccf0607fc61aa971535ad7c60"
+as = "javax.servlet-api 4.0.1"
