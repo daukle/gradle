@@ -216,8 +216,8 @@ end
 function source_sets.entry(set, depth)
   local lines = {
     "  create(" .. groovy.quoted(set.name) .. ") {",
-    "    java      { srcDirs = " .. groovy.src_dirs(set.java, depth) .. " }",
-    "    resources { srcDirs = " .. groovy.src_dirs(set.resources, depth) .. " }",
+    "    java      { " .. groovy.src_dirs(set.java, depth) .. " }",
+    "    resources { " .. groovy.src_dirs(set.resources, depth) .. " }",
   }
   if set.test then
     lines[#lines + 1] = "    compileClasspath += sourceSets.main.output"
@@ -273,6 +273,41 @@ function source_sets.test_task_lines(sets)
     end
   end
   return lines
+end
+
+--- Every source directory a core plugin gave a set by convention, added again
+--- at the same path under the real tree: `groovy`'s `src/main/groovy`,
+--- `antlr`'s `src/main/antlr`, a `testFixtures` set's `java`. Names no plugin.
+---
+--- @param real_dir the real directory this project's derived one stands for,
+--- as a Groovy expression
+--- @implNote skips the java and resources of the sets this file lays out
+--- itself, so a manifest that moved `sourceRoot` gets no `src/main/java`
+--- beside it; and skips the build directory, where generated sources live.
+--- Adds rather than replaces, for the reason `groovy.src_dirs` gives (D-178).
+function source_sets.conventional_roots(real_dir, sets)
+  local laid_out = { "'main'", "'test'" }
+  for _, set in ipairs(sets) do laid_out[#laid_out + 1] = groovy.quoted(set.name) end
+  return {
+    "def daukleRealDir = " .. real_dir,
+    "def daukleIsConvention = { File dir ->",
+    "  dir.toPath().startsWith(projectDir.toPath()) &&",
+    "    !dir.toPath().startsWith(layout.buildDirectory.get().asFile.toPath())",
+    "}",
+    "sourceSets.each { set ->",
+    "  def directorySets = set.extensions.extensionsSchema.elements",
+    "    .collect { set.extensions.getByName(it.name) }",
+    "    .findAll { it instanceof SourceDirectorySet }",
+    "  if (!(set.name in [" .. table.concat(laid_out, ", ") .. "])) {",
+    "    directorySets += [set.java, set.resources]",
+    "  }",
+    "  directorySets.each { directories ->",
+    "    directories.srcDirs.findAll(daukleIsConvention).each { dir ->",
+    "      directories.srcDir(new File(daukleRealDir, projectDir.toPath().relativize(dir.toPath()).toString()))",
+    "    }",
+    "  }",
+    "}",
+  }
 end
 
 return source_sets

@@ -34,8 +34,8 @@ local file_list = groovy.file_list
 
 local function source_set(name, java_dirs, resource_dirs, depth)
   return "  " .. name .. " {\n"
-         .. "    java      { srcDirs = " .. src_dirs(java_dirs, depth) .. " }\n"
-         .. "    resources { srcDirs = " .. src_dirs(resource_dirs, depth) .. " }\n"
+         .. "    java      { " .. src_dirs(java_dirs, depth) .. " }\n"
+         .. "    resources { " .. src_dirs(resource_dirs, depth) .. " }\n"
          .. "  }"
 end
 
@@ -61,7 +61,8 @@ end
 ---                   required_builds, gradle_plugins, group, version, sources_jar,
 ---                   source_sets }
 --- @param depth    the `file('...')` prefix the source roots resolve against
-local function render_project(layout, jars, options, depth)
+--- @param prefix   the project's directory under that root, nil for the root itself
+local function render_project(layout, jars, options, depth, prefix)
   local requires = options.requires or {}
   local sets = options.source_sets or {}
   local lines = {
@@ -194,6 +195,13 @@ local function render_project(layout, jars, options, depth)
     lines[#lines + 1] = configuration[index]
   end
 
+  local real_dir = "file(" .. groovy.quoted(depth) .. ")"
+  if prefix ~= nil then real_dir = "new File(" .. real_dir .. ", " .. groovy.quoted(prefix) .. ")" end
+  lines[#lines + 1] = ""
+  for _, line in ipairs(source_sets.conventional_roots(real_dir, sets)) do
+    lines[#lines + 1] = line
+  end
+
   --[[ Only for a discovery run, so an ordinary build file carries no task
        nobody asked for. `discover` is the MARKER the caller prints with rather
        than a flag, because a second copy of that string here and in
@@ -232,7 +240,7 @@ end
 
 --- One module's build file, its source roots climbing back from its own depth.
 function build_file.module(name, layout, jars, options)
-  return render_project(layout, jars, options, root_of(name))
+  return render_project(layout, jars, options, root_of(name), name)
 end
 
 function build_file.render(layout, jars, options)
@@ -242,7 +250,7 @@ end
 --- An included build's file, its source roots climbing back from its directory
 --- inside the derived one.
 function build_file.included(name, layout, jars, options)
-  return render_project(layout, jars, options, root_of(composite.path_of(name)))
+  return render_project(layout, jars, options, root_of(composite.path_of(name)), name)
 end
 
 --- The root build file of a multi-project build, which carries the buildscript

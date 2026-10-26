@@ -2,13 +2,17 @@ local function quoted(text)
   return "'" .. text:gsub("\\", "/"):gsub("'", "\\'") .. "'"
 end
 
+--- A `srcDirs(...)` call that ADDS the roots, never an assignment.
+---
+--- @implNote `srcDirs = [...]` replaces the directory a plugin added to the set
+--- before this block runs, and with it the task dependency that directory
+--- carried: `antlr`'s generated parser was then never compiled (D-178).
 local function src_dirs(paths, depth)
-  if #paths == 0 then return "[]" end
   local rendered = {}
   for index = 1, #paths do
     rendered[index] = "new File(file(" .. quoted(depth) .. "), " .. quoted(paths[index]) .. ")"
   end
-  return "[" .. table.concat(rendered, ", ") .. "]"
+  return "srcDirs(" .. table.concat(rendered, ", ") .. ")"
 end
 
 local function file_list(paths, indent)
