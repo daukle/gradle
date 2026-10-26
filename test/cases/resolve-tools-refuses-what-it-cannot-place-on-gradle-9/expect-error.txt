@@ -1,0 +1,1 @@
+org.example:tool:1.0 in configuration classified has a classifier or extension, which a pin cannot carry

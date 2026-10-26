@@ -1,0 +1,17 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A plugin of the case's own, because no core plugin's default has a name or a
+# shape a pin cannot carry: every one measured is a plain group:name:version.
+[toolchains.gradle]
+version = "9.6.0"
+plugins = [{ id = "example.tools" }]
+
+[toolchains.gradle.builds.logic]
+gradlePlugins = [{ id = "example.tools", implementationClass = "example.logic.ToolsPlugin" }]

@@ -8,7 +8,9 @@ tool_defaults.SCRIPT = "tools.gradle"
 local MARKER = "daukle-tool "
 
 --- An init script printing, per project, `<marker><path>`, then one
---- `<marker><path> <configuration> <group>:<name>:<version>` per default coordinate.
+--- `<marker><path> <configuration> <group>:<name>:<version> [<feature>...]` per default coordinate,
+--- each feature one a pin cannot carry: `+artifact` (a classifier or extension), `+excludes`,
+--- `+intransitive`.
 ---
 --- @implNote the declared sets are read BEFORE any `incoming`, because reading `incoming` runs a
 --- configuration's default action, which fills its declared set: read after, every one is non-empty.
@@ -33,7 +35,13 @@ tool_defaults.SCRIPT_TEXT = table.concat({
   "      reported[configuration.name] = configuration.incoming.dependencies",
   "        .withType(org.gradle.api.artifacts.ExternalModuleDependency)",
   "        .findAll { it.group != null && it.version != null && !it.version.isEmpty() }",
-  "        .collect { it.group + ':' + it.name + ':' + it.version } as Set",
+  "        .collect { dependency ->",
+  "          def features = []",
+  "          if (!dependency.artifacts.isEmpty()) features << '+artifact'",
+  "          if (!dependency.excludeRules.isEmpty()) features << '+excludes'",
+  "          if (!dependency.transitive) features << '+intransitive'",
+  "          ([dependency.group + ':' + dependency.name + ':' + dependency.version] + features).join(' ')",
+  "        } as Set",
   "    }",
   "    resolvable.findAll { undeclared.contains(it.name) && declarable(it) }.each { configuration ->",
   "      def own = new TreeSet(reported[configuration.name])",
@@ -53,22 +61,29 @@ local function fields_of(line)
   return fields
 end
 
---- @return { [project path] = { [configuration] = { coordinate... } } }
+--- @return { [project path] = { [configuration] = { coordinate... } } }, and the defaults a pin
+--- cannot carry as { { configuration, coordinate, features = { feature... } }... }
 --- @implNote compared with string.sub, not a pattern: the marker's "-" is a quantifier in one.
 --- A run that printed no project line at all is refused, because it would read as a project
 --- whose plugins download nothing and write an empty file over the pins.
 function tool_defaults.reported(text)
-  local projects = {}
+  local projects, unplaceable = {}, {}
   local width = #MARKER
   for line in string.gmatch(text, "[^\r\n]+") do
     if string.sub(line, 1, width) == MARKER then
       local fields = fields_of(string.sub(line, width + 1))
       local project = fields[1]
       projects[project] = projects[project] or {}
-      if #fields == 3 then
+      if #fields >= 3 then
         local listed = projects[project][fields[2]] or {}
         listed[#listed + 1] = fields[3]
         projects[project][fields[2]] = listed
+      end
+      if #fields > 3 then
+        local features = {}
+        for index = 4, #fields do features[#features + 1] = fields[index] end
+        unplaceable[#unplaceable + 1] = { configuration = fields[2], coordinate = fields[3],
+                                          features = features }
       end
     end
   end
@@ -76,7 +91,46 @@ function tool_defaults.reported(text)
     error("Gradle printed no project at all, so resolving its tools would write an empty file"
           .. " over the pins as if no plugin downloaded anything", 0)
   end
-  return projects
+  return projects, unplaceable
+end
+
+local FEATURE_WORDS = {
+  ["+artifact"] = "a classifier or extension",
+  ["+excludes"] = "excludes",
+  ["+intransitive"] = "transitive = false",
+}
+
+--- Raises one message naming every reported configuration `configurations.<name>` would refuse
+--- and every default a pin cannot carry, before anything is written: a name written into
+--- `tools.lua` that the next command refuses fails every command until the file is edited by hand.
+---
+--- @param skipped the configurations left to the user, which are neither pinned nor checked
+--- @param name_problem function(name) returning why `configurations.<name>` refuses it, or nil
+function tool_defaults.refuse_unplaceable(reported, unplaceable, skipped, name_problem)
+  local lines, named = {}, {}
+  for _, configurations in pairs(reported) do
+    for name in pairs(configurations) do
+      if not skipped[name] and not named[name] then
+        named[name] = true
+        local problem = name_problem(name)
+        if problem ~= nil then lines[#lines + 1] = problem end
+      end
+    end
+  end
+  table.sort(lines)
+  for _, entry in ipairs(unplaceable) do
+    if not skipped[entry.configuration] then
+      local words = {}
+      for index, feature in ipairs(entry.features) do words[index] = FEATURE_WORDS[feature] or feature end
+      lines[#lines + 1] = entry.coordinate .. " in configuration " .. entry.configuration
+                          .. " has " .. table.concat(words, ", ") .. ", which a pin cannot carry:"
+                          .. ' pin it by hand under "configurations.' .. entry.configuration .. '"'
+    end
+  end
+  if #lines > 0 then
+    error("resolving the tools would pin what this toolchain cannot use, so nothing was written: "
+          .. table.concat(lines, "; "), 0)
+  end
 end
 
 local function add_named(names, block)
