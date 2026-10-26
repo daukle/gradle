@@ -49,6 +49,7 @@ local launcher = daukle.require("lib/launcher")
 local composite = daukle.require("lib/composite")
 local migrator = daukle.require("lib/migrator")
 local tool_defaults = daukle.require("lib/tool_defaults")
+local configurations = daukle.require("lib/configurations")
 local module_graph = daukle.require("lib/modules")
 local resolve = daukle.require("maven:lib/resolve")
 local output = daukle.require("maven:lib/output")
@@ -283,9 +284,11 @@ daukle.task{
   run = function(context)
     local config = validation.config_of(context)
     local generated = refuse_outside_a_resolve_run()
+    local reported, unplaceable = reported_tool_defaults(context, config)
+    local skipped = user_filled_configurations(config, generated)
+    tool_defaults.refuse_unplaceable(reported, unplaceable, skipped, configurations.name_problem)
     local resolutions = tool_defaults.resolutions(
-      reported_tool_defaults(context, config),
-      user_filled_configurations(config, generated),
+      reported, skipped,
       { target = "gradle", repository = pom.CENTRAL, strategy = "highest",
         modules = declared_module_names(context), path_of = build_file.gradle_path })
     tool_defaults.refuse_skipped(resolutions, skipped_dependencies_of)

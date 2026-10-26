@@ -118,6 +118,11 @@ local function named_problem(name, scope)
   return nil
 end
 
+--- Why `configurations.<name>` refuses this name, or nil.
+function configurations.name_problem(name)
+  return named_problem(name, "")
+end
+
 --- Why `named` would refuse the `configurations` table of a block, or nil.
 function configurations.named_problem_of(block, scope)
   local named = block.configurations
