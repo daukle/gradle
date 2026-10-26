@@ -104,6 +104,8 @@ local function project_name(context)
   return (name:match("([^/]+)$") or name)
 end
 
+--- @implNote an included build takes only its own `configurations`, never the project-wide ones:
+--- the plugin that adds a configuration is applied to the project, not inside an included build.
 local function checked_builds(context, config)
   local declared = module_graph.declared(context)
   local read = builds.read(config, declared, project_name(context), MANIFEST)

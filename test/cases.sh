@@ -299,7 +299,8 @@ run_case() {
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
-         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \n         "$sandbox/expect-lacks.txt"
+         "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
+         "$sandbox/expect-lacks.txt"
   if [ -f "$case_dir/migrate" ]; then
     rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
           "$sandbox/expect-absent.txt"
