@@ -1,0 +1,17 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "antlr" }]
+tasks = ["generateGrammarSource"]
+
+[toolchains.gradle.configure.sourceSets.main.antlr]
+srcDirs = [{ file = "src/main/antlr" }]
