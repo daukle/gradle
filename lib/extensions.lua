@@ -31,9 +31,13 @@ local MARKERS = {
   env = function(text)
     return "System.getenv(" .. groovy.quoted(text) .. ") ?: ''"
   end,
+  -- not `configuration`: `dependencyInsight { configuration = '...' }` would then read as a marker
+  filesOf = function(text)
+    return "configurations[" .. groovy.quoted(text) .. "]"
+  end,
 }
 
-local MARKER_NAMES = '"file", "buildOutput" or "env"'
+local MARKER_NAMES = '"file", "buildOutput", "env" or "filesOf"'
 
 --[[ daukle's own token is the one core credential this plugin does not declare,
      so core scrubs it from Gradle's environment and the rendered `?: ''` would

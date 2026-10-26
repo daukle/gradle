@@ -1,0 +1,21 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "groovy" }]
+
+[[toolchains.gradle.classpath]]
+url = "https://repo1.maven.org/maven2/org/apache/groovy/groovy/4.0.24/groovy-4.0.24.jar"
+sha256 = "38db8aa6f48b96aa11dd75745b96ab2991ddc9a09f5f3840fae704b84a588867"
+as = "groovy 4.0.24"
+
+[toolchains.gradle.configure.compileGroovy]
+groovyClasspath = { filesOf = "compileClasspath" }
