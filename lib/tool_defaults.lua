@@ -184,4 +184,22 @@ function tool_defaults.resolutions(reported, skipped, options)
   return resolutions
 end
 
+--- Raises one message naming every dependency a resolution reached with no version, and the
+--- configuration it belongs to, because a closure missing one is a tool that fails at run time.
+---
+--- @param skipped_of function(resolution) returning the skipped dependency descriptions
+function tool_defaults.refuse_skipped(resolutions, skipped_of)
+  local lines = {}
+  for _, resolution in ipairs(resolutions) do
+    for _, skipped in ipairs(skipped_of(resolution)) do
+      lines[#lines + 1] = skipped .. " (configuration " .. table.concat(resolution.path, ".") .. ")"
+    end
+  end
+  if #lines > 0 then
+    error("the closure of a tool skipped " .. #lines .. " dependenc" .. (#lines == 1 and "y" or "ies")
+          .. " that no POM gives a version, so the tool would fail when it runs and nothing was"
+          .. " written: " .. table.concat(lines, "; "), 0)
+  end
+end
+
 return tool_defaults

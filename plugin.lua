@@ -247,6 +247,14 @@ local function declared_module_names(context)
   return names
 end
 
+--- @implNote a fresh session per resolution, because a session accumulates what it skipped and
+--- the refusal must name the configuration each skipped dependency belongs to.
+local function skipped_dependencies_of(resolution)
+  local session = resolve.sessions_of(RESOLVER_VERBS)(resolution.repository)
+  local _, _, _, skipped = resolve.closures(resolution, session)
+  return skipped
+end
+
 --- Pins the closure of every tool a configuration downloads by default into the committed
 --- `daukle/gradle/tools.lua`, with `daukle/maven`'s own resolver.
 ---
@@ -262,6 +270,7 @@ daukle.task{
       tool_defaults.user_filled(validation.MANIFEST, "gradle"),
       { target = "gradle", repository = pom.CENTRAL, strategy = "highest",
         modules = declared_module_names(context), path_of = build_file.gradle_path })
+    tool_defaults.refuse_skipped(resolutions, skipped_dependencies_of)
     daukle.write{ path = TOOLS_FILE, committed = true,
                   text = output.render(resolve.pinned_groups(resolutions, RESOLVER_VERBS),
                                        TOOLS_HEADER, TOOLS_PATH) }
