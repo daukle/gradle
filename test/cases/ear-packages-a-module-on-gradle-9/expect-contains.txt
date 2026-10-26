@@ -1,0 +1,3 @@
+build/daukle/gradle/build/libs/shop-1.0.0.ear apiguardian-api-1.1.2.jar
+build/daukle/gradle/build/libs/shop-1.0.0.ear lib/opentest4j-1.3.0.jar
+build/daukle/gradle/build/libs/shop-1.0.0.ear META-INF/application.xml

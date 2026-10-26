@@ -1,0 +1,23 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "groovy" }, { id = "codenarc" }]
+tasks = ["codenarcMain"]
+
+[toolchains.gradle.configure.sourceSets.main.groovy]
+srcDirs = [{ file = "src/main/groovy" }]
+
+[toolchains.gradle.configure.codenarc]
+configFile = { file = "config/codenarc/codenarc.groovy" }
+
+[toolchains.gradle.configure.codenarcMain.reports.console]
+required = true
