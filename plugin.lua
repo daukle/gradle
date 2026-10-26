@@ -275,7 +275,7 @@ daukle.task{
     daukle.write{ path = TOOLS_FILE, committed = true,
                   text = output.render(resolve.pinned_groups(resolutions, RESOLVER_VERBS),
                                        TOOLS_HEADER, TOOLS_PATH) }
-    writer.write_build_file(context, config)
+    writer.write_build_file(context, config, { without_named = true })
   end,
 }
 
