@@ -150,7 +150,15 @@ local function is_acceptable_plugin(entry, key, owners)
          or (takes_core_plugins(key) and is_core_plugin(entry, owners))
 end
 
-local function unacceptable_plugin_message(key, index)
+local function has_invalid_version(entry)
+  return type(entry) == "table" and type(entry.id) == "string"
+         and entry.version ~= nil and type(entry.version) ~= "string"
+end
+
+local function unacceptable_plugin_message(key, index, entry)
+  if has_invalid_version(entry) then
+    return '"' .. key .. '[' .. index .. '].version" must be a string, not a ' .. type(entry.version)
+  end
   if takes_core_plugins(key) then
     return '"' .. key .. '[' .. index .. ']" needs an "id": the id is what Gradle applies, with a'
            .. ' "version" when a pinned jar carries it'
@@ -168,7 +176,7 @@ local function plugins_problem(entries, key, owners)
   end
   for index = 1, #entries do
     if not is_acceptable_plugin(entries[index], key, owners) then
-      return unacceptable_plugin_message(key, index)
+      return unacceptable_plugin_message(key, index, entries[index])
     end
   end
   return nil
