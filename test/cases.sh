@@ -328,6 +328,7 @@ run_case() {
       fail "$name" "message does not carry: $clause"
       return
     fi
+    output_carries_clauses || return 0
     passed=$((passed + 1))
     return
   fi
