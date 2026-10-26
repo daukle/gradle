@@ -1,0 +1,1 @@
+CodeNarc rule violations were found
