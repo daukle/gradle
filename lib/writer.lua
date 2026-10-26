@@ -50,8 +50,11 @@ local function with_paths(sets)
 end
 
 --- The cache paths per configuration, which is the shape the renderer takes.
-local function jars_of(entries, plugin_jars)
-  local jars = { plugin = plugin_jars }
+local function jars_of(entries, plugin_jars, named)
+  local jars = { plugin = plugin_jars, named = {} }
+  for index, configuration in ipairs(named) do
+    jars.named[index] = { name = configuration.name, paths = paths_of(configuration.entries) }
+  end
   for index = 1, #configurations.all do
     local key = configurations.all[index].key
     jars[key] = paths_of(entries[key])
@@ -84,7 +87,8 @@ local function write_included_builds(checked)
     daukle.write{ path = at .. "/settings.gradle",
                   text = settings_file.included_settings(build.gradle_name) }
     daukle.write{ path = at .. "/" .. BUILD_FILE,
-                  text = build_file.included(build.name, build.layout, jars_of(build.entries, {}),
+                  text = build_file.included(build.name, build.layout,
+                                             jars_of(build.entries, {}, build.named),
                                              { release = build.release, plugins = {},
                                                gradle_plugins = build.gradle_plugins,
                                                group = (not build.plugin_build)
@@ -162,7 +166,7 @@ local function write_build_file(context, config, options)
     return daukle.write{
       path = BUILD_FILE,
       text = build_file.render(validation.layout_of(config),
-                               jars_of(entries, plugin_jars),
+                               jars_of(entries, plugin_jars, configurations.named(config, "")),
                                extended(project_wide,
                                         { main = project_options.main,
                                           required_builds = composite_record.required,
@@ -179,7 +183,7 @@ local function write_build_file(context, config, options)
     daukle.write{
       path = module.name .. "/" .. BUILD_FILE,
       text = build_file.module(module.name, module.layout,
-                               jars_of(module.entries, {}),
+                               jars_of(module.entries, {}, module.named),
                                extended(project_wide,
                                         { main = module.main,
                                           requires = module.requires,

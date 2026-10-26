@@ -1,0 +1,1 @@
+build/daukle/gradle/build/libs/shop-1.0.0.war WEB-INF/lib/javax.servlet

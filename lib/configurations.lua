@@ -96,4 +96,76 @@ function configurations.entries_of(block, scope)
   return entries
 end
 
+local function modelled_key_for(render)
+  for index = 1, #configurations.all do
+    local row = configurations.all[index]
+    if row.render == render then return row.key end
+  end
+  return nil
+end
+
+local function named_problem(name, scope)
+  local label = scope .. "configurations." .. tostring(name)
+  if type(name) ~= "string" or string.match(name, "^[%a_][%w_]*$") == nil then
+    return '"' .. label .. '" is not a configuration name: it is written into the build as a'
+           .. " Gradle identifier, so letters, digits and underscores only"
+  end
+  local modelled = modelled_key_for(name)
+  if modelled ~= nil then
+    return '"' .. label .. '" is a configuration this toolchain already models: pin it under "'
+           .. scope .. modelled .. '"'
+  end
+  return nil
+end
+
+--- Why `named` would refuse the `configurations` table of a block, or nil.
+function configurations.named_problem_of(block, scope)
+  local named = block.configurations
+  if named == nil then return nil end
+  local label = scope .. "configurations"
+  if type(named) ~= "table" then
+    return '"' .. label .. '" must be a table of pinned lists keyed by configuration name, not a '
+           .. type(named)
+  end
+  for name, entries in pairs(named) do
+    local problem = named_problem(name, scope)
+                    or configurations.entries_problem(entries, scope .. "configurations." .. name)
+    if problem ~= nil then return problem end
+  end
+  return nil
+end
+
+--- The configurations a block pins by a name of its own, which is every name
+--- the ten above do not already cover.
+---
+--- @implNote read by name and not by a list in this file, so a plugin that adds
+--- a configuration needs no edit here: Gradle is the one that knows whether the
+--- name exists, and says so itself when it does not.
+--- @param scope the manifest path of `block`, so a refusal names a key that exists
+--- @return { { name = string, entries = table } } sorted by name
+function configurations.named(block, scope)
+  scope = scope or ""
+  local problem = configurations.named_problem_of(block, scope)
+  if problem ~= nil then error(problem, 0) end
+  local named = {}
+  for name, entries in pairs(block.configurations or {}) do
+    named[#named + 1] = { name = name, entries = entries }
+  end
+  table.sort(named, function(left, right) return left.name < right.name end)
+  return named
+end
+
+--- `wide` with every name `own` pins replaced by `own`'s entries.
+function configurations.overridden(wide, own)
+  local taken = {}
+  for index = 1, #own do taken[own[index].name] = true end
+  local merged = {}
+  for index = 1, #wide do
+    if not taken[wide[index].name] then merged[#merged + 1] = wide[index] end
+  end
+  for index = 1, #own do merged[#merged + 1] = own[index] end
+  table.sort(merged, function(left, right) return left.name < right.name end)
+  return merged
+end
+
 return configurations

@@ -55,7 +55,8 @@ local function gradle_path(name)
 end
 
 --- @param layout   { main = {java, resources}, test = {java, resources} }
---- @param jars     { compile = {path...}, test = {path...}, plugin = {path...} }
+--- @param jars     { compile = {path...}, test = {path...}, plugin = {path...},
+---                   named = { { name, paths = {path...} } } }
 --- @param options  { release, main, plugins, core_plugins, configure, requires, included_plugins,
 ---                   required_builds, gradle_plugins, group, version, sources_jar,
 ---                   source_sets }
@@ -141,6 +142,12 @@ local function render_project(layout, jars, options, depth)
     local paths = jars[row.key]
     if paths ~= nil and #paths > 0 then
       lines[#lines + 1] = "  " .. row.render .. " files(\n" .. file_list(paths, "    ") .. "\n  )"
+    end
+  end
+  for _, named in ipairs(jars.named or {}) do
+    if #named.paths > 0 then
+      lines[#lines + 1] = "  " .. named.name .. " files(\n" .. file_list(named.paths, "    ")
+                          .. "\n  )"
     end
   end
   for _, line in ipairs(source_sets.dependency_lines(sets)) do lines[#lines + 1] = line end

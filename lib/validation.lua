@@ -76,6 +76,7 @@ local entries_of_configurations = configurations.entries_of
 --- writer's: two loops over the same blocks would drift.
 local function checked_modules(config, declared, read)
   local blocks = module_graph.blocks_of(config, declared)
+  local project_wide = configurations.named(config, "")
   local checked = {}
   for index = 1, #declared do
     local name = declared[index].name
@@ -89,6 +90,7 @@ local function checked_modules(config, declared, read)
       layout = module_graph.layout_of(name, block),
       main = string_key(block, "main", nil, scope .. "main"),
       entries = entries_of_configurations(block, scope),
+      named = configurations.overridden(project_wide, configurations.named(block, scope)),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
     }
@@ -114,7 +116,8 @@ local function checked_builds(context, config)
       plugin_build = #build.gradle_plugins > 0, gradle_plugins = build.gradle_plugins,
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
-      entries = entries_of_configurations(build.block, scope) }
+      entries = entries_of_configurations(build.block, scope),
+      named = configurations.named(build.block, scope) }
   end
   return checked, read
 end
@@ -316,6 +319,7 @@ local function validated(context, config)
   local record = composite_of(context, config)
   source_sets.refuse_task_collisions(config, checked_modules(config, declared, record.read))
   entries_of_configurations(config, "")
+  configurations.named(config, "")
   module_graph.project_options(config)
   checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)
   checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath", record.owners)
