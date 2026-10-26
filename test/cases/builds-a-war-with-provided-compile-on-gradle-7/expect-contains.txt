@@ -1,0 +1,2 @@
+build/daukle/gradle/build/libs/shop-1.0.0.war WEB-INF/classes/example/Hello.class
+build/daukle/gradle/build/libs/shop-1.0.0.war WEB-INF/lib/opentest4j

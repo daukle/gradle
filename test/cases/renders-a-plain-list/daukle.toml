@@ -1,0 +1,16 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+plugins = [{ id = "application" }]
+
+[toolchains.gradle.configure.application]
+applicationDefaultJvmArgs = ["-Xmx1g", "-Dfile.encoding=UTF-8"]

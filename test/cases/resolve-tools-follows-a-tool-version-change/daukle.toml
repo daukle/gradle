@@ -1,0 +1,17 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# daukle/gradle/tools.lua was resolved at 10.11.0, and the version has since been raised.
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "checkstyle" }]
+
+[toolchains.gradle.configure.checkstyle]
+toolVersion = "10.12.0"

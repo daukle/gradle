@@ -1,0 +1,2 @@
+daukle/gradle/tools.lua owner["configurations"] = owner["configurations"] or {}
+daukle/gradle/tools.lua as = "checkstyle 10.12.0",

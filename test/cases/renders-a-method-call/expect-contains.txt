@@ -1,0 +1,4 @@
+build/daukle/gradle/build.gradle   useJUnitPlatform()
+build/daukle/gradle/build.gradle     from('src/dist')
+build/daukle/gradle/build.gradle   dependsOn('test')
+build/daukle/gradle/build.gradle   dependsOn('classes')

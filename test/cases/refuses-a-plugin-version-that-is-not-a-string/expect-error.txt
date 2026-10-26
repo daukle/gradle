@@ -1,0 +1,1 @@
+"plugins[1].version" must be a string, not a number
