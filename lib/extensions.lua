@@ -95,12 +95,12 @@ local function entry_kind(entry)
   return "blocks"
 end
 
---[[ What a configure value is, by shape alone: an "assignment" (a scalar or a
-     marker), a "call", a "block", or a list of "values", "calls" or "blocks",
-     the last being the entries' kind. A list is judged by its first entry; a
-     list whose entries disagree is refused before anything renders it. ]]
+--- @return "assignment", "call", "block", or the kind of a list's first entry
+--- @implNote an empty table is an empty list: TOML cannot tell `[]` from `{}`
+--- once core has turned it into Lua, and an empty block configures nothing.
 local function value_kind(value)
   if type(value) ~= "table" then return "assignment" end
+  if next(value) == nil then return "values" end
   if is_call(value) then return "call" end
   if read_marker(value, "") ~= nil then return "assignment" end
   if is_list(value) then return entry_kind(value[1]) end
@@ -178,6 +178,7 @@ local ENTRY_PROBLEM = {
 }
 
 local function list_problem(value, path)
+  if next(value) == nil then return nil end
   local problem = list_mix_problem(value, path)
   if problem ~= nil then return problem end
   local check = ENTRY_PROBLEM[entry_kind(value[1])]
@@ -203,6 +204,10 @@ function body_problem(body, path)
   if is_list(body) then return '"' .. path .. '" is a list where a block was expected' end
   for _, key in ipairs(sorted_keys(body)) do
     if type(key) ~= "string" then return '"' .. path .. '" mixes list entries with named keys' end
+    if is_call_kind(body[key]) and string.match(key, "^[%a_][%w_]*$") == nil then
+      return '"' .. path .. "." .. key .. '" is not a method name: it is written into the build as'
+             .. " a Gradle identifier, so letters, digits and underscores only"
+    end
     local problem = value_problem(body[key], path .. "." .. key)
     if problem ~= nil then return problem end
   end
@@ -281,11 +286,8 @@ local function render_each(render, lines, indent, key, value, depth)
   end
 end
 
---[[ Keys are emitted sorted, values before method calls before blocks, because
-     Lua's pairs order is undefined and a generated file a test compares byte for
-     byte may not depend on it. Values first is not only cosmetic: a nested
-     closure that reads a property of its own extension sees one that was already
-     set. ]]
+--- @implNote sorted, values before calls before blocks: pairs order is
+--- undefined, and a nested closure may read a property set before it.
 function render_body(lines, indent, body, depth)
   local values, calls, blocks = {}, {}, {}
   for key in pairs(body) do
