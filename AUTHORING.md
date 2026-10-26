@@ -159,6 +159,15 @@ A source directory a plugin gives a source set by convention is read from the pr
 `src/testFixtures/java`. One it generates into the build directory, such as `antlr`'s parser, is
 compiled with the set it was added to.
 
+`groovy` compiles with the Groovy jar the project pins on `classpath`, given to the compile task
+by name, because Gradle otherwise infers its compiler from a repository and the generated build
+declares none:
+
+```toml
+[toolchains.gradle.configure.compileGroovy]
+groovyClasspath = { filesOf = "compileClasspath" }
+```
+
 A plugin that downloads a tool when Gradle resolves one of its configurations needs that
 configuration pinned, because the generated build declares no repository. `configurations.<name>`
 is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need
@@ -330,7 +339,7 @@ wrong model.
 **Keys are emitted sorted, values before blocks**, because Lua's `pairs` order is undefined and a
 test compares the file byte for byte.
 
-### The three markers, and why each is a table rather than a string
+### The four markers, and why each is a table rather than a string
 
 A magic prefix inside a string is a thing a real value collides with one day, so each is a one-key
 table. Every spelling was run on Gradle 8.13 and 9.6.0.
@@ -340,6 +349,7 @@ table. Every spelling was run on Gradle 8.13 and 9.6.0.
 | `{ file = "assets" }` | `new File(file('../../..'), 'assets')` | a path in YOUR tree |
 | `{ buildOutput = "libs/x.jar" }` | `layout.buildDirectory.file('libs/x.jar').get().asFile` | a path Gradle produced |
 | `{ env = "GITHUB_TOKEN" }` | `System.getenv('GITHUB_TOKEN') ?: ''` | a value that may not be committed |
+| `{ filesOf = "compileClasspath" }` | `configurations['compileClasspath']` | a task property that takes a configuration's files |
 
 **`file` and `buildOutput` are a PAIR because daukle moved the project directory out from under a
 hand-written path.** In a build file at the project root, `file('assets')` meant the root and
@@ -348,8 +358,8 @@ root is three levels up and the build directory is Gradle's own, so one marker w
 wrong for whichever half it did not serve. Measured over this tree's `build.gradle` files, the two
 kinds are roughly half each, which is why neither could be the default.
 
-**A one-key table whose key is `file`, `buildOutput` or `env` is a marker, and anything else is a
-block.** The cost is that a plugin with a real nested block named exactly `file` and holding one
+**A one-key table whose key is `file`, `buildOutput`, `env` or `filesOf` is a marker, and anything
+else is a block.** The cost is that a plugin with a real nested block named exactly `file` and holding one
 string key cannot be expressed; nothing in this tree has one. A table that MIXES a marker key with
 others is refused, which is the mistake that shape invites.
 
@@ -374,7 +384,7 @@ dependsOn = { call = ["test"] }                           # jacocoTestReport { d
 applicationDefaultJvmArgs = ["-Xmx1g"]                    # application { applicationDefaultJvmArgs = ['-Xmx1g'] }
 ```
 
-An argument is a string, number, boolean or one of the three markers above, and nothing that
+An argument is a string, number, boolean or one of the four markers above, and nothing that
 evaluates Groovy. A key holding an ARRAY of call tables calls the method once per entry
 (`from = [{ call = ["a"] }, { call = ["b"] }]`). Calls render after the assignments and before the
 nested blocks. A `call` table that carries any other key, and a list that mixes blocks, calls and
