@@ -13,8 +13,6 @@ version = "9.6.0"
 plugins = [{ id = "groovy" }, { id = "codenarc" }]
 tasks = ["codenarcMain"]
 
-[toolchains.gradle.configure.sourceSets.main.groovy]
-srcDirs = [{ file = "src/main/groovy" }]
 
 [toolchains.gradle.configure.codenarc]
 configFile = { file = "config/codenarc/codenarc.groovy" }

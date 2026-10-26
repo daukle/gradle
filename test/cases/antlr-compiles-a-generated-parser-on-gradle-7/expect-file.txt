@@ -1,1 +1,1 @@
-build/daukle/gradle/build/generated-src/antlr/main/HelloParser.java
+build/daukle/gradle/build/classes/java/main/HelloParser.class

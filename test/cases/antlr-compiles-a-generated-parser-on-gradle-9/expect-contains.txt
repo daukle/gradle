@@ -1,1 +1,1 @@
-build/daukle/gradle/build/generated-src/antlr/main/HelloParser.java public class HelloParser extends antlr.LLkParser
+build/daukle/gradle/build/classes/java/main/HelloParser.class antlr/LLkParser

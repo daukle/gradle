@@ -13,5 +13,3 @@ version = "7.6.4"
 plugins = [{ id = "antlr" }]
 tasks = ["generateGrammarSource"]
 
-[toolchains.gradle.configure.sourceSets.main.antlr]
-srcDirs = [{ file = "src/main/antlr" }]
