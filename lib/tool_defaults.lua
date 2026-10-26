@@ -14,10 +14,13 @@ local MARKER = "daukle-tool "
 --- configuration's default action, which fills its declared set: read after, every one is non-empty.
 --- @implNote a coordinate an ancestor in the `hierarchy` also reports is the ancestor's, not this
 --- configuration's, so a classpath extending a tool configuration does not repeat its default.
+--- @implNote an included build or `buildSrc` has a parent, and its root project also has path `:`,
+--- so reporting it would merge its lines into the main root's entry.
 --- @implNote `canBeDeclared` exists from Gradle 8.2. Measured on 9.6.0, a core plugin reports a
 --- default on `compileClasspath`, which no build may declare a dependency against.
 tool_defaults.SCRIPT_TEXT = table.concat({
   "gradle.projectsEvaluated {",
+  "  if (gradle.parent != null) return",
   "  gradle.rootProject.allprojects { project ->",
   "    println '" .. MARKER .. "' + project.path",
   "    def resolvable = project.configurations.toList().findAll { it.canBeResolved }",
