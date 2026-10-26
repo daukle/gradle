@@ -219,6 +219,14 @@ local function refuse_outside_a_resolve_run()
   local current = daukle.list(TOOLS_PATH) ~= nil and daukle.read(TOOLS_PATH)
                   or output.render({}, TOOLS_HEADER, TOOLS_PATH)
   daukle.write{ path = TOOLS_FILE, text = current, committed = true }
+  return current
+end
+
+--- Configurations left to the user: set in `daukle.toml`, or pinned by hand in `daukle.lua`.
+local function user_filled_configurations(config, generated)
+  local names = tool_defaults.user_filled(validation.MANIFEST, "gradle")
+  for name in pairs(tool_defaults.hand_pinned(config, generated)) do names[name] = true end
+  return names
 end
 
 --- What every project's configurations would download by default, as Gradle prints it.
@@ -265,10 +273,10 @@ daukle.task{
   name = "gradle:resolve-tools",
   run = function(context)
     local config = validation.config_of(context)
-    refuse_outside_a_resolve_run()
+    local generated = refuse_outside_a_resolve_run()
     local resolutions = tool_defaults.resolutions(
       reported_tool_defaults(context, config),
-      tool_defaults.user_filled(validation.MANIFEST, "gradle"),
+      user_filled_configurations(config, generated),
       { target = "gradle", repository = pom.CENTRAL, strategy = "highest",
         modules = declared_module_names(context), path_of = build_file.gradle_path })
     tool_defaults.refuse_skipped(resolutions, skipped_dependencies_of)

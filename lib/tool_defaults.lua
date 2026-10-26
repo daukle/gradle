@@ -115,6 +115,34 @@ function tool_defaults.user_filled(manifest, target)
   return names
 end
 
+local function add_unrecognised(names, block, generated)
+  if type(block) ~= "table" or type(block.configurations) ~= "table" then return end
+  for name, entries in pairs(block.configurations) do
+    for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+      if type(entry) == "table" and type(entry.url) == "string"
+         and not string.find(generated, entry.url, 1, true) then
+        names[name] = true
+      end
+    end
+  end
+end
+
+--- The configuration names the merged config holds a pin for that the previously generated
+--- `tools.lua` does not hold, which are pins written by hand in `daukle.lua`.
+---
+--- @implNote told apart by url, since the merged config does not say which file a pin came from.
+--- Maven's renderer appends, so a name filled by hand and by this task would hold two closures.
+function tool_defaults.hand_pinned(config, generated)
+  local names = {}
+  add_unrecognised(names, config, generated)
+  for _, scope in ipairs({ "modules", "builds" }) do
+    if type(config[scope]) == "table" then
+      for _, block in pairs(config[scope]) do add_unrecognised(names, block, generated) end
+    end
+  end
+  return names
+end
+
 local function roots_of(coordinates)
   local roots = {}
   for index = 1, #coordinates do
