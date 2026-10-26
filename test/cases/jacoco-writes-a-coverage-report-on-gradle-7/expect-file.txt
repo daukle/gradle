@@ -1,0 +1,2 @@
+build/daukle/gradle/build/reports/jacoco/test/html/index.html
+build/daukle/gradle/build/reports/jacoco/test/jacocoTestReport.xml
