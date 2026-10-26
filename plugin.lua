@@ -249,6 +249,7 @@ end
 
 --- @implNote a fresh session per resolution, because a session accumulates what it skipped and
 --- the refusal must name the configuration each skipped dependency belongs to.
+--- @implNote every POM is read through `daukle.cache`, so the second resolution makes no request.
 local function skipped_dependencies_of(resolution)
   local session = resolve.sessions_of(RESOLVER_VERBS)(resolution.repository)
   local _, _, _, skipped = resolve.closures(resolution, session)
