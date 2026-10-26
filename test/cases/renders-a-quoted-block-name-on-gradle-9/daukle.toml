@@ -1,0 +1,18 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A container element whose name is no Groovy identifier, as a Fabric mod id
+# can be: the block is written quoted, and `gradle:classes` proves Gradle read it.
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "distribution" }]
+
+[toolchains.gradle.configure.distributions.my-dist]
+distributionBaseName = "renamed"

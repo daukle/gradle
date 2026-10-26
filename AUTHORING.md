@@ -339,6 +339,11 @@ wrong model.
 **Keys are emitted sorted, values before blocks**, because Lua's `pairs` order is undefined and a
 test compares the file byte for byte.
 
+**A property or method name is a Groovy identifier**, letters, digits and underscores, and anything
+else is refused. **A block name may be any other string**, such as a container element `my-mod`,
+and is then written quoted (`'my-mod' {`), which Gradle reads as the same block; only a backslash
+or a control character is refused there.
+
 ### The four markers, and why each is a table rather than a string
 
 A magic prefix inside a string is a thing a real value collides with one day, so each is a one-key
