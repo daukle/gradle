@@ -6,7 +6,7 @@ version = "1.0.0"
 
 [plugins]
 gradle = "./plugins"
-maven = { url = "https://github.com/daukle/maven/releases/download/1.5.0/plugin.lua", sha256 = "fd8fcdc096c6f89a0e0429356d666480b5379b2a6f13532d1a3788b2c094e884" }
+maven = { url = "https://github.com/daukle/maven/releases/download/1.5.1/plugin.lua", sha256 = "39dba98f6a5b9d009bd296d823e2d6b2836edcd9d5486e2c4561ffb5832a9377" }
 
 # checkstyle is pinned by hand and jacocoAgent is named by an "into", so only jacocoAnt is left.
 [toolchains.gradle]
