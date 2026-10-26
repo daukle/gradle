@@ -142,12 +142,17 @@ local function write_build_file(context, config, options)
                       or paths_of(validation.checked_classpath(config.pluginClasspath,
                                                                "pluginClasspath"))
   local project_options = module_graph.project_options(config)
+  local pinned_plugins, core_plugins = {}, {}
+  if not bare then
+    local pinned, _, core = validation.checked_plugins(config.plugins, "plugins",
+                                                       composite_record.owners)
+    pinned_plugins, core_plugins = pinned, core
+  end
   local project_wide = { release = project_options.release,
                          sources_jar = project_options.sources_jar,
                          version = context.version,
-                         plugins = bare and {}
-                                   or validation.checked_plugins(config.plugins, "plugins",
-                                                                 composite_record.owners),
+                         plugins = pinned_plugins,
+                         core_plugins = core_plugins,
                          included_plugins = bare and {} or composite_record.project_ids,
                          configure = configure,
                          discover = options ~= nil and options.discover or nil }

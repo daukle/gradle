@@ -9,7 +9,7 @@ gradle = "./plugins"
 
 [toolchains.gradle]
 version = "8.13"
-plugins = [{ id = "example.typo" }]
+plugins = [{ version = "1.0.0" }]
 
 [toolchains.gradle.builds.logic]
 gradlePlugins = [{ id = "example.hello", implementationClass = "example.Hello" }]

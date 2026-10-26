@@ -128,6 +128,33 @@ local function is_included_plugin(entry, owners)
          and owners ~= nil and owners[entry.id] ~= nil
 end
 
+local function is_core_plugin(entry, owners)
+  return type(entry) == "table" and type(entry.id) == "string" and entry.version == nil
+         and not is_included_plugin(entry, owners)
+end
+
+--- @implNote only the project's `plugins` takes an id with no version and no owner: Gradle
+--- resolves it from its own distribution and says so itself when it cannot, so daukle keeps no
+--- list of ids. The settings list has no such form and keeps requiring a version.
+local function takes_core_plugins(key)
+  return key == "plugins"
+end
+
+local function is_acceptable_plugin(entry, key, owners)
+  return is_pinned_plugin(entry) or is_included_plugin(entry, owners)
+         or (takes_core_plugins(key) and is_core_plugin(entry, owners))
+end
+
+local function unacceptable_plugin_message(key, index)
+  if takes_core_plugins(key) then
+    return '"' .. key .. '[' .. index .. ']" needs an "id": the id is what Gradle applies, with a'
+           .. ' "version" when a pinned jar carries it'
+  end
+  return '"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
+         .. " applies and the version is what the pinned jars are checked against, or name a"
+         .. ' plugin an included build declares in "gradlePlugins"'
+end
+
 --- Why `checked_plugins` would refuse this list, or nil.
 local function plugins_problem(entries, key, owners)
   if entries == nil then return nil end
@@ -135,29 +162,29 @@ local function plugins_problem(entries, key, owners)
     return '"' .. key .. '" must be a list of entries, not a ' .. type(entries)
   end
   for index = 1, #entries do
-    local entry = entries[index]
-    if not is_pinned_plugin(entry) and not is_included_plugin(entry, owners) then
-      return '"' .. key .. '[' .. index .. ']" needs an "id" and a "version": the id is what Gradle'
-             .. " applies and the version is what the pinned jars are checked against, or name a"
-             .. ' plugin an included build declares in "gradlePlugins"'
+    if not is_acceptable_plugin(entries[index], key, owners) then
+      return unacceptable_plugin_message(key, index)
     end
   end
   return nil
 end
 
+--- @return the pinned entries, the ids an included build owns, and the ids Gradle itself decides
 local function checked_plugins(entries, key, owners)
   key = key or "plugins"
   local problem = plugins_problem(entries, key, owners)
   if problem ~= nil then error(problem, 0) end
-  local pinned, included = {}, {}
+  local pinned, included, core = {}, {}, {}
   for _, entry in ipairs(entries or {}) do
     if is_pinned_plugin(entry) then
       pinned[#pinned + 1] = entry
-    else
+    elseif is_included_plugin(entry, owners) then
       included[#included + 1] = entry.id
+    else
+      core[#core + 1] = entry.id
     end
   end
-  return pinned, included
+  return pinned, included, core
 end
 
 --[[ The jar a plugin is applied from is pinned somewhere else entirely, by
@@ -201,18 +228,18 @@ local function plugin_set_problem(plugins, jars, config, plugins_key, classpath_
 end
 
 local function read_plugin_set(config, plugins_key, classpath_key, owners)
-  local plugins, included = checked_plugins(config[plugins_key], plugins_key, owners)
+  local plugins, included, core = checked_plugins(config[plugins_key], plugins_key, owners)
   local jars = checked_classpath(config[classpath_key], classpath_key)
-  return plugins, jars, included, plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
+  return plugins, jars, included, plugin_set_problem(plugins, jars, config, plugins_key, classpath_key), core
 end
 
 --- One plugin list and the classpath it is applied from, checked together:
 --- the project's `plugins` and `pluginClasspath`, or the settings twins.
---- @return the pinned plugin entries, the pinned classpath entries and the included ids
+--- @return the pinned plugin entries, the pinned classpath entries, the included ids and the core ids
 local function checked_plugin_set(config, plugins_key, classpath_key, owners)
-  local plugins, jars, included, problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  local plugins, jars, included, problem, core = read_plugin_set(config, plugins_key, classpath_key, owners)
   if problem ~= nil then error(problem, 0) end
-  return plugins, jars, included
+  return plugins, jars, included, core
 end
 
 local function plugin_set_problem_of(config, plugins_key, classpath_key, owners)

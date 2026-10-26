@@ -56,7 +56,7 @@ end
 
 --- @param layout   { main = {java, resources}, test = {java, resources} }
 --- @param jars     { compile = {path...}, test = {path...}, plugin = {path...} }
---- @param options  { release, main, plugins, configure, requires, included_plugins,
+--- @param options  { release, main, plugins, core_plugins, configure, requires, included_plugins,
 ---                   required_builds, gradle_plugins, group, version, sources_jar,
 ---                   source_sets }
 --- @param depth    the `file('...')` prefix the source roots resolve against
@@ -109,6 +109,12 @@ local function render_project(layout, jars, options, depth)
     lines[#lines + 1] = "version = " .. groovy.quoted(options.version)
     lines[#lines + 1] = ""
   end
+
+  local core_plugins = options.core_plugins or {}
+  for index = 1, #core_plugins do
+    lines[#lines + 1] = "apply plugin: " .. groovy.quoted(core_plugins[index])
+  end
+  if #core_plugins > 0 then lines[#lines + 1] = "" end
 
   for index = 1, #options.plugins do
     lines[#lines + 1] = "apply plugin: " .. groovy.quoted(options.plugins[index].id)
