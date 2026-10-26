@@ -7,8 +7,7 @@ version = "1.0.0"
 [plugins]
 gradle = "./plugins"
 
-# `jar` is a task, not an extension: a configure key names either, and this one
-# needs no downloaded tool, so the jar's file name is the proof Gradle read it.
+# `jar` is a task, not an extension: a configure key names either.
 [toolchains.gradle]
 release = "8"
 version = "9.6.0"
