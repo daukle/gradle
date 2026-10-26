@@ -1,0 +1,22 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "8.13"
+plugins = [{ id = "distribution" }, { id = "jacoco" }]
+
+[toolchains.gradle.configure.test]
+useJUnitPlatform = { call = [] }
+
+[toolchains.gradle.configure.distributions.main.contents]
+from = { call = ["src/dist"] }
+
+[toolchains.gradle.configure.jacocoTestReport]
+dependsOn = [{ call = ["test"] }, { call = ["classes"] }]

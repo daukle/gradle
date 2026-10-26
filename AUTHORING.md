@@ -279,6 +279,34 @@ block.** The cost is that a plugin with a real nested block named exactly `file`
 string key cannot be expressed; nothing in this tree has one. A table that MIXES a marker key with
 others is refused, which is the mistake that shape invites.
 
+### A method call, and a plain list
+
+A Gradle block is not only assignments and nested blocks: `useJUnitPlatform()` and `from 'src/dist'`
+are method calls, and `applicationDefaultJvmArgs = ['-Xmx1g']` is a list. A method call is a
+one-key table `{ call = [arguments] }` under the method's name; a plain list is a TOML array of
+strings, numbers, booleans or markers.
+
+```toml
+[toolchains.gradle.configure.test]
+useJUnitPlatform = { call = [] }                          # test { useJUnitPlatform() }
+
+[toolchains.gradle.configure.distributions.main.contents]
+from = { call = ["src/dist"] }                            # distributions { main { contents { from('src/dist') } } }
+
+[toolchains.gradle.configure.jacocoTestReport]
+dependsOn = { call = ["test"] }                           # jacocoTestReport { dependsOn('test') }
+
+[toolchains.gradle.configure.application]
+applicationDefaultJvmArgs = ["-Xmx1g"]                    # application { applicationDefaultJvmArgs = ['-Xmx1g'] }
+```
+
+An argument is a string, number, boolean or one of the three markers above, and nothing that
+evaluates Groovy. A key holding an ARRAY of call tables calls the method once per entry
+(`from = [{ call = ["a"] }, { call = ["b"] }]`). Calls render after the assignments and before the
+nested blocks. A `call` table that carries any other key, and a list that mixes blocks, calls and
+plain values, are refused naming the path. As with the markers, a real nested block named `call`
+cannot be expressed.
+
 ### GITHUB_TOKEN reaches Gradle and DAUKLE_TOKEN does not
 
 `daukle.plugin{ env = { "GITHUB_TOKEN" } }`. Core scrubs every credential it knows from a child a
