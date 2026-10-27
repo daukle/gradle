@@ -1,0 +1,59 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# Gradle infers a Scala compiler from a repository and this build declares none, so the
+# compiler is pinned on compileOnly and handed to compileScala by name. The bridge goes in as
+# its SOURCES jar, which Zinc compiles: the binary jar loads the bridge twice and fails.
+[toolchains.gradle]
+release = "8"
+version = "7.6.4"
+plugins = [{ id = "scala" }]
+
+[[toolchains.gradle.classpath]]
+url = "https://repo1.maven.org/maven2/org/scala-lang/scala-library/2.13.16/scala-library-2.13.16.jar"
+sha256 = "1ebb2b6f9e4eb4022497c19b1e1e825019c08514f962aaac197145f88ed730f1"
+as = "scala-library 2.13.16"
+
+[toolchains.gradle.configure.compileScala]
+scalaClasspath = { filesOf = "compileClasspath" }
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/scala-sbt/compiler-interface/1.6.1/compiler-interface-1.6.1.jar"
+sha256 = "91c820d05fdd97ccb3b8a4e0f822804831f4d23a5a53c3c121a1b4019b9b3175"
+as = "compiler-interface 1.6.1"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/scala-lang/scala-compiler/2.13.16/scala-compiler-2.13.16.jar"
+sha256 = "f59982714591e321ba9c087af2c8666e2f5fb92b11a0cef72c2c5e9b342152d3"
+as = "scala-compiler 2.13.16"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/scala-sbt/util-interface/1.6.1/util-interface-1.6.1.jar"
+sha256 = "190d1367ab770ad5925ea22d1b69925326d54be23ecdb67902d7b636ab3968c2"
+as = "util-interface 1.6.1"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/jline/jline-terminal/3.27.1/jline-terminal-3.27.1.jar"
+sha256 = "42b7b756506bca98b505938426a35c99082f7819c333ed25bd4114bfb0e3b5f2"
+as = "jline-terminal 3.27.1"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/scala-lang/scala-reflect/2.13.16/scala-reflect-2.13.16.jar"
+sha256 = "fb49ccd9cac7464486ab993cda20a3c1569d8ef26f052e897577ad2a4970fb1d"
+as = "scala-reflect 2.13.16"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/io/github/java-diff-utils/java-diff-utils/4.15/java-diff-utils-4.15.jar"
+sha256 = "964c69e3a23a892db2778ae6806aa1d42f81230032bd8e4982dc8620582ee6b7"
+as = "java-diff-utils 4.15"
+
+[[toolchains.gradle.compileOnly]]
+url = "https://repo1.maven.org/maven2/org/scala-sbt/compiler-bridge_2.13/1.6.1/compiler-bridge_2.13-1.6.1-sources.jar"
+sha256 = "2a52d15b3b84da6057fa48a2fa20f8eb6291da78adadd4f42682aa6350272cf2"
+as = "compiler-bridge_2.13 1.6.1 sources"
