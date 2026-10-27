@@ -179,6 +179,14 @@ cache**: a bridge compiled from no sources is kept as an empty `compiler-bridge.
 found" until that directory is deleted. `scala-compiles-without-a-repository-on-gradle-9` and `-7`
 are the full manifests.
 
+The two aggregation plugins, `test-report-aggregation` and `jacoco-report-aggregation`, need
+nothing beyond `requires`: plugins render into every module, so each module gets its own aggregate
+task, and the one that requires the others aggregates them through the `implementation project(...)`
+edge. The test report lands in `reports/tests/test/aggregated-results` on 9.6.0 and
+`reports/tests/unit-test/aggregated-results` on 7.6.4. `idea`, `eclipse` and `eclipse-wtp` write
+their files into the generated build under `build/daukle/gradle`, not the project root, so an IDE
+opening the project does not see them.
+
 A plugin that downloads a tool when Gradle resolves one of its configurations needs that
 configuration pinned, because the generated build declares no repository. `configurations.<name>`
 is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need
