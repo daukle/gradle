@@ -1,0 +1,2 @@
+build/daukle/gradle/build.gradle   useJUnitPlatform() {
+build/daukle/gradle/build.gradle     includeTags('fast')
