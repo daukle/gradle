@@ -1,0 +1,2 @@
+build/daukle/gradle/.project
+build/daukle/gradle/.classpath

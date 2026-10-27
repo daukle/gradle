@@ -1,0 +1,2 @@
+build/daukle/gradle/.settings/org.eclipse.wst.common.component
+build/daukle/gradle/.settings/org.eclipse.wst.common.project.facet.core.xml

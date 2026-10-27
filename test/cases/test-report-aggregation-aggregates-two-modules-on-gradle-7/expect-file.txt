@@ -1,0 +1,2 @@
+build/daukle/gradle/app/build/reports/tests/unit-test/aggregated-results/index.html
+build/daukle/gradle/app/build/reports/tests/unit-test/aggregated-results/classes/example.GreeterTest.html
