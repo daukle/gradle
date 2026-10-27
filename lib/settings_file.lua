@@ -205,7 +205,8 @@ end
 --- command and fell back to a copy without a word.
 --- @implNote what was placed is recorded under the never-linked `build/`, so a
 --- later render without logic can refuse to write through a hard link, which
---- no listing tells apart from a plain file.
+--- no listing tells apart from a plain file. The record exists before the
+--- first link does, so a run that dies while placing still leaves it.
 --- @param real_directory the real directory, relative to the settings directory
 function settings_file.root_links(real_directory)
   return table.concat({
@@ -285,6 +286,9 @@ function settings_file.root_links(real_directory)
     "  Files.exists(link) && Files.isSameFile(link, target)",
     "}",
     "",
+    "def daukleRecordFile = daukleDerived.resolve(" .. groovy.quoted(carried.LINK_RECORD) .. ")",
+    "Files.createDirectories(daukleRecordFile.parent)",
+    "daukleRecordFile.toFile().text = 'placing\\n'",
     "daukleDerived.toFile().listFiles().each { File entry ->",
     "  if (daukleIsLink(entry.toPath()) && !daukleReal.resolve(entry.name).toFile().exists()) {",
     "    Files.delete(entry.toPath())",
@@ -303,8 +307,6 @@ function settings_file.root_links(real_directory)
     "  if (Files.exists(link, LinkOption.NOFOLLOW_LINKS)) daukleRemove(link)",
     "  daukleRecord << daukleLink(target, link) + ' ' + entry.name",
     "}",
-    "def daukleRecordFile = daukleDerived.resolve(" .. groovy.quoted(carried.LINK_RECORD) .. ")",
-    "Files.createDirectories(daukleRecordFile.parent)",
     "daukleRecordFile.toFile().text = daukleRecord.join('\\n') + '\\n'",
   }, "\n") .. "\n"
 end
