@@ -164,17 +164,20 @@ end
 --- so on along the chain: a caller that is itself a definition is called in
 --- turn. A definition carried only by rule 3 never enters `active`.
 local function carry_callers(statements, active, carried)
-  local changed = false
-  for _, definition in pairs(active) do
-    for _, caller in ipairs(statements) do
-      if caller ~= definition and is_used_by(definition, caller) then
-        changed = add(carried, caller) or changed
-        if caller.definition and not active[caller.index] then
-          active[caller.index] = caller
-          changed = true
+  local changed, activated = false, {}
+  for _, definition in ipairs(statements) do
+    if active[definition.index] then
+      for _, caller in ipairs(statements) do
+        if caller ~= definition and is_used_by(definition, caller) then
+          changed = add(carried, caller) or changed
+          if caller.definition and not active[caller.index] then activated[caller.index] = true end
         end
       end
     end
+  end
+  for index in pairs(activated) do
+    active[index] = true
+    changed = true
   end
   return changed
 end
