@@ -1,3 +1,10 @@
+/*
+ * A header comment, an annotation and a line comment ahead of the import,
+ * which the wrapper must still lift above its own plugins {} block.
+ */
+@file:Suppress("DEPRECATION")
+
+// the extension's own class, configured below
 import org.barfuin.gradle.taskinfo.TaskInfoExtension
 
 val generateConfig by tasks.registering {

@@ -17,7 +17,19 @@ end
 local function is_lifted_line(line)
   return string.match(line, "^%s*$") ~= nil
          or string.match(line, "^%s*//") ~= nil
+         or string.match(line, "^%s*@file:") ~= nil
          or string.match(line, "^%s*import%s") ~= nil
+end
+
+local function line_end_at(text, offset)
+  return string.find(text, "\n", offset, true) or #text
+end
+
+--- Where the line after a block comment opening at `offset` starts.
+local function after_block_comment(text, offset)
+  local closing = string.find(text, "*/", offset, true)
+  if closing == nil then return #text + 1 end
+  return line_end_at(text, closing) + 1
 end
 
 --- The carried text split before its first statement that is not an import,
@@ -25,14 +37,20 @@ end
 ---
 --- @implNote Kotlin takes an import only ahead of every other statement, so the
 --- wrapper's own blocks would end the import list (spec 7.2). A script that
---- compiled already has its imports first, which is why a split on leading
---- import, comment and blank lines finds them without parsing anything.
+--- compiled already has its imports first, after only blank lines, comments
+--- and `@file:` annotations, which is why a split on those lines finds them
+--- without parsing anything.
 local function split_imports(text)
   local offset = 1
   while offset <= #text do
-    local line_end = string.find(text, "\n", offset, true) or #text
-    if not is_lifted_line(string.sub(text, offset, line_end)) then break end
-    offset = line_end + 1
+    local line = string.sub(text, offset, line_end_at(text, offset))
+    if string.match(line, "^%s*/%*") ~= nil then
+      offset = after_block_comment(text, offset)
+    elseif is_lifted_line(line) then
+      offset = line_end_at(text, offset) + 1
+    else
+      break
+    end
   end
   return string.sub(text, 1, offset - 1), string.sub(text, offset)
 end
