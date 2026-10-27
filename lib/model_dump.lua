@@ -1,3 +1,5 @@
+local model_dump_parse = daukle.require("lib/model_dump_parse")
+
 --- The init script that writes a Gradle build's evaluated model as JSON.
 ---
 --- @implNote the dump runs at `gradle.taskGraph.whenReady`, because a value a
@@ -679,6 +681,8 @@ def TASK_READERS = [[org.gradle.api.tasks.bundling.Jar, 'jar', jarReader],
                     [org.gradle.api.tasks.javadoc.Javadoc, 'javadoc', javadocReader],
                     [org.gradle.api.tasks.JavaExec, 'javaExec', javaExecReader]]
 
+]==] .. model_dump_parse.SCRIPT .. [==[
+
 def actionsOf = { File base, task ->
   task.actions.collect { action ->
     def inner = action
@@ -686,7 +690,8 @@ def actionsOf = { File base, task ->
     def closure = null
     try { closure = inner.closure } catch (Throwable ignored) { }
     def type = closure != null ? closure.getClass() : inner.getClass()
-    [type: type.name, script: scriptOf(base, type)]
+    def entry = [type: type.name, script: scriptOf(base, type)]
+    entry.script == null ? entry : entry + actionLinesOf(base, type)
   }
 }
 
@@ -714,7 +719,8 @@ def projectOf = { File base, project ->
    parent: project.parent?.path, children: project.childProjects.values().collect { it.path },
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
-   dependencies: dependenciesOf(project), tasks: tasksOf(base, project)]
+   dependencies: dependenciesOf(project), tasks: tasksOf(base, project),
+   script: scriptInventoryOf(base, gradle.gradleHomeDir, project)]
 }
 
 def repositoriesByName = { Iterable repositories ->
@@ -835,7 +841,9 @@ gradle.taskGraph.whenReady {
                settingsExtensions: settingsFacts.settingsExtensions ?: [:],
                settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
                settingsCore: settingsFacts.settingsCore ?: [:],
-               projects: gradle.rootProject.allprojects.collect { projectOf(base, it) }]
+               projects: []]
+  try { model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it) } }
+  finally { closeKotlinParsers() }
   def file = outputFor(gradle)
   file.parentFile.mkdirs()
   file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(withoutEnvironment(model))), 'UTF-8')

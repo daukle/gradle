@@ -1,0 +1,3 @@
+build/daukle/gradle/migrate-model.json "dsl": "kotlin",
+build/daukle/gradle/migrate-model.json "text": "val gen by tasks.registering {\n
+build/daukle/gradle/migrate-model.json "lastLine": 20

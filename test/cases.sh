@@ -261,9 +261,9 @@ tree_has_paths() {
 }
 
 # A migrate case asserts its exit code (expect-exit.txt), then what the output
-# and the files it names carry, with the same expect-output.txt and
-# expect-contains.txt every other case uses, then expect-manifest.txt, then
-# the paths it expects present and absent.
+# and the files it names carry and lack, with the same expect-output.txt,
+# expect-contains.txt and expect-lacks.txt every other case uses, then
+# expect-manifest.txt, then the paths it expects present and absent.
 run_migrate_case() {
   serve_plugin || return 0
   status=0
@@ -279,6 +279,7 @@ run_migrate_case() {
   fi
   output_carries_clauses || return 0
   files_carry_literals || return 0
+  files_lack_literals || return 0
   manifest_carries_clauses || return 0
   tree_has_paths || return 0
   passed=$((passed + 1))
