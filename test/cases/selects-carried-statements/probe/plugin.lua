@@ -32,6 +32,28 @@ local function project_with(actions, script_overrides)
   return { script = script, tasks = { { name = "greet", actions = actions } } }
 end
 
+local function project_of_statements(statements)
+  return project_with({}, { statements = statements })
+end
+
+local HELPER_CHAIN = {
+  statement(1, 1, { definition = true, defines = { "inner" }, registers = { "made" } }),
+  definition(2, 3, "outer", { "inner" }),
+  statement(3, 5, { uses = { "outer" } }),
+}
+
+local USED_ONLY_BY_RULE_THREE = {
+  statement(1, 1, { registers = { "greet" }, uses = { "helper" } }),
+  definition(2, 3, "helper"),
+  statement(3, 5, { uses = { "helper" } }),
+}
+
+local CALLER_EXTENDED_BY_RULE_THREE = {
+  definition(1, 1, "tool"),
+  statement(2, 3, { definition = true, defines = { "addMade" }, registers = { "made" } }),
+  statement(3, 5, { uses = { "addMade", "tool" } }),
+}
+
 local function indices(selection)
   local found = {}
   for _, selected in ipairs(selection.carried) do found[#found + 1] = tostring(selected.index) end
@@ -71,6 +93,21 @@ local CASES = {
   { "an action whose line no statement holds blocks by its task",
     function() return migrate_logic.select(project_with({ { sourceFile = "build.gradle", lastLine = 99 } }), {}, "root") end,
     "carried= blocked=greet" },
+  { "two unheld actions of one task block once",
+    function()
+      return migrate_logic.select(project_with({ { sourceFile = "build.gradle", lastLine = 98 },
+                                                 { sourceFile = "build.gradle", lastLine = 99 } }), {}, "root")
+    end,
+    "carried= blocked=greet" },
+  { "rule 4 follows a chain of helpers",
+    function() return migrate_logic.select(project_of_statements(HELPER_CHAIN), { "made" }, "root") end,
+    "carried=1,2,3 blocked=" },
+  { "a definition carried only by rule 3 does not pull its other callers",
+    function() return migrate_logic.select(project_of_statements(USED_ONLY_BY_RULE_THREE), { "greet" }, "root") end,
+    "carried=1,2 blocked=" },
+  { "rule 3 extends what rule 4 carried",
+    function() return migrate_logic.select(project_of_statements(CALLER_EXTENDED_BY_RULE_THREE), { "made" }, "root") end,
+    "carried=1,2,3 blocked=" },
   { "a script that did not parse blocks with the reason",
     function() return migrate_logic.select(project_with({}, { unparsed = "unexpected token", statements = false }), {}, "root") end,
     "carried= blocked=unexpected token" },

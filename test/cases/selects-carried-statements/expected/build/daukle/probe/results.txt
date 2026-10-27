@@ -4,6 +4,10 @@ ok a missing task no statement registers blocks by name
 ok an action compiled from another file blocks naming that file
 ok a bare source file name matches the script's last segment whatever its case
 ok an action whose line no statement holds blocks by its task
+ok two unheld actions of one task block once
+ok rule 4 follows a chain of helpers
+ok a definition carried only by rule 3 does not pull its other callers
+ok rule 3 extends what rule 4 carried
 ok a script that did not parse blocks with the reason
 ok a task action with no compiled script is ignored
 ok daukle/gradle/logic/brazier/tools/idea.gradle.kts

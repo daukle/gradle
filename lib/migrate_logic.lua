@@ -28,7 +28,9 @@ end
 --- @implNote a class's `SourceFile` attribute is the bare file name unless the
 --- file lies outside the build, while `script.path` is relative to it, so a
 --- name without a separator is compared with the path's last segment. Case is
---- folded because Windows paths are case-insensitive.
+--- folded because Windows paths are case-insensitive. A bare name can collide
+--- only with an applied or settings script of the same name, and such a build
+--- is blocked by its apply-from blocker.
 local function is_build_script(source_file, script_path)
   local wanted, actual = normalized(source_file), normalized(script_path)
   if wanted == actual then return true end
@@ -69,7 +71,7 @@ end
 --- Rule 1: the statements holding a script-compiled action's last line, and
 --- the blockers for an action that no statement of the build script holds.
 local function statements_with_actions(script, tasks, where)
-  local seeds, blockers, reported = {}, {}, {}
+  local seeds, blockers, reported, reported_tasks = {}, {}, {}, {}
   for _, action in ipairs(script_actions({ tasks = tasks })) do
     if not is_build_script(action.sourceFile, script.path) then
       if not reported[action.sourceFile] then
@@ -81,7 +83,8 @@ local function statements_with_actions(script, tasks, where)
       local statement = action.lastLine and statement_holding(script.statements, action.lastLine)
       if statement then
         seeds[#seeds + 1] = statement
-      else
+      elseif not reported_tasks[action.task] then
+        reported_tasks[action.task] = true
         blockers[#blockers + 1] = boundary_blocker(action.task, where, "has an action compiled from "
           .. script.path .. " that no statement of it holds")
       end
@@ -149,14 +152,26 @@ local function carry_used_definitions(statements, carried)
   return changed
 end
 
---- Rule 4: statements calling a definition that rule 1 or 2 landed in.
-local function carry_callers(statements, seeds, carried)
+local function activate_definitions(statements)
+  local active = {}
+  for _, statement in ipairs(statements) do
+    if statement.definition then active[statement.index] = statement end
+  end
+  return active
+end
+
+--- Rule 4: statements calling a definition that rule 1 or 2 landed in, and
+--- so on along the chain: a caller that is itself a definition is called in
+--- turn. A definition carried only by rule 3 never enters `active`.
+local function carry_callers(statements, active, carried)
   local changed = false
-  for _, seed in ipairs(seeds) do
-    if seed.definition then
-      for _, caller in ipairs(statements) do
-        if caller ~= seed and is_used_by(seed, caller) then
-          changed = add(carried, caller) or changed
+  for _, definition in pairs(active) do
+    for _, caller in ipairs(statements) do
+      if caller ~= definition and is_used_by(definition, caller) then
+        changed = add(carried, caller) or changed
+        if caller.definition and not active[caller.index] then
+          active[caller.index] = caller
+          changed = true
         end
       end
     end
@@ -194,9 +209,10 @@ function migrate_logic.select(project, missing_task_names, where)
   append_all(seeds, statements_registering(statements, missing_task_names))
   local carried = {}
   for _, seed in ipairs(seeds) do add(carried, seed) end
+  local active = activate_definitions(seeds)
   repeat
     local changed = carry_used_definitions(statements, carried)
-    changed = carry_callers(statements, seeds, carried) or changed
+    changed = carry_callers(statements, active, carried) or changed
   until not changed
   append_all(blockers, unregistered_blockers(statements, missing_task_names, carried, where))
   return { carried = in_source_order(statements, carried), blockers = blockers }
