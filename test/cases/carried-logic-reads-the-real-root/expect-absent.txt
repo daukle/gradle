@@ -1,0 +1,6 @@
+build.gradle
+settings.gradle
+.gradle
+gradlew
+app/build
+app/.gradle

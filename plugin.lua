@@ -51,6 +51,7 @@ local migrator = daukle.require("lib/migrator")
 local tool_defaults = daukle.require("lib/tool_defaults")
 local configurations = daukle.require("lib/configurations")
 local module_graph = daukle.require("lib/modules")
+local carried = daukle.require("lib/carried")
 local resolve = daukle.require("maven:lib/resolve")
 local output = daukle.require("maven:lib/output")
 local pom = daukle.require("maven:lib/pom")
@@ -69,7 +70,7 @@ daukle.toolchain{
   generate = function(context)
     local config = validation.config_of(context)
     validation.validated(context, config)
-    return { [writer.SETTINGS_FILE] = writer.settings_text(context, config) }
+    return writer.generated_files(context, config)
   end,
 }
 
@@ -90,6 +91,10 @@ local function run_gradle(context, config, arguments, options)
          than quietly downloading. ]]
     "--offline",
   }
+  if carried.build_carries(config) then
+    argv[#argv + 1] = "--project-cache-dir"
+    argv[#argv + 1] = ".gradle"
+  end
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
   return launcher.run(context, validation.gradle_version_of(context), validation.jdk_version_of(config),
                       argv, options)

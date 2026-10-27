@@ -1,0 +1,15 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A hand-written manifest naming a carried Groovy file, no migration: the
+# generated build runs the carried task, and the class its doLast writes is
+# compiled into the jar, which only happens if the carried code ran.
+[toolchains.gradle]
+version = "9.6.0"
+logic = "daukle/gradle/logic/root/root.gradle"

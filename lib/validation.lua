@@ -6,6 +6,7 @@ local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
 local source_sets = daukle.require("lib/source_sets")
 local extensions = daukle.require("lib/extensions")
+local carried = daukle.require("lib/carried")
 
 local DEFAULT_JDK = "17"
 
@@ -93,6 +94,7 @@ local function checked_modules(config, declared, read)
       named = configurations.overridden(project_wide, configurations.named(block, scope)),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
+      logic = carried.checked(block.logic, scope .. "logic"),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -119,7 +121,8 @@ local function checked_builds(context, config)
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
       entries = entries_of_configurations(build.block, scope),
-      named = configurations.named(build.block, scope) }
+      named = configurations.named(build.block, scope),
+      logic = carried.checked(build.block.logic, scope .. "logic") }
   end
   return checked, read
 end
@@ -324,6 +327,7 @@ local function validated(context, config)
   distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
+  carried.checked(config.logic, "logic")
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   local record = composite_of(context, config)

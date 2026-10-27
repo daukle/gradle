@@ -344,10 +344,10 @@ run_case() {
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
-         "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve"
+         "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve" \
+         "$sandbox/expect-absent.txt"
   if [ -f "$case_dir/migrate" ]; then
-    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
-          "$sandbox/expect-absent.txt"
+    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
     run_migrate_case
     return
   fi
@@ -373,6 +373,7 @@ run_case() {
       return
     fi
     output_carries_clauses || return 0
+    tree_has_paths || return 0
     passed=$((passed + 1))
     return
   fi
@@ -407,6 +408,7 @@ run_case() {
   files_carry_literals || return 0
   files_carry_blocks || return 0
   files_lack_literals || return 0
+  tree_has_paths || return 0
 
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails

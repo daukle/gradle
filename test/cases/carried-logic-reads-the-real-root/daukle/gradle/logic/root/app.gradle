@@ -1,0 +1,7 @@
+tasks.named('compileJava') {
+    dependsOn ':readTheRoot'
+    doLast {
+        println 'module file() reads ' + file('local.txt').text.trim()
+        println 'module rootProject.file reads ' + rootProject.file('config/greeting.txt').text.trim()
+    }
+}

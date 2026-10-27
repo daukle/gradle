@@ -7,6 +7,8 @@ local validation = daukle.require("lib/validation")
 local composite = daukle.require("lib/composite")
 local source_sets = daukle.require("lib/source_sets")
 local builds = daukle.require("lib/builds")
+local carried = daukle.require("lib/carried")
+local build_file_kotlin = daukle.require("lib/build_file_kotlin")
 
 local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
@@ -76,23 +78,80 @@ local function write_settings_plugins(config, owners)
   }
 end
 
+--- A daukle.write follows a link and writes in place, so a build file written
+--- into a directory a carrying build linked would land in the user's own tree.
+local function refuse_links_left_in(directory)
+  for _, entry in ipairs(daukle.list(directory) or {}) do
+    if entry.kind == "link" then
+      error('"' .. directory .. "/" .. entry.name .. '" is a link a build carrying logic left to'
+            .. " the project's own \"" .. entry.name .. '": run "daukle clean" before building'
+            .. ' without "logic"', 0)
+    end
+  end
+end
+
+--- The Groovy render of one project of a carrying build, plain or for a wrapper.
+---
+--- @param depth_name the name the project's paths start with, nil for a main root
+--- @param script_name the name its files are written under, nil for any root
+local function real_tree_render(depth_name, script_name, layout, jars, options)
+  return function(wrapped)
+    return build_file.real_tree_project(depth_name, layout, jars, extended(options, {
+      real_tree = { build_directory = carried.build_directory_of(script_name), wrapped = wrapped },
+    }))
+  end
+end
+
+--- One project of a carrying build: its render alone, its render with the
+--- carried Groovy after it, or a Kotlin wrapper applying the render.
+---
+--- @param project { directory, name, logic, label, render = function(wrapped), ids }
+local function write_carrying_project(project, carried_texts)
+  local script = project.directory .. carried.script_of(project.name, project.logic)
+  if project.logic == nil then
+    return daukle.write{ path = script, text = project.render(false) }
+  end
+  local text = carried.text_of(project.label, project.logic, carried_texts)
+  if not carried.is_kotlin(project.logic) then
+    return daukle.write{ path = script, text = project.render(false) .. "\n" .. text }
+  end
+  local rendered = carried.rendered_of(project.name)
+  daukle.write{ path = project.directory .. rendered, text = project.render(true) }
+  daukle.write{ path = script, text = build_file_kotlin.wrapper(project.ids, rendered, text) }
+end
+
+local function write_carrying_included_build(build, at, jars, options, carried_texts)
+  daukle.write{ path = at .. "/" .. carried.ROOT_LINKS,
+                text = settings_file.root_links(carried.real_directory_of_included(build.name)) }
+  daukle.write{ path = at .. "/settings.gradle",
+                text = settings_file.included_real_tree_settings(build.gradle_name,
+                                                                 carried.script_of(nil, build.logic)) }
+  write_carrying_project({ directory = at .. "/", logic = build.logic,
+                           label = "builds." .. build.name .. ".logic",
+                           render = real_tree_render(build.name, nil, build.layout, jars, options),
+                           ids = build_file.plugin_ids(jars, options) }, carried_texts)
+end
+
 --- @implNote written on every run, the bare discovery render included:
 --- settings.gradle includes every declared build, so Gradle fails on any run
 --- that starts without them.
-local function write_included_builds(checked, named_of)
+local function write_included_builds(checked, named_of, carried_texts)
   for index = 1, #checked do
     local build = checked[index]
     local at = composite.path_of(build.name)
     junit.refuse_a_missing_launcher(test_reachable(build.entries))
-    daukle.write{ path = at .. "/settings.gradle",
-                  text = settings_file.included_settings(build.gradle_name) }
-    daukle.write{ path = at .. "/" .. BUILD_FILE,
-                  text = build_file.included(build.name, build.layout,
-                                             jars_of(build.entries, {}, named_of(build.named)),
-                                             { release = build.release, plugins = {},
-                                               gradle_plugins = build.gradle_plugins,
-                                               group = (not build.plugin_build)
-                                                       and composite.GROUP or nil }) }
+    local jars = jars_of(build.entries, {}, named_of(build.named))
+    local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
+                      group = (not build.plugin_build) and composite.GROUP or nil }
+    if build.logic ~= nil then
+      write_carrying_included_build(build, at, jars, options, carried_texts)
+    else
+      refuse_links_left_in(carried.DERIVED .. "/" .. at)
+      daukle.write{ path = at .. "/settings.gradle",
+                    text = settings_file.included_settings(build.gradle_name) }
+      daukle.write{ path = at .. "/" .. BUILD_FILE,
+                    text = build_file.included(build.name, build.layout, jars, options) }
+    end
   end
 end
 
@@ -102,6 +161,108 @@ end
 --- Gradle 8 and dies on the next major.
 local function refuse_a_module_missing_launcher(module)
   junit.refuse_a_missing_launcher(test_reachable(module.entries))
+end
+
+local function module_options(project_wide, module)
+  return extended(project_wide, { main = module.main,
+                                  requires = module.requires,
+                                  required_builds = module.required_builds,
+                                  source_sets = with_paths(module.source_sets) })
+end
+
+--- @implNote the root file is written on every multi-project run, carrying only
+--- its header when there is no plugin classpath. A task's write is not in
+--- core's generate ledger and core prunes nothing, so a single-project build
+--- file an earlier build left at the derived root would otherwise stay the root
+--- project of this one, with its own source roots, its own jar and its own
+--- daukleRun. An undeclared parent of a nested module gets a header-only file
+--- for the same reason: it was a module once, and Gradle would read what that
+--- run left in its directory.
+local function write_today(build)
+  refuse_links_left_in(carried.DERIVED)
+  if #build.declared == 0 then
+    return daukle.write{
+      path = BUILD_FILE,
+      text = build_file.render(validation.layout_of(build.config),
+                               jars_of(build.entries, build.plugin_jars,
+                                       build.named_of(configurations.named(build.config, ""))),
+                               build.root_options),
+    }
+  end
+
+  daukle.write{ path = BUILD_FILE, text = build_file.buildscript(build.plugin_jars) }
+
+  for _, module in ipairs(build.modules) do
+    refuse_a_module_missing_launcher(module)
+    daukle.write{
+      path = module.name .. "/" .. BUILD_FILE,
+      text = build_file.module(module.name, module.layout,
+                               jars_of(module.entries, {}, build.named_of(module.named)),
+                               module_options(build.project_wide, module)),
+    }
+  end
+
+  for _, parent in ipairs(module_graph.undeclared_parents(build.declared)) do
+    daukle.write{ path = parent .. "/" .. BUILD_FILE, text = build_file.empty_project() }
+  end
+end
+
+local function write_carrying_root(build, root_jars)
+  local config = build.config
+  if #build.declared > 0 then
+    return write_carrying_project({ directory = "", logic = config.logic, label = "logic",
+                                    render = function() return build_file.real_tree_header(root_jars) end,
+                                    ids = {} }, build.carried_texts)
+  end
+  local jars = jars_of(build.entries, root_jars, build.named_of(configurations.named(config, "")))
+  write_carrying_project({ directory = "", logic = config.logic, label = "logic",
+                           render = real_tree_render(nil, nil, validation.layout_of(config), jars,
+                                                     build.root_options),
+                           ids = build_file.plugin_ids(jars, build.root_options) },
+                         build.carried_texts)
+end
+
+--- Every project in its real directory, its files under `build/scripts/`.
+---
+--- @implNote with the classpath in settings.gradle no project file declares
+--- one, since every project's classloader already has it.
+local function write_real_tree(build)
+  local in_settings = carried.classpath_in_settings(build.config)
+  if in_settings then
+    daukle.write{ path = carried.PLUGIN_CLASSPATH,
+                  text = table.concat(build.plugin_jars, "\n") .. "\n" }
+  end
+  write_carrying_root(build, in_settings and {} or build.plugin_jars)
+  for _, module in ipairs(build.modules) do
+    refuse_a_module_missing_launcher(module)
+    local jars = jars_of(module.entries, {}, build.named_of(module.named))
+    local options = module_options(build.project_wide, module)
+    write_carrying_project({ directory = "", name = module.name, logic = module.logic,
+                             label = "modules." .. module.name .. ".logic",
+                             render = real_tree_render(module.name, module.name, module.layout,
+                                                       jars, options),
+                             ids = build_file.plugin_ids(jars, options) }, build.carried_texts)
+  end
+  for _, parent in ipairs(module_graph.undeclared_parents(build.declared)) do
+    daukle.write{ path = carried.script_of(parent, nil), text = build_file.empty_project() }
+  end
+end
+
+--- What settings.gradle names for a build that carries logic, or nil.
+local function real_tree_settings(config, declared)
+  if not carried.build_carries(config) then return nil end
+  local blocks = type(config.modules) == "table" and config.modules or {}
+  local projects = {}
+  for _, module in ipairs(declared) do
+    local block = blocks[module.name] or {}
+    projects[#projects + 1] = { name = module.name, script = carried.script_of(module.name, block.logic) }
+  end
+  for _, parent in ipairs(module_graph.undeclared_parents(declared)) do
+    projects[#projects + 1] = { name = parent, script = carried.script_of(parent, nil) }
+  end
+  return { root_script = carried.script_of(nil, config.logic),
+           classpath_file = carried.classpath_in_settings(config) and carried.PLUGIN_CLASSPATH or nil,
+           projects = projects }
 end
 
 --- Every build file Gradle reads, written into the derived directory.
@@ -117,14 +278,8 @@ end
 --- rendered into EVERY module rather than into an `allprojects {}` block: the
 --- renderer is the only writer, so the duplication costs a reader nothing and
 --- there is no second configuration mechanism to learn.
---- @implNote the root file is written on every multi-project run, carrying only
---- its header when there is no plugin classpath. A task's write is not in
---- core's generate ledger and core prunes nothing, so a single-project build
---- file an earlier build left at the derived root would otherwise stay the root
---- project of this one, with its own source roots, its own jar and its own
---- daukleRun. An undeclared parent of a nested module gets a header-only file
---- for the same reason: it was a module once, and Gradle would read what that
---- run left in its directory.
+--- @implNote `options.carried_texts`, keyed like the `logic` values, stands in
+--- for the carried files: the migrator renders before core has written them.
 local function write_build_file(context, config, options)
   --[[ Again here and not only in generate: a task is reachable without a sync,
        so a check that only ran there would be a check a user can walk past. ]]
@@ -136,8 +291,9 @@ local function write_build_file(context, config, options)
     if bare or without_named then return {} end
     return named
   end
+  local carried_texts = options ~= nil and options.carried_texts or nil
   write_settings_plugins(config, composite_record.owners)
-  write_included_builds(composite_record.builds, named_of)
+  write_included_builds(composite_record.builds, named_of, carried_texts)
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]
   local configure = config.configure
@@ -167,52 +323,40 @@ local function write_build_file(context, config, options)
                          configure = configure,
                          discover = options ~= nil and options.discover or nil }
 
-  local declared = module_graph.declared(context)
-  if #declared == 0 then
-    return daukle.write{
-      path = BUILD_FILE,
-      text = build_file.render(validation.layout_of(config),
-                               jars_of(entries, plugin_jars,
-                                       named_of(configurations.named(config, ""))),
-                               extended(project_wide,
-                                        { main = project_options.main,
-                                          required_builds = composite_record.required,
-                                          source_sets = with_paths(source_sets.read(config, nil)) })),
-    }
-  end
-
-  daukle.write{ path = BUILD_FILE, text = build_file.buildscript(plugin_jars) }
-
-  local modules = validation.checked_modules(config, declared, composite_record.read)
-  for index = 1, #modules do
-    local module = modules[index]
-    refuse_a_module_missing_launcher(module)
-    daukle.write{
-      path = module.name .. "/" .. BUILD_FILE,
-      text = build_file.module(module.name, module.layout,
-                               jars_of(module.entries, {}, named_of(module.named)),
-                               extended(project_wide,
-                                        { main = module.main,
-                                          requires = module.requires,
-                                          required_builds = module.required_builds,
-                                          source_sets = with_paths(module.source_sets) })),
-    }
-  end
-
-  local parents = module_graph.undeclared_parents(declared)
-  for index = 1, #parents do
-    daukle.write{ path = parents[index] .. "/" .. BUILD_FILE, text = build_file.empty_project() }
-  end
+  local build = {
+    config = config, entries = entries, plugin_jars = plugin_jars, named_of = named_of,
+    project_wide = project_wide, carried_texts = carried_texts,
+    root_options = extended(project_wide,
+                            { main = project_options.main,
+                              required_builds = composite_record.required,
+                              source_sets = with_paths(source_sets.read(config, nil)) }),
+    declared = module_graph.declared(context),
+  }
+  build.modules = #build.declared > 0
+                  and validation.checked_modules(config, build.declared, composite_record.read)
+                  or {}
+  if carried.build_carries(config) then return write_real_tree(build) end
+  write_today(build)
 end
 
---- The settings.gradle a validated config renders: generate returns it, and
---- the migrator writes it beside the build file it renders for its task-set
---- comparison, so both read one renderer.
+--- The files generate returns: settings.gradle, and for a build that carries
+--- logic the root links script it applies. The migrator writes the same text
+--- for its task-set comparison, so both read one renderer.
 local function settings_text(context, config)
   local record = validation.composite_of(context, config)
   local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
-  return settings_file.settings(validation.project_name(context), module_graph.declared(context),
-                                applies_settings_plugins, record)
+  local declared = module_graph.declared(context)
+  return settings_file.settings(validation.project_name(context), declared,
+                                applies_settings_plugins, record,
+                                real_tree_settings(config, declared))
+end
+
+local function generated_files(context, config)
+  local files = { [SETTINGS_FILE] = settings_text(context, config) }
+  if carried.build_carries(config) then
+    files[carried.ROOT_LINKS] = settings_file.root_links(carried.REAL_ROOT)
+  end
+  return files
 end
 
 local function append_launcher_problem(problems, entries)
@@ -237,6 +381,18 @@ local function per_project_problems(config, declared, problems)
   end
 end
 
+local function append_logic_problems(config, carried_texts, problems)
+  local paths = carried.paths_of(config)
+  local labels = {}
+  for label in pairs(paths) do labels[#labels + 1] = label end
+  table.sort(labels)
+  for _, label in ipairs(labels) do
+    local problem = carried.problem_of(paths[label], label)
+                    or carried.missing_problem(label, paths[label], carried_texts)
+    if problem ~= nil then problems[#problems + 1] = problem end
+  end
+end
+
 --- What `write_build_file` would refuse in this config, as reasons rather
 --- than a raise, for the migrator, which reports a refusal as a blocker.
 ---
@@ -245,7 +401,9 @@ end
 --- the JUnit launcher and two modules declaring `main`. Every other check in
 --- `validated` is on a shape the translation never writes. A refused graph or
 --- build list is returned alone, because every later check reads them.
-local function generation_problems(context, config)
+--- @param carried_texts the carried files' text keyed like the `logic` values,
+--- standing in for files core has not written yet; nil reads them
+local function generation_problems(context, config, carried_texts)
   local graph = module_graph.declared_problem(context)
   if graph ~= nil then return { graph } end
   local declared = module_graph.declared(context)
@@ -254,11 +412,13 @@ local function generation_problems(context, config)
   local problems = validation.plugin_set_problems(context, config)
   append_launcher_problem(problems, validation.entries_of_configurations(config, ""))
   per_project_problems(config, declared, problems)
+  append_logic_problems(config, carried_texts, problems)
   return problems
 end
 
 return {
   SETTINGS_FILE = SETTINGS_FILE,
+  generated_files = generated_files,
   generation_problems = generation_problems,
   settings_text = settings_text,
   write_build_file = write_build_file,

@@ -1,0 +1,23 @@
+schema = 1
+project = "example/two"
+version = "1.0.0"
+
+[modules.app]
+requires = ["lib"]
+
+[modules.lib]
+
+[plugins]
+gradle = "./plugins"
+
+# A module carrying Kotlin beside one carrying Groovy, on Gradle 7: every module
+# of a build that carries logic runs from its real directory, and a module's
+# Kotlin wrapper reaches its Groovy render through rootProject.file.
+[toolchains.gradle]
+version = "7.6.4"
+
+[toolchains.gradle.modules.app]
+logic = "daukle/gradle/logic/root/app.gradle.kts"
+
+[toolchains.gradle.modules.lib]
+logic = "daukle/gradle/logic/root/lib.gradle"
