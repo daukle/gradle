@@ -13,12 +13,13 @@ local ROOT = "root"
 
 --- @param build "root" or the included build's directory name
 --- @param project_path ":" for a build's root project, else ":a:b"
-function migrate_logic.file_path(build, project_path, dsl)
+--- @param instance the toolchain instance, whose `daukle/<instance>/` holds the file
+function migrate_logic.file_path(build, project_path, dsl, instance)
   local project = ROOT
   if project_path ~= ":" then
     project = string.gsub(string.sub(project_path, 2), ":", "/")
   end
-  return "daukle/gradle/logic/" .. build .. "/" .. project .. EXTENSIONS[dsl]
+  return "daukle/" .. instance .. "/logic/" .. build .. "/" .. project .. EXTENSIONS[dsl]
 end
 
 local function normalized(path)
@@ -279,14 +280,13 @@ end
 
 --- The carried file: each statement's text verbatim, one blank line between.
 ---
---- @implNote the blank line takes the line ending the statements use, so a
---- CRLF script does not gain LF lines between its own.
-function migrate_logic.text(statements, dsl)
-  local texts, line_end = {}, "\n"
-  for _, statement in ipairs(in_file_order(statements, dsl)) do
-    texts[#texts + 1] = statement.text
-    if string.find(statement.text, "\r\n", 1, true) then line_end = "\r\n" end
-  end
+--- @implNote the blank line takes the script's own line ending, so a CRLF
+--- script does not gain LF lines between its own, even when every carried
+--- statement is a single line.
+--- @param line_ending the script's `lineEnding` from the dump, "crlf" or "lf"
+function migrate_logic.text(statements, dsl, line_ending)
+  local texts, line_end = {}, line_ending == "crlf" and "\r\n" or "\n"
+  for _, statement in ipairs(in_file_order(statements, dsl)) do texts[#texts + 1] = statement.text end
   return table.concat(texts, line_end .. line_end) .. line_end
 end
 

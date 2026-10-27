@@ -1,0 +1,3 @@
+[toolchains.gradle-app]
+dir = "app"
+logic = "daukle/gradle-app/logic/root/root.gradle"

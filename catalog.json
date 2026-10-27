@@ -1,6 +1,6 @@
 {
   "detect": [
-    { "files": ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"], "scope": "root" }
+    { "files": ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"], "scope": "tree" }
   ],
   "replaces": {},
   "skip": [".gradle", "build"]

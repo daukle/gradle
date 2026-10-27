@@ -123,6 +123,7 @@ local PATHS = {
   { "brazier", ":tools:idea", "kotlin", "daukle/gradle/logic/brazier/tools/idea.gradle.kts" },
   { "root", ":", "groovy", "daukle/gradle/logic/root/root.gradle" },
   { "root", ":app", "groovy", "daukle/gradle/logic/root/app.gradle" },
+  { "root", ":", "groovy", "daukle/gradle-app/logic/root/root.gradle", "gradle-app" },
 }
 
 local function covered_names(selection)
@@ -148,9 +149,8 @@ local TEXTS = {
     { { text = "val a = 1" }, { text = "import x.Y" } }, "kotlin", "import x.Y\n\nval a = 1\n" },
   { "a Groovy file keeps source order",
     { { text = "def a = 1" }, { text = "import x.Y" } }, "groovy", "def a = 1\n\nimport x.Y\n" },
-  { "a CRLF statement keeps CRLF between statements",
-    { { text = "tasks.register('a') {\r\n}" }, { text = "def b = 2" } }, "groovy",
-    "tasks.register('a') {\r\n}\r\n\r\ndef b = 2\r\n" },
+  { "a CRLF script takes CRLF between single-line statements",
+    { { text = "def a = 1" }, { text = "def b = 2" } }, "groovy", "def a = 1\r\n\r\ndef b = 2\r\n", "crlf" },
 }
 
 local function report_covered()
@@ -165,7 +165,7 @@ end
 local function report_texts()
   local lines = {}
   for _, entry in ipairs(TEXTS) do
-    local actual = migrate_logic.text(entry[2], entry[3])
+    local actual = migrate_logic.text(entry[2], entry[3], entry[5])
     lines[#lines + 1] = (actual == entry[4] and "ok " or "FAIL " .. string.format("%q", actual) .. " ") .. entry[1]
   end
   return lines
@@ -183,7 +183,7 @@ end
 local function report_paths()
   local lines = {}
   for _, entry in ipairs(PATHS) do
-    local actual = migrate_logic.file_path(entry[1], entry[2], entry[3])
+    local actual = migrate_logic.file_path(entry[1], entry[2], entry[3], entry[5] or "gradle")
     lines[#lines + 1] = (actual == entry[4] and "ok " or "FAIL " .. actual .. " ") .. entry[4]
   end
   return lines

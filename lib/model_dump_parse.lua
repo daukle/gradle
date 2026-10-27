@@ -494,6 +494,7 @@ def scriptInventoryOf = { File base, File gradleHome, project ->
   def inventory = [path: pathFrom(base, file), dsl: kotlin ? 'kotlin' : 'groovy']
   try {
     def source = scriptSourceOf(file)
+    inventory.lineEnding = source.original.contains('\r\n') ? 'crlf' : 'lf'
     inventory + (kotlin ? kotlinStatementsOf(kotlinParserFor(gradleHome), source) : [statements: groovyStatementsOf(source)])
   } catch (Throwable failure) {
     inventory + [unparsed: unparsedReason(failure)]

@@ -84,14 +84,14 @@ local function new_result()
   return { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
 end
 
-local function carry_target(target, config, result, taken)
+local function carry_target(target, config, instance, result, taken)
   local missing = target.counterpart ~= nil
                   and migrate_blockers.missing_task_names(target.project, target.counterpart) or {}
   local selection = migrate_logic.select(target.project, missing, target.where)
   append(result.blockers, selection.blockers)
   if #selection.carried == 0 then return end
   local dsl = dsl_of(target.project)
-  local path = migrate_logic.file_path(target.build, target.project.path, dsl)
+  local path = migrate_logic.file_path(target.build, target.project.path, dsl, instance)
   if taken[path] then
     result.blockers[#result.blockers + 1] = duplicate_blocker(target, path)
     return
@@ -101,7 +101,7 @@ local function carry_target(target, config, result, taken)
     return
   end
   taken[path] = true
-  local text = migrate_logic.text(selection.carried, dsl)
+  local text = migrate_logic.text(selection.carried, dsl, (target.project.script or {}).lineEnding)
   result.files[#result.files + 1] = { path = path, text = text }
   result.texts[path] = text
   result.covered[target.project] = selection.covered
@@ -113,18 +113,19 @@ end
 ---
 --- @param generated        the generated root build's model, rendered without carried code
 --- @param generated_models the generated included builds' models, by directory
+--- @param instance         the toolchain instance migrated to
 --- @return { files = { { path, text } }, texts = path -> text, covered = project -> set of task names,
 ---           tasks = { { build, path, shown } }, blockers }
-function migrate_carry.select(built, generated, generated_models)
+function migrate_carry.select(built, generated, generated_models, instance)
   local result, taken = new_result(), {}
   for _, target in ipairs(targets(built, generated, generated_models)) do
-    carry_target(target, built.config, result, taken)
+    carry_target(target, built.config, instance, result, taken)
   end
   return result
 end
 
 local function derived_root_of(context, place)
-  local root = "build/daukle/" .. context.instance
+  local root = carried.derived_of(context.instance)
   if place.build ~= nil then return root .. "/" .. composite.path_of(place.build) end
   return root
 end
@@ -150,7 +151,7 @@ end
 --- through a link and the task set is the one the keys alone give.
 ---
 --- @return the config, and the carried texts it names
-function migrate_carry.baseline_config(config, linked)
+function migrate_carry.baseline_config(config, linked, instance)
   local copy, texts = {}, {}
   for key, value in pairs(config) do copy[key] = value end
   if config.builds ~= nil then
@@ -162,7 +163,7 @@ function migrate_carry.baseline_config(config, linked)
   end
   for _, entry in ipairs(linked) do
     local build = entry.place.build or MAIN_BUILD
-    local path = migrate_logic.file_path(build, ROOT_PATH, GROOVY)
+    local path = migrate_logic.file_path(build, ROOT_PATH, GROOVY, instance)
     translate_build.set_logic(copy, entry.place, path)
     texts[path] = ""
   end

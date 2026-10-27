@@ -826,16 +826,18 @@ old build or the dump failed.
    alone, lacks. `lib/migrate_logic.lua` selects the top-level statements holding those actions or
    registering those tasks, plus the definitions they use and the callers of a helper they land in;
    the statements go verbatim, in source order (Kotlin imports first), one blank line apart, into
-   `daukle/gradle/logic/<build>/<project>.gradle(.kts)`, which the project's `logic` key names and
+   `daukle/<instance>/logic/<build>/<project>.gradle(.kts)`, which the project's `logic` key names and
    which returns to core as the result's `files` (daukle 0.12.0, `api = 4`). The generated build is
    then rendered and dumped again WITH the carried text in memory, and that second dump is what the
    comparison reads, its derived root, real-tree paths and `build/out/` directories mapped back to
    the real root first (`lib/migrate_real_tree.lua`). A carried task stops blocking; still blocking:
    an action from another script or from a class that could not be read, an action no statement
-   holds, a missing task no statement registers, an unparsed script, a parent project that becomes
-   no module, and any build in a subdirectory instance (`dir`), whose files core takes only under
-   `daukle/gradle-<dir>/`. A derived root an earlier carrying render linked is rendered carrying in
-   the first pass too, and blocks when this migration carries nothing there. `buildSrc/` blocks
+   holds, a missing task no statement registers, an unparsed script, and a parent project that
+   becomes no module. A build in a subdirectory is the instance `gradle-<dir>` (the detect rule's
+   scope is the tree, and core keeps only the outermost Gradle build), so its file is under
+   `daukle/gradle-<dir>/logic/` and its root links reach `context.root`. A derived root an earlier
+   carrying render linked is rendered carrying in the first pass too, and blocks, before any second
+   render, when this migration carries nothing there. `buildSrc/` blocks
    whenever it exists. Version catalogs need nothing and are skipped by their
    `org.gradle.accessors.dm.LibrariesFor` type.
 5. **The environment gate.** A model string that holds an environment variable's value (8 or more

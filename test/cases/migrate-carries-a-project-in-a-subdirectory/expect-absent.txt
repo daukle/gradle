@@ -1,0 +1,10 @@
+daukle/gradle
+build/daukle/gradle
+app/build.gradle
+app/settings.gradle
+app/gradlew
+app/.gradle
+app/daukle
+build.gradle
+settings.gradle
+.gradle

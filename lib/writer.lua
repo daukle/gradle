@@ -108,9 +108,9 @@ local function write_carrying_project(project, carried_texts)
   daukle.write{ path = script, text = build_file_kotlin.wrapper(project.ids, rendered, text) }
 end
 
-local function write_carrying_included_build(build, at, jars, options, carried_texts)
+local function write_carrying_included_build(build, at, jars, options, carried_texts, place)
   daukle.write{ path = at .. "/" .. carried.ROOT_LINKS,
-                text = settings_file.root_links(carried.real_directory_of_included(build.name)) }
+                text = settings_file.root_links(carried.real_directory_of_included(build.name, place.root)) }
   daukle.write{ path = at .. "/settings.gradle",
                 text = settings_file.included_real_tree_settings(build.gradle_name,
                                                                  carried.script_of(nil, build.logic)) }
@@ -123,7 +123,8 @@ end
 --- @implNote written on every run, the bare discovery render included:
 --- settings.gradle includes every declared build, so Gradle fails on any run
 --- that starts without them.
-local function write_included_builds(checked, named_of, carried_texts)
+--- @param place { root = <context.root>, instance }
+local function write_included_builds(checked, named_of, carried_texts, place)
   for index = 1, #checked do
     local build = checked[index]
     local at = composite.path_of(build.name)
@@ -132,9 +133,9 @@ local function write_included_builds(checked, named_of, carried_texts)
     local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
                       group = (not build.plugin_build) and composite.GROUP or nil }
     if build.logic ~= nil then
-      write_carrying_included_build(build, at, jars, options, carried_texts)
+      write_carrying_included_build(build, at, jars, options, carried_texts, place)
     else
-      carried.refuse_a_linked_root(carried.DERIVED .. "/" .. at)
+      carried.refuse_a_linked_root(carried.derived_of(place.instance) .. "/" .. at)
       daukle.write{ path = at .. "/settings.gradle",
                     text = settings_file.included_settings(build.gradle_name) }
       daukle.write{ path = at .. "/" .. BUILD_FILE,
@@ -167,7 +168,7 @@ end
 --- for the same reason: it was a module once, and Gradle would read what that
 --- run left in its directory.
 local function write_today(build)
-  carried.refuse_a_linked_root(carried.DERIVED)
+  carried.refuse_a_linked_root(carried.derived_of(build.instance))
   if #build.declared == 0 then
     return daukle.write{
       path = BUILD_FILE,
@@ -237,7 +238,7 @@ local function write_real_tree(build)
 end
 
 --- What settings.gradle names for a build that carries logic, or nil.
-local function real_tree_settings(config, declared)
+local function real_tree_settings(context, config, declared)
   if not carried.build_carries(config) then return nil end
   local blocks = type(config.modules) == "table" and config.modules or {}
   local projects = {}
@@ -248,7 +249,9 @@ local function real_tree_settings(config, declared)
   for _, parent in ipairs(module_graph.undeclared_parents(declared)) do
     projects[#projects + 1] = { name = parent, script = carried.script_of(parent, nil) }
   end
-  return { root_script = carried.script_of(nil, config.logic),
+  local instance = validation.instance_of(context)
+  return { root_script = carried.script_of(nil, config.logic), real_root = context.root,
+           derived = carried.derived_from_real_root(context.root, instance),
            classpath_file = carried.classpath_in_settings(config) and carried.PLUGIN_CLASSPATH or nil,
            projects = projects }
 end
@@ -279,10 +282,11 @@ local function write_build_file(context, config, options)
     if bare or without_named then return {} end
     return named
   end
+  local place = { root = context.root, instance = validation.instance_of(context) }
   local carried_texts = options ~= nil and options.carried_texts or nil
   if bare then carried_texts = carried.empty_texts(config) end
   write_settings_plugins(config, composite_record.owners)
-  write_included_builds(composite_record.builds, named_of, carried_texts)
+  write_included_builds(composite_record.builds, named_of, carried_texts, place)
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
        for both values of bare, because nil is false. ]]
   local configure = config.configure
@@ -314,7 +318,7 @@ local function write_build_file(context, config, options)
 
   local build = {
     config = config, entries = entries, plugin_jars = plugin_jars, named_of = named_of,
-    project_wide = project_wide, carried_texts = carried_texts, bare = bare,
+    project_wide = project_wide, carried_texts = carried_texts, bare = bare, instance = place.instance,
     root_options = extended(project_wide,
                             { main = project_options.main,
                               required_builds = composite_record.required,
@@ -322,7 +326,7 @@ local function write_build_file(context, config, options)
     declared = module_graph.declared(context),
   }
   build.modules = #build.declared > 0
-                  and validation.checked_modules(config, build.declared, composite_record.read)
+                  and validation.checked_modules(config, build.declared, composite_record.read, place.instance)
                   or {}
   if carried.build_carries(config) then return write_real_tree(build) end
   write_today(build)
@@ -337,13 +341,13 @@ local function settings_text(context, config)
   local declared = module_graph.declared(context)
   return settings_file.settings(validation.project_name(context), declared,
                                 applies_settings_plugins, record,
-                                real_tree_settings(config, declared))
+                                real_tree_settings(context, config, declared))
 end
 
 local function generated_files(context, config)
   local files = { [SETTINGS_FILE] = settings_text(context, config) }
   if carried.build_carries(config) then
-    files[carried.ROOT_LINKS] = settings_file.root_links(carried.REAL_ROOT)
+    files[carried.ROOT_LINKS] = settings_file.root_links(context.root)
   end
   return files
 end
@@ -370,13 +374,13 @@ local function per_project_problems(config, declared, problems)
   end
 end
 
-local function append_logic_problems(config, carried_texts, problems)
+local function append_logic_problems(config, carried_texts, problems, instance)
   local paths = carried.paths_of(config)
   local labels = {}
   for label in pairs(paths) do labels[#labels + 1] = label end
   table.sort(labels)
   for _, label in ipairs(labels) do
-    local problem = carried.problem_of(paths[label], label)
+    local problem = carried.problem_of(paths[label], label, instance)
                     or carried.missing_problem(label, paths[label], carried_texts)
     if problem ~= nil then problems[#problems + 1] = problem end
   end
@@ -401,7 +405,7 @@ local function generation_problems(context, config, carried_texts)
   local problems = validation.plugin_set_problems(context, config)
   append_launcher_problem(problems, validation.entries_of_configurations(config, ""))
   per_project_problems(config, declared, problems)
-  append_logic_problems(config, carried_texts, problems)
+  append_logic_problems(config, carried_texts, problems, validation.instance_of(context))
   return problems
 end
 

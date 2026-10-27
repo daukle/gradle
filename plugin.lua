@@ -145,16 +145,12 @@ local JARS_SCRIPT_TEXT = "gradle.allprojects { project ->\n"
   .. "  }\n"
   .. "}\n"
 
---- Every jar the manifest makes: every task of the `Jar` type in each
---- project, the sources jar and a plugin's own jar tasks included, and each
---- included build's, which `gradle:jar` alone leaves to whoever depends on
---- them. It is the proof a migration runs.
 --- Whether a migration left the proof a report of its carried tasks.
 ---
 --- @implNote read and listed from the project, where a write lands in the
 --- derived directory; the read raises for a missing file, so it is listed first.
 local function pending_carried_report(context)
-  local directory = "build/daukle/" .. context.toolchain.name
+  local directory = carried.derived_of(context.toolchain.name)
   for _, entry in ipairs(daukle.list(directory) or {}) do
     if entry.kind == "file" and entry.name == migrate_carry.REPORT_SCRIPT then
       return daukle.read(directory .. "/" .. migrate_carry.REPORT_SCRIPT) ~= ""
@@ -163,6 +159,10 @@ local function pending_carried_report(context)
   return false
 end
 
+--- Every jar the manifest makes: every task of the `Jar` type in each
+--- project, the sources jar and a plugin's own jar tasks included, and each
+--- included build's, which `gradle:jar` alone leaves to whoever depends on
+--- them. It is the proof a migration runs.
 daukle.task{
   name = "gradle:jars",
   run = function(context)

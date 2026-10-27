@@ -129,7 +129,7 @@ end
 local function generation_context(context, built, config)
   return { instance = context.instance, dir = context.dir, root = context.root, host = context.host,
            project = built.name, version = built.version, modules = built.declared or {},
-           toolchain = { config = config, version = config.version } }
+           toolchain = { name = context.instance, config = config, version = config.version } }
 end
 
 --- The translated config without `jdk`, which picks only the JVM a task runs
@@ -236,20 +236,10 @@ end
 
 local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
 
---- Whether this migration can carry build logic at all.
----
---- @implNote the `logic` files live under `daukle/gradle/`, core writes a
---- migrator's files only below `daukle/<instance>/`, and a build in a
---- subdirectory is the instance `gradle-<dir>`; the root links also reach the
---- project root, not the subdirectory. Such a build keeps blocking its code.
-local function can_carry(context)
-  return context.dir == nil
-end
-
 --- The generated build's model rendered from the keys alone, which is what
 --- signal 2 and the selection read; or nil and the blockers that stopped it.
 local function dump_baseline(context, built, linked, where)
-  local config, texts = migrate_carry.baseline_config(built.config, linked)
+  local config, texts = migrate_carry.baseline_config(built.config, linked, context.instance)
   return dump_generated(context, built, config, texts, where)
 end
 
@@ -257,12 +247,11 @@ end
 --- the baseline when nothing is carried, else a second render carrying it.
 local function carry(context, built, blockers)
   local where = built.projects[1].where
-  local linked = can_carry(context) and migrate_carry.linked_roots(context, built) or {}
+  local linked = migrate_carry.linked_roots(context, built)
   local generated, refusals = dump_baseline(context, built, linked, where)
   if generated == nil then return NOTHING_CARRIED, nil, refusals end
   local generated_models = generated_builds(context, built)
-  if not can_carry(context) then return NOTHING_CARRIED, generated, refusals, generated_models end
-  local carrying = migrate_carry.select(built, generated, generated_models)
+  local carrying = migrate_carry.select(built, generated, generated_models, context.instance)
   append(blockers, carrying.blockers)
   append(blockers, migrate_carry.stale_link_blockers(built.config, linked))
   if #carrying.files == 0 then return carrying, generated, refusals, generated_models end

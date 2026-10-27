@@ -1,5 +1,5 @@
 --- Build logic a project carries as code: the file a `logic` key names under
---- `daukle/gradle/logic/`, and where a build that carries any runs it from the
+--- `daukle/<instance>/logic/`, and where a build that carries any runs it from the
 --- project's real directories (spec D-165, sections 4.4 and 7).
 local carried = {}
 
@@ -7,9 +7,7 @@ local module_graph = daukle.require("lib/modules")
 local composite = daukle.require("lib/composite")
 local groovy = daukle.require("lib/groovy")
 
-carried.DIRECTORY = "daukle/gradle/logic/"
-carried.DERIVED = "build/daukle/gradle"
-carried.REAL_ROOT = "../../.."
+local REAL_ROOT_OF_ROOT = "../../.."
 carried.ROOT_LINKS = "root-links.gradle"
 carried.PLUGIN_CLASSPATH = "plugin-classpath.txt"
 carried.SETTINGS_PLUGINS = "settings-plugins.gradle"
@@ -53,24 +51,51 @@ function carried.is_kotlin(path)
   return type(path) == "string" and ends_with(path, KOTLIN)
 end
 
-local function is_logic_path(value)
-  if not starts_with(value, carried.DIRECTORY) then return false end
+--- The directory an instance's `logic` files live in, below its committed
+--- `daukle/<instance>/`, which is where core writes a migrator's files.
+function carried.directory_of(instance)
+  return "daukle/" .. instance .. "/logic/"
+end
+
+--- An instance's derived root, relative to the project.
+function carried.derived_of(instance)
+  return "build/daukle/" .. instance
+end
+
+--- The instance's own directory below the project, from `context.root`,
+--- which is `../../..` for the project root and `../../../<dir>` otherwise.
+function carried.dir_of_root(root)
+  if root == nil or root == REAL_ROOT_OF_ROOT then return nil end
+  return string.sub(root, #REAL_ROOT_OF_ROOT + 2)
+end
+
+--- The derived root as a project's real directory reaches it, from the
+--- build's real root: one `..` per component of the instance's `dir`.
+function carried.derived_from_real_root(root, instance)
+  local climb = ""
+  for _ in string.gmatch(carried.dir_of_root(root) or "", "[^/]+") do climb = climb .. "../" end
+  return climb .. carried.derived_of(instance)
+end
+
+local function is_logic_path(value, directory)
+  if not starts_with(value, directory) then return false end
   if not (ends_with(value, GROOVY) or ends_with(value, KOTLIN)) then return false end
-  return module_graph.problem_of(string.sub(value, #carried.DIRECTORY + 1)) == nil
+  return module_graph.problem_of(string.sub(value, #directory + 1)) == nil
 end
 
 --- Why a `logic` value is refused, or nil.
-function carried.problem_of(value, label)
+function carried.problem_of(value, label, instance)
   if value == nil then return nil end
-  local wanted = '"' .. label .. '" must name a file under "' .. carried.DIRECTORY
+  local directory = carried.directory_of(instance)
+  local wanted = '"' .. label .. '" must name a file under "' .. directory
                  .. '" ending ".gradle" or ".gradle.kts"'
   if type(value) ~= "string" then return wanted .. ", not a " .. type(value) end
-  if not is_logic_path(value) then return wanted .. ', not "' .. value .. '"' end
+  if not is_logic_path(value, directory) then return wanted .. ', not "' .. value .. '"' end
   return nil
 end
 
-function carried.checked(value, label)
-  local problem = carried.problem_of(value, label)
+function carried.checked(value, label, instance)
+  local problem = carried.problem_of(value, label, instance)
   if problem ~= nil then error(problem, 0) end
   return value
 end
@@ -167,9 +192,10 @@ function carried.depth_of(name)
 end
 
 --- From an included build's derived root to its real directory.
-function carried.real_directory_of_included(name)
+--- @param root the build's real root from its derived root, `context.root`
+function carried.real_directory_of_included(name, root)
   local _, separators = string.gsub(composite.path_of(name), "/", "")
-  return carried.REAL_ROOT .. string.rep("/..", separators + 1) .. "/" .. name
+  return string.rep("../", separators + 1) .. root .. "/" .. name
 end
 
 local function file_exists(path)
