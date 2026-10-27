@@ -14,7 +14,7 @@ daukle.plugin{
   api = 3,
   uses = { "provision", "artifact", "exec", "write", "read", "parse", "list", "json_parse",
            "pin", "fetch", "cache" },
-  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules" },
+  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules", "lib/migrate_logic" },
   --[[ Core scrubs every credential it knows from a child it starts unless the
        plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
        unset and a generated `System.getenv(...) ?: ''` would hand the build an
