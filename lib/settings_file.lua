@@ -7,7 +7,7 @@ local composite = daukle.require("lib/composite")
 local groovy = daukle.require("lib/groovy")
 local carried = daukle.require("lib/carried")
 
-settings_file.SCRIPT = "settings-plugins.gradle"
+settings_file.SCRIPT = carried.SETTINGS_PLUGINS
 
 --[[ Resolves an id the way Gradle does, through the jar's own descriptor, but
      against THIS script's classloader: `apply plugin: '<id>'` from an applied
@@ -93,12 +93,15 @@ end
 
 --- @implNote reads a list a task writes because generate may not acquire the
 --- jars it names; `buildscript {}` stays after `pluginManagement {}` and ahead
---- of `plugins {}`, the order Gradle requires of a settings script.
+--- of `plugins {}`, the order Gradle requires of a settings script. A missing
+--- list, which a discovery's bare baseline leaves, is an empty classpath.
 local function append_settings_classpath(lines, classpath_file)
   if classpath_file == nil then return end
   lines[#lines + 1] = "buildscript {"
   lines[#lines + 1] = "  dependencies {"
-  lines[#lines + 1] = "    classpath files(file(" .. groovy.quoted(classpath_file) .. ").readLines())"
+  lines[#lines + 1] = "    classpath files(file(" .. groovy.quoted(classpath_file) .. ").with {"
+  lines[#lines + 1] = "      it.exists() ? it.readLines().findAll { it } : []"
+  lines[#lines + 1] = "    })"
   lines[#lines + 1] = "  }"
   lines[#lines + 1] = "}"
 end
@@ -195,7 +198,14 @@ end
 --- directory an earlier layout generated, is replaced, and the walk that
 --- removes it deletes a link as the one node it is: a junction reports as a
 --- directory with NOFOLLOW_LINKS, and descending into it would delete the
---- user's own files.
+--- user's own files. A copy is reported, never silent.
+--- @implNote mklink takes both paths from the child's environment, inside
+--- quotes, because cmd parses `&`, `^` and `%` in an argument and Java quotes
+--- an argument only for whitespace: a path like `D:\R&D` ran its tail as a
+--- command and fell back to a copy without a word.
+--- @implNote what was placed is recorded under the never-linked `build/`, so a
+--- later render without logic can refuse to write through a hard link, which
+--- no listing tells apart from a plain file.
 --- @param real_directory the real directory, relative to the settings directory
 function settings_file.root_links(real_directory)
   return table.concat({
@@ -235,9 +245,14 @@ function settings_file.root_links(real_directory)
     "  }",
     "}",
     "def daukleJunction = { Path target, Path link ->",
-    "  def process = ['cmd', '/c', 'mklink', '/J', link.toString(), target.toString()].execute()",
-    "  process.waitForProcessOutput(new StringBuilder(), new StringBuilder())",
-    "  process.exitValue() == 0",
+    "  def builder = new ProcessBuilder('cmd', '/c', 'mklink', '/J', '\"%DAUKLE_LINK%\"',",
+    "    '\"%DAUKLE_TARGET%\"')",
+    "  builder.environment().put('DAUKLE_LINK', link.toString())",
+    "  builder.environment().put('DAUKLE_TARGET', target.toString())",
+    "  builder.redirectErrorStream(true)",
+    "  def process = builder.start()",
+    "  process.inputStream.text",
+    "  process.waitFor() == 0",
     "}",
     "def daukleHardLink = { Path target, Path link ->",
     "  try {",
@@ -260,7 +275,11 @@ function settings_file.root_links(real_directory)
     "  if (!daukleWindows) linked = daukleSymbolicLink(target, link)",
     "  else if (Files.isDirectory(target)) linked = daukleJunction(target, link)",
     "  else linked = daukleHardLink(target, link)",
-    "  if (!linked) daukleCopy(target, link)",
+    "  if (linked) return 'link'",
+    "  daukleCopy(target, link)",
+    "  println \"daukle/gradle: linking ${target.fileName} was refused, so the derived root holds a\"",
+    "    + ' copy, and a write to it does not reach the real file'",
+    "  'copy'",
     "}",
     "def daukleIsPlaced = { Path link, Path target ->",
     "  Files.exists(link) && Files.isSameFile(link, target)",
@@ -271,15 +290,22 @@ function settings_file.root_links(real_directory)
     "    Files.delete(entry.toPath())",
     "  }",
     "}",
+    "def daukleRecord = []",
     "daukleReal.toFile().listFiles().each { File entry ->",
     "  if (entry.name in daukleUnlinked || entry.name.startsWith("
-      .. groovy.quoted(carried.UNLINKED_PREFIX) .. ")) return",
+      .. groovy.quoted(carried.MIGRATE_PREFIX) .. ")) return",
     "  def target = entry.toPath()",
     "  def link = daukleDerived.resolve(entry.name)",
-    "  if (daukleIsPlaced(link, target)) return",
+    "  if (daukleIsPlaced(link, target)) {",
+    "    daukleRecord << 'link ' + entry.name",
+    "    return",
+    "  }",
     "  if (Files.exists(link, LinkOption.NOFOLLOW_LINKS)) daukleRemove(link)",
-    "  daukleLink(target, link)",
+    "  daukleRecord << daukleLink(target, link) + ' ' + entry.name",
     "}",
+    "def daukleRecordFile = daukleDerived.resolve(" .. groovy.quoted(carried.LINK_RECORD) .. ")",
+    "Files.createDirectories(daukleRecordFile.parent)",
+    "daukleRecordFile.toFile().text = daukleRecord.join('\\n') + '\\n'",
   }, "\n") .. "\n"
 end
 

@@ -4,3 +4,5 @@ settings.gradle
 gradlew
 app/build
 app/.gradle
+buildSrc/build
+buildSrc/.gradle

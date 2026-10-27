@@ -78,18 +78,6 @@ local function write_settings_plugins(config, owners)
   }
 end
 
---- A daukle.write follows a link and writes in place, so a build file written
---- into a directory a carrying build linked would land in the user's own tree.
-local function refuse_links_left_in(directory)
-  for _, entry in ipairs(daukle.list(directory) or {}) do
-    if entry.kind == "link" then
-      error('"' .. directory .. "/" .. entry.name .. '" is a link a build carrying logic left to'
-            .. " the project's own \"" .. entry.name .. '": run "daukle clean" before building'
-            .. ' without "logic"', 0)
-    end
-  end
-end
-
 --- The Groovy render of one project of a carrying build, plain or for a wrapper.
 ---
 --- @param depth_name the name the project's paths start with, nil for a main root
@@ -146,7 +134,7 @@ local function write_included_builds(checked, named_of, carried_texts)
     if build.logic ~= nil then
       write_carrying_included_build(build, at, jars, options, carried_texts)
     else
-      refuse_links_left_in(carried.DERIVED .. "/" .. at)
+      carried.refuse_a_linked_root(carried.DERIVED .. "/" .. at)
       daukle.write{ path = at .. "/settings.gradle",
                     text = settings_file.included_settings(build.gradle_name) }
       daukle.write{ path = at .. "/" .. BUILD_FILE,
@@ -179,7 +167,7 @@ end
 --- for the same reason: it was a module once, and Gradle would read what that
 --- run left in its directory.
 local function write_today(build)
-  refuse_links_left_in(carried.DERIVED)
+  carried.refuse_a_linked_root(carried.DERIVED)
   if #build.declared == 0 then
     return daukle.write{
       path = BUILD_FILE,
@@ -228,7 +216,7 @@ end
 --- one, since every project's classloader already has it.
 local function write_real_tree(build)
   local in_settings = carried.classpath_in_settings(build.config)
-  if in_settings then
+  if in_settings and not build.bare then
     daukle.write{ path = carried.PLUGIN_CLASSPATH,
                   text = table.concat(build.plugin_jars, "\n") .. "\n" }
   end
@@ -292,6 +280,7 @@ local function write_build_file(context, config, options)
     return named
   end
   local carried_texts = options ~= nil and options.carried_texts or nil
+  if bare then carried_texts = carried.empty_texts(config) end
   write_settings_plugins(config, composite_record.owners)
   write_included_builds(composite_record.builds, named_of, carried_texts)
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
@@ -325,7 +314,7 @@ local function write_build_file(context, config, options)
 
   local build = {
     config = config, entries = entries, plugin_jars = plugin_jars, named_of = named_of,
-    project_wide = project_wide, carried_texts = carried_texts,
+    project_wide = project_wide, carried_texts = carried_texts, bare = bare,
     root_options = extended(project_wide,
                             { main = project_options.main,
                               required_builds = composite_record.required,

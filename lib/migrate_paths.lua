@@ -2,9 +2,11 @@
 --- migrate runs in, and the instance's derived directory.
 local migrate_paths = {}
 
+local carried = daukle.require("lib/carried")
+
 --- Gradle's project cache for every run against the old build, which keeps
 --- its `.gradle/` out of the project.
-migrate_paths.PROJECT_CACHE = "migrate-cache"
+migrate_paths.PROJECT_CACHE = carried.MIGRATE_PREFIX .. "cache"
 
 function migrate_paths.within(dir, name)
   if dir == nil or dir == "." then return name end

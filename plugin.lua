@@ -56,7 +56,7 @@ local resolve = daukle.require("maven:lib/resolve")
 local output = daukle.require("maven:lib/output")
 local pom = daukle.require("maven:lib/pom")
 
-local REPORT_FILE = "discovered.txt"
+local REPORT_FILE = carried.DISCOVERY_REPORT
 
 --[[ settings.gradle is generated and build.gradle is NOT, and the split is
      forced rather than chosen. A dependency line is an absolute path to a
@@ -129,7 +129,7 @@ daukle.task{
   end,
 }
 
-local JARS_SCRIPT = "jars.gradle"
+local JARS_SCRIPT = carried.JARS_SCRIPT
 local JARS_TASK = "daukleJars"
 
 --- @implNote an init script rather than a line of the build file, so the

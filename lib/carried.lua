@@ -12,24 +12,34 @@ carried.DERIVED = "build/daukle/gradle"
 carried.REAL_ROOT = "../../.."
 carried.ROOT_LINKS = "root-links.gradle"
 carried.PLUGIN_CLASSPATH = "plugin-classpath.txt"
+carried.SETTINGS_PLUGINS = "settings-plugins.gradle"
+carried.JARS_SCRIPT = "jars.gradle"
+carried.DISCOVERY_REPORT = "discovered.txt"
+carried.TOOL_DEFAULTS_SCRIPT = "tools.gradle"
+carried.MIGRATE_PREFIX = "migrate-"
+
+--- What the root links script placed, inside a derived root's `build/`, which
+--- is never linked.
+carried.LINK_RECORD = "build/daukle-root-links.txt"
 
 local GROOVY = ".gradle"
 local KOTLIN = ".gradle.kts"
 local SCRIPTS = "build/scripts/"
 local OUTPUT = "build/out/"
 
---- The derived root's own top-level names, which no root link may take.
+--- The derived root's own top-level names, which no root link may take: every
+--- owner that writes one takes its name from here.
 ---
 --- @implNote daukle.write writes IN PLACE, so a hard link under one of these
 --- names would turn every write of it into a write of the user's own file.
---- `jars.gradle`, `discovered.txt` and `tools.gradle` are plugin.lua's and
---- tool_defaults' names, and `migrate-` prefixes every file the migrator writes.
+--- `buildSrc` is never linked because Gradle builds a `buildSrc` it finds in
+--- the settings directory, writing into the user's tree.
 carried.UNLINKED = {
   "build", "daukle", ".gradle", "settings.gradle", "settings.gradle.kts", ".daukle-generated",
-  carried.ROOT_LINKS, carried.PLUGIN_CLASSPATH, "settings-plugins.gradle", composite.INCLUDED_DIR,
-  "jars.gradle", "discovered.txt", "tools.gradle",
+  "buildSrc", carried.ROOT_LINKS, carried.PLUGIN_CLASSPATH, carried.SETTINGS_PLUGINS,
+  carried.JARS_SCRIPT, carried.DISCOVERY_REPORT, carried.TOOL_DEFAULTS_SCRIPT,
+  composite.INCLUDED_DIR,
 }
-carried.UNLINKED_PREFIX = "migrate-"
 
 local function starts_with(text, prefix)
   return string.sub(text, 1, #prefix) == prefix
@@ -87,6 +97,16 @@ function carried.paths_of(config)
     end
   end
   return paths
+end
+
+--- Every `logic` path mapped to empty text, for a discovery's bare baseline.
+---
+--- @implNote that baseline leaves the plugins out, and carried code naming a
+--- plugin's task or extension would fail to configure without them.
+function carried.empty_texts(config)
+  local texts = {}
+  for _, path in pairs(carried.paths_of(config)) do texts[path] = "" end
+  return texts
 end
 
 --- Whether the main build carries logic anywhere, which puts EVERY one of its
@@ -158,6 +178,23 @@ local function file_exists(path)
     if entry.name == file and entry.kind ~= "directory" then return true end
   end
   return false
+end
+
+--- Refuses to render a build without logic into a derived root that a
+--- carrying build linked to the real tree.
+---
+--- @implNote decided by the record the links script writes rather than by
+--- looking for links: core lists a hard link as a plain file, and daukle.write
+--- opens a path for writing in place, so a generated `build.gradle` would be
+--- written through the hard link into the user's own build file.
+--- @param derived_root the derived root, relative to the project
+function carried.refuse_a_linked_root(derived_root)
+  local record = derived_root .. "/" .. carried.LINK_RECORD
+  if file_exists(record) then
+    error('"' .. derived_root .. '" holds links to the project\'s own files, which a build'
+          .. ' carrying logic placed (listed in "' .. record .. '"), and a build without'
+          .. ' "logic" would write through them: run "daukle clean" first', 0)
+  end
 end
 
 local function missing_message(label, path)

@@ -12,10 +12,11 @@ local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
+local carried = daukle.require("lib/carried")
 
-local INIT_SCRIPT = "migrate-model.gradle"
-local MODEL = "migrate-model.json"
-local GENERATED_MODEL = "migrate-generated-model.json"
+local INIT_SCRIPT = carried.MIGRATE_PREFIX .. "model.gradle"
+local MODEL = carried.MIGRATE_PREFIX .. "model.json"
+local GENERATED_MODEL = carried.MIGRATE_PREFIX .. "generated-model.json"
 local WRAPPER_DIRECTORY = "gradle/wrapper"
 local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
 local DUMP_JDK = "17"

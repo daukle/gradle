@@ -345,7 +345,7 @@ run_case() {
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
          "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve" \
-         "$sandbox/expect-absent.txt"
+         "$sandbox/expect-absent.txt" "$sandbox/task-after" "$sandbox/daukle.after.toml"
   if [ -f "$case_dir/migrate" ]; then
     rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
     run_migrate_case
@@ -360,6 +360,20 @@ run_case() {
   # A run that may pin an unpinned url or write a committed file, which core allows only then.
   [ -f "$case_dir/resolve" ] && command="$command --resolve"
 
+  # A case about what one run leaves for the next: `task` runs first and must
+  # succeed, then daukle.after.toml replaces the manifest and `task-after` is
+  # the run every expectation below is about.
+  if [ -f "$case_dir/task-after" ]; then
+    if ! (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
+      echo "--- stderr ---" >&2
+      tail -40 "$sandbox/stderr.txt" >&2
+      fail "$name" "the first run, $command, failed"
+      return
+    fi
+    cp "$case_dir/daukle.after.toml" "$sandbox/daukle.toml"
+    command=$(cat "$case_dir/task-after")
+  fi
+
   if [ -f "$case_dir/expect-error.txt" ]; then
     if (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
       fail "$name" "expected a failure, got success"
@@ -373,6 +387,7 @@ run_case() {
       return
     fi
     output_carries_clauses || return 0
+    files_carry_literals || return 0
     tree_has_paths || return 0
     passed=$((passed + 1))
     return
