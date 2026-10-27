@@ -1,0 +1,2 @@
+build/daukle/gradle/app/build/reports/jacoco/testCodeCoverageReport/testCodeCoverageReport.xml class name="example/Greeter"
+build/daukle/gradle/app/build/reports/jacoco/testCodeCoverageReport/testCodeCoverageReport.xml class name="example/App"

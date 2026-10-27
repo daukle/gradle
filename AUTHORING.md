@@ -168,6 +168,25 @@ declares none:
 groovyClasspath = { filesOf = "compileClasspath" }
 ```
 
+`scala` takes the same route with more jars. `gradle:resolve-tools --resolve` pins `zinc`; the
+project pins on `compileOnly` what Gradle would otherwise infer, which is `scala-compiler`,
+`scala-reflect`, `compiler-interface`, `util-interface`, `java-diff-utils` and the
+`compiler-bridge_2.13` **sources** jar of the Zinc version its Gradle uses (1.12.0 on 9.6.0, 1.6.1
+on 7.6.4), and sets `compileScala`'s `scalaClasspath = { filesOf = "compileClasspath" }`. The
+binary bridge jar loads the bridge twice and fails. **A failed attempt can poison Gradle's own
+cache**: a bridge compiled from no sources is kept as an empty `compiler-bridge.jar` under
+`~/.gradle/caches/<version>/zinc-*`, and every later build fails "Provider xsbt.CompilerBridge not
+found" until that directory is deleted. `scala-compiles-without-a-repository-on-gradle-9` and `-7`
+are the full manifests.
+
+The two aggregation plugins, `test-report-aggregation` and `jacoco-report-aggregation`, need
+nothing beyond `requires`: plugins render into every module, so each module gets its own aggregate
+task, and the one that requires the others aggregates them through the `implementation project(...)`
+edge. The test report lands in `reports/tests/test/aggregated-results` on 9.6.0 and
+`reports/tests/unit-test/aggregated-results` on 7.6.4. `idea`, `eclipse` and `eclipse-wtp` write
+their files into the generated build under `build/daukle/gradle`, not the project root, so an IDE
+opening the project does not see them.
+
 A plugin that downloads a tool when Gradle resolves one of its configurations needs that
 configuration pinned, because the generated build declares no repository. `configurations.<name>`
 is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need
