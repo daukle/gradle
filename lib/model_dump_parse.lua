@@ -4,15 +4,41 @@
 --- closures that call it, and it uses that script's `pathFrom`. D-165, sections 3 and 4.2.
 local SCRIPT = [==[
 def BYTE_ORDER_MARK = (char) 0xFEFF
+def CARRIAGE_RETURN = (char) 13
+def LINE_FEED = (char) 10
 
 /**
- * A build script's text as both parsers read it: line breaks as LF, which the Kotlin PSI requires,
- * and without a leading UTF-8 BOM, which every Kotlin compiler reports as an error element at offset
- * 0 while counting it in every offset (P3, D-165).
+ * A build script's text twice: `original`, the file without a leading UTF-8 BOM, which is what a
+ * statement's `text` is cut from, and `parsed`, the same with every line break as LF, which both
+ * parsers read; `originalOffsets` maps each offset into `parsed` (and its end) to one into `original`.
+ *
+ * @implNote the BOM goes because every Kotlin compiler reports it as an error element at offset 0
+ * while counting it in every offset (P3), and the parsers read LF because the Kotlin PSI requires
+ * it; the text stays the original bytes because a later task carries it verbatim (D-165).
  */
-def sourceTextOf = { File file ->
-  def text = file.getText('UTF-8').replace('\r\n', '\n').replace('\r', '\n')
-  !text.isEmpty() && text.charAt(0) == BYTE_ORDER_MARK ? text.substring(1) : text
+class ScriptSource {
+  String original
+  String parsed
+  int[] originalOffsets
+
+  String originalSlice(int start, int end) { original.substring(originalOffsets[start], originalOffsets[end]) }
+}
+
+def scriptSourceOf = { File file ->
+  def original = file.getText('UTF-8')
+  if (!original.isEmpty() && original.charAt(0) == BYTE_ORDER_MARK) original = original.substring(1)
+  def parsed = new StringBuilder(original.length())
+  def originalOffsets = new int[original.length() + 1]
+  int at = 0
+  while (at < original.length()) {
+    originalOffsets[parsed.length()] = at
+    char character = original.charAt(at)
+    boolean crlf = character == CARRIAGE_RETURN && at + 1 < original.length() && original.charAt(at + 1) == LINE_FEED
+    parsed.append(character == CARRIAGE_RETURN ? LINE_FEED : character)
+    at += crlf ? 2 : 1
+  }
+  originalOffsets[parsed.length()] = original.length()
+  new ScriptSource(original: original, parsed: parsed.toString(), originalOffsets: originalOffsets)
 }
 
 def lineStartsOf = { String text ->
@@ -28,11 +54,19 @@ def lineOfOffset = { List starts, int offset ->
 
 def firstLineOf = { String message -> (message ?: '').readLines().find { true } ?: '' }
 
+def isReflectiveWrapper = { Throwable failure ->
+  (failure instanceof java.lang.reflect.UndeclaredThrowableException || failure instanceof java.lang.reflect.InvocationTargetException) &&
+      failure.cause != null
+}
+
 /**
- * The failure an `unparsed` reason names: for Groovy's compilation failure, whose message opens with
- * a bare `startup failed:`, the syntax error it collected first.
+ * The failure an `unparsed` reason names: what a reflective call wrapped, and for Groovy's
+ * compilation failure, whose message opens with a bare `startup failed:`, the syntax error it
+ * collected first.
  */
-def parserFailureOf = { Throwable failure ->
+def parserFailureOf = { Throwable thrown ->
+  def failure = thrown
+  while (isReflectiveWrapper(failure)) failure = failure.cause
   if (!(failure instanceof org.codehaus.groovy.control.MultipleCompilationErrorsException)) return failure
   def first = failure.errorCollector.errors.find { it.hasProperty('cause') && it.cause != null }
   first == null ? failure : first.cause
@@ -45,20 +79,24 @@ def unparsedReason = { Throwable thrown ->
 
 def REGISTERING_CALLS = ['register', 'create', 'task', 'maybeCreate'] as Set
 
-def statementOf = { String text, List starts, int index, int start, int end, Map facts ->
-  [index: index, text: text.substring(start, end), startLine: lineOfOffset(starts, start),
+def statementOf = { ScriptSource source, List starts, int index, int start, int end, Map facts ->
+  [index: index, text: source.originalSlice(start, end), startLine: lineOfOffset(starts, start),
    endLine: lineOfOffset(starts, Math.max(start, end - 1)), registers: facts.registers as List,
    defines: facts.defines as List, uses: facts.uses as List, definition: facts.definition]
 }
 
 /**
- * The identifiers a Groovy node names and the tasks it registers by a string literal, or for `task`
- * by the bare name Gradle's own transform turns into one (`task gen {}`).
+ * The identifiers a Groovy node names, and the tasks it registers: a string literal given to
+ * `register`, `create` or `maybeCreate` on `tasks` or `project.tasks` or directly inside a
+ * `tasks {}` block, and the name a `task` call gives, by literal or by the bare name Gradle's own
+ * transform turns into one (`task gen {}`). The same calls on any other container are not tasks.
  */
 class GroovyFacts extends org.codehaus.groovy.ast.ClassCodeVisitorSupport {
   Set registeringCalls
   Set registers = [] as LinkedHashSet
   Set uses = [] as TreeSet
+  Set tasksBlocks = Collections.newSetFromMap(new IdentityHashMap())
+  boolean insideTasksBlock
 
   protected org.codehaus.groovy.control.SourceUnit getSourceUnit() { null }
 
@@ -76,14 +114,41 @@ class GroovyFacts extends org.codehaus.groovy.ast.ClassCodeVisitorSupport {
     first instanceof org.codehaus.groovy.ast.expr.MethodCallExpression && first.implicitThis ? first.methodAsString : null
   }
 
+  static boolean isTasksReceiver(expression) {
+    if (expression instanceof org.codehaus.groovy.ast.expr.VariableExpression) return expression.name == 'tasks'
+    expression instanceof org.codehaus.groovy.ast.expr.PropertyExpression && expression.propertyAsString == 'tasks' &&
+        expression.objectExpression instanceof org.codehaus.groovy.ast.expr.VariableExpression &&
+        expression.objectExpression.name == 'project'
+  }
+
+  boolean isOnTaskContainer(org.codehaus.groovy.ast.expr.MethodCallExpression call) {
+    if (call.methodAsString == 'task') return call.implicitThis
+    call.implicitThis ? insideTasksBlock : isTasksReceiver(call.objectExpression)
+  }
+
+  void rememberTasksBlock(org.codehaus.groovy.ast.expr.MethodCallExpression call) {
+    if (call.methodAsString != 'tasks' || !call.implicitThis) return
+    def arguments = call.arguments
+    if (!(arguments instanceof org.codehaus.groovy.ast.expr.TupleExpression) || arguments.expressions.isEmpty()) return
+    def last = arguments.expressions[-1]
+    if (last instanceof org.codehaus.groovy.ast.expr.ClosureExpression) tasksBlocks << last
+  }
+
   void visitMethodCallExpression(org.codehaus.groovy.ast.expr.MethodCallExpression call) {
     def name = call.methodAsString
     if (name != null) uses << name
-    if (registeringCalls.contains(name)) {
+    if (registeringCalls.contains(name) && isOnTaskContainer(call)) {
       def registered = firstArgumentName(call)
       if (registered != null) registers << registered
     }
+    rememberTasksBlock(call)
     super.visitMethodCallExpression(call)
+  }
+
+  void visitClosureExpression(org.codehaus.groovy.ast.expr.ClosureExpression closure) {
+    def outer = insideTasksBlock
+    insideTasksBlock = tasksBlocks.contains(closure)
+    try { super.visitClosureExpression(closure) } finally { insideTasksBlock = outer }
   }
 
   void visitVariableExpression(org.codehaus.groovy.ast.expr.VariableExpression expression) {
@@ -138,8 +203,15 @@ def groovyDeclaredNamesOf = { org.codehaus.groovy.ast.expr.DeclarationExpression
   declaration.multipleAssignmentDeclaration ? declaration.tupleExpression.expressions*.name : [declaration.variableExpression.name]
 }
 
+/** The name an import brings in: its alias, else the simple name of a class or static member it names. */
+def groovyImportedNameOf = { org.codehaus.groovy.ast.ImportNode node ->
+  if (node.alias != null) return node.alias
+  if (node.isStar()) return null
+  node.fieldName ?: node.type?.nameWithoutPackage
+}
+
 def groovyDefinesOf = { node ->
-  if (node instanceof org.codehaus.groovy.ast.ImportNode) return node.alias == null ? [] : [node.alias]
+  if (node instanceof org.codehaus.groovy.ast.ImportNode) return [groovyImportedNameOf(node)].findAll { it != null }
   if (node instanceof org.codehaus.groovy.ast.MethodNode) return [node.name]
   if (node instanceof org.codehaus.groovy.ast.ClassNode) return [node.nameWithoutPackage]
   if (!(node instanceof org.codehaus.groovy.ast.stmt.ExpressionStatement)) return []
@@ -169,20 +241,22 @@ def groovyModuleOf = { String text ->
   source.AST
 }
 
-/** A module's top-level nodes in source order: imports, statements, methods and declared classes. */
+/** A module's top-level nodes: imports, statements, methods and declared classes. */
 def groovyTopLevelOf = { module ->
   def imports = module.imports + module.starImports + module.staticImports.values() + module.staticStarImports.values()
   def classes = module.classes.findAll { !it.script && !(it instanceof org.codehaus.groovy.ast.InnerClassNode) }
-  (imports + module.statementBlock.statements + module.methods + classes).sort { [it.lineNumber, it.columnNumber] }
+  imports + module.statementBlock.statements + module.methods + classes
 }
 
 def offsetOf = { List starts, int line, int column -> starts[line - 1] + column - 1 }
 
-def groovyStatementsOf = { String text ->
-  def starts = lineStartsOf(text)
-  groovyTopLevelOf(groovyModuleOf(text)).withIndex().collect { node, position ->
-    statementOf(text, starts, position + 1, offsetOf(starts, node.lineNumber, node.columnNumber),
-                offsetOf(starts, node.lastLineNumber, node.lastColumnNumber), groovyFactsOf(node))
+def groovyStatementsOf = { ScriptSource source ->
+  def starts = lineStartsOf(source.parsed)
+  def located = groovyTopLevelOf(groovyModuleOf(source.parsed)).collect { node ->
+    [node: node, start: offsetOf(starts, node.lineNumber, node.columnNumber), end: offsetOf(starts, node.lastLineNumber, node.lastColumnNumber)]
+  }
+  located.sort { it.start }.withIndex().collect { entry, position ->
+    statementOf(source, starts, position + 1, entry.start, entry.end, groovyFactsOf(entry.node))
   }
 }
 
@@ -215,7 +289,12 @@ class KotlinParser {
   static KotlinParser open(File libDirectory, java.util.regex.Pattern wanted) {
     def jars = libDirectory.listFiles().findAll { it.name ==~ wanted }.sort { it.name }
     def parser = new KotlinParser(loader: new URLClassLoader(jars.collect { it.toURI().toURL() } as URL[], ClassLoader.platformClassLoader))
-    parser.withLoader { parser.start() }
+    try {
+      parser.withLoader { parser.start() }
+    } catch (Throwable failure) {
+      try { parser.close() } catch (Throwable ignored) { }
+      throw failure
+    }
     parser
   }
 
@@ -242,8 +321,15 @@ class KotlinParser {
   }
 
   void close() {
-    try { withLoader { type('org.jetbrains.kotlin.com.intellij.openapi.util.Disposer').getMethod('dispose', type('org.jetbrains.kotlin.com.intellij.openapi.Disposable')).invoke(null, disposable) } }
-    finally { loader.close() }
+    try {
+      if (disposable != null) {
+        withLoader { type('org.jetbrains.kotlin.com.intellij.openapi.util.Disposer').getMethod('dispose', type('org.jetbrains.kotlin.com.intellij.openapi.Disposable')).invoke(null, disposable) }
+      }
+    } finally { loader.close() }
+  }
+
+  Object parentOf(Object element, String name) {
+    type('org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil').getParentOfType(element, type(name), true)
   }
 
   boolean is(String name, Object element) { element != null && type(name).isInstance(element) }
@@ -259,14 +345,19 @@ class KotlinParser {
   Object parse(String text) { withLoader { factory.createFile('build.gradle.kts', text) } }
 }
 
+/** Each Gradle home's parser, or the failure that kept it from starting, so no later script retries it. */
 def kotlinParsers = [:]
 
 def kotlinParserFor = { File gradleHome ->
-  kotlinParsers.computeIfAbsent(gradleHome.path) { KotlinParser.open(new File(gradleHome, 'lib'), KOTLIN_JAR) }
+  def parser = kotlinParsers.computeIfAbsent(gradleHome.path) {
+    try { KotlinParser.open(new File(gradleHome, 'lib'), KOTLIN_JAR) } catch (Throwable failure) { failure }
+  }
+  if (parser instanceof Throwable) throw parser
+  parser
 }
 
 def closeKotlinParsers = {
-  kotlinParsers.values().each { parser -> try { parser.close() } catch (Throwable ignored) { } }
+  kotlinParsers.values().findAll { it instanceof KotlinParser }.each { parser -> try { parser.close() } catch (Throwable ignored) { } }
   kotlinParsers.clear()
 }
 
@@ -288,12 +379,37 @@ def kotlinFirstArgumentOf = { call ->
 }
 
 def DELEGATED_REGISTERING = ['registering', 'creating'] as Set
+def KOTLIN_TASKS_RECEIVERS = ['tasks', 'project.tasks'] as Set
+
+/** The receiver a call or delegate is qualified with, as text, or null for an unqualified one. */
+def kotlinReceiverTextOf = { KotlinParser parser, node ->
+  if (parser.is('org.jetbrains.kotlin.psi.KtQualifiedExpression', node)) return node.getReceiverExpression().getText()
+  def parent = node.getParent()
+  parser.is('org.jetbrains.kotlin.psi.KtQualifiedExpression', parent) && parent.getSelectorExpression() == node ? parent.getReceiverExpression().getText() : null
+}
+
+/** Whether an element's nearest enclosing lambda is the trailing lambda of a `tasks {}` call. */
+def isInsideKotlinTasksBlock = { KotlinParser parser, element ->
+  def lambda = parser.parentOf(element, 'org.jetbrains.kotlin.psi.KtLambdaExpression')
+  def call = lambda?.getParent()?.getParent()
+  parser.is('org.jetbrains.kotlin.psi.KtLambdaArgument', lambda?.getParent()) && parser.is('org.jetbrains.kotlin.psi.KtCallExpression', call) &&
+      kotlinCalleeNameOf(parser, call) == 'tasks' && kotlinReceiverTextOf(parser, call) in [null, 'project']
+}
+
+def isOnKotlinTaskContainer = { KotlinParser parser, node, element ->
+  def receiver = kotlinReceiverTextOf(parser, node)
+  receiver == null ? isInsideKotlinTasksBlock(parser, element) : receiver in KOTLIN_TASKS_RECEIVERS
+}
 
 def kotlinRegisteredNameOf = { KotlinParser parser, node ->
   if (parser.is('org.jetbrains.kotlin.psi.KtProperty', node)) {
-    return kotlinCalleeNameOf(parser, node.getDelegateExpression()) in DELEGATED_REGISTERING ? node.getName() : null
+    def delegate = node.getDelegateExpression()
+    boolean registering = kotlinCalleeNameOf(parser, delegate) in DELEGATED_REGISTERING && isOnKotlinTaskContainer(parser, delegate, node)
+    return registering ? node.getName() : null
   }
-  kotlinCalleeNameOf(parser, node) in REGISTERING_CALLS ? kotlinStringOf(parser, kotlinFirstArgumentOf(node)) : null
+  def name = kotlinCalleeNameOf(parser, node)
+  if (name == 'task') return kotlinReceiverTextOf(parser, node) == null ? kotlinStringOf(parser, kotlinFirstArgumentOf(node)) : null
+  name in REGISTERING_CALLS && isOnKotlinTaskContainer(parser, node, node) ? kotlinStringOf(parser, kotlinFirstArgumentOf(node)) : null
 }
 
 def kotlinRegistersOf = { KotlinParser parser, element ->
@@ -354,15 +470,15 @@ def kotlinTopLevelOf = { file ->
   (imports + statements).sort { it.getTextRange().getStartOffset() }
 }
 
-def kotlinStatementsOf = { KotlinParser parser, String text ->
-  def starts = lineStartsOf(text)
+def kotlinStatementsOf = { KotlinParser parser, ScriptSource source ->
+  def starts = lineStartsOf(source.parsed)
   parser.withLoader {
-    def file = parser.parse(text)
+    def file = parser.parse(source.parsed)
     def error = kotlinSyntaxErrorOf(parser, file, starts)
     if (error != null) return [unparsed: error]
     [statements: kotlinTopLevelOf(file).withIndex().collect { element, position ->
       def range = element.getTextRange()
-      statementOf(text, starts, position + 1, range.getStartOffset(), range.getEndOffset(), kotlinFactsOf(parser, element))
+      statementOf(source, starts, position + 1, range.getStartOffset(), range.getEndOffset(), kotlinFactsOf(parser, element))
     }]
   }
 }
@@ -377,8 +493,8 @@ def scriptInventoryOf = { File base, File gradleHome, project ->
   def kotlin = file.name.endsWith('.kts')
   def inventory = [path: pathFrom(base, file), dsl: kotlin ? 'kotlin' : 'groovy']
   try {
-    def text = sourceTextOf(file)
-    inventory + (kotlin ? kotlinStatementsOf(kotlinParserFor(gradleHome), text) : [statements: groovyStatementsOf(text)])
+    def source = scriptSourceOf(file)
+    inventory + (kotlin ? kotlinStatementsOf(kotlinParserFor(gradleHome), source) : [statements: groovyStatementsOf(source)])
   } catch (Throwable failure) {
     inventory + [unparsed: unparsedReason(failure)]
   }
@@ -447,18 +563,18 @@ def readClassFile = { DataInputStream input ->
   [sourceFile: sourceFile, lines: lines]
 }
 
-/**
- * Where a script-compiled action's class came from: its `SourceFile`, which Groovy writes as an
- * absolute path and Kotlin as a bare file name, and the LAST line its code names, which is the line
- * that places it in a statement.
- *
- * @implNote the last line, because Kotlin on 7.6.4 adds a stray line 1 to a lambda's table while
- * keeping the right last line (M4, D-165).
- */
+/** A class's `SourceFile`, which Groovy writes as an absolute path and Kotlin as a bare file name. */
 def sourceFileFrom = { File base, String sourceFile ->
   sourceFile != null && new File(sourceFile).isAbsolute() ? pathFrom(base, sourceFile) : sourceFile
 }
 
+/**
+ * Where a script-compiled action's class came from: its `SourceFile`, and the LAST line its code
+ * names, which is the line that places it in a statement.
+ *
+ * @implNote the last line, because Kotlin on 7.6.4 adds a stray line 1 to a lambda's table while
+ * keeping the right last line (M4, D-165).
+ */
 def actionLinesOf = { File base, Class type ->
   try {
     def stream = type.classLoader?.getResourceAsStream(type.name.replace('.', '/') + '.class')

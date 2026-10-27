@@ -1,9 +1,8 @@
 build/daukle/gradle/migrate-model.json "dsl": "kotlin",
-build/daukle/gradle/migrate-model.json "index": 8,
+build/daukle/gradle/migrate-model.json "index": 12,
 build/daukle/gradle/migrate-model.json "text": "import java.time.LocalDate as Day",
 build/daukle/gradle/migrate-model.json "text": "val banner = \"\"\"a } ${\"b\"} c\"\"\"",
 build/daukle/gradle/migrate-model.json "text": "fun helper() {\n
 build/daukle/gradle/migrate-model.json "text": "val gen by tasks.registering {\n
-build/daukle/gradle/migrate-model.json                             "gen"
 build/daukle/gradle/migrate-model.json "startLine": 17,
 build/daukle/gradle/migrate-model.json "lastLine": 20

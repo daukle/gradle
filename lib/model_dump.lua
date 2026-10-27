@@ -822,6 +822,21 @@ def withoutEnvironment = { Map model ->
   safe
 }
 
+/**
+ * The model as written: `withoutEnvironment`'s, except that each project's `script` inventory is
+ * kept as it was read.
+ *
+ * @implNote the inventory is source text already on disk, which a later task carries verbatim, and a
+ * statement redacted to `${env:...}` would no longer compile; every value the build evaluated is
+ * still redacted and still blocks (D-165).
+ */
+def writableModel = { Map model ->
+  def scripts = model.projects.collect { it.remove('script') }
+  def safe = withoutEnvironment(model)
+  safe.projects.eachWithIndex { project, index -> project.script = scripts[index] }
+  safe
+}
+
 gradle.projectsEvaluated {
   def help = gradle.rootProject.tasks.findByName('help')
   if (help != null) gradle.includedBuilds.each { build -> help.dependsOn(build.task(':help')) }
@@ -846,7 +861,7 @@ gradle.taskGraph.whenReady {
   finally { closeKotlinParsers() }
   def file = outputFor(gradle)
   file.parentFile.mkdirs()
-  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(withoutEnvironment(model))), 'UTF-8')
+  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(writableModel(model))), 'UTF-8')
 }
 ]==]
 

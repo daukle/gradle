@@ -26,3 +26,13 @@ tasks.compileJava {
 }
 
 extra["release"] = "17"
+
+tasks.register("bundle")
+
+tasks {
+    val packed by registering
+}
+
+val extraConfig by configurations.creating
+
+configurations.create("kotlinConfig")

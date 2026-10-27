@@ -1,0 +1,7 @@
+build/daukle/gradle/migrate-model.json
+"text": "val gen by tasks.registering {\n    doLast {\n        println(\"gen ran $banner\")\n    }\n}",
+"startLine": 17,
+"endLine": 21,
+"registers": [
+"gen"
+],
