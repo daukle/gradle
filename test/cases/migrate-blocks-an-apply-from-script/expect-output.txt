@@ -1,0 +1,2 @@
+notes.gradle: compiled an action of task notes and is not the build script, so its text is not carried
+notes: is a task the old build has and no statement of its build script registers, so nothing can be carried to create it
