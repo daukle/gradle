@@ -1,0 +1,17 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+plugins = [{ id = "version-catalog" }]
+tasks = ["generateCatalogAsToml"]
+
+[toolchains.gradle.configure.catalog.versionCatalog]
+library = { call = ["junit", "org.junit.jupiter:junit-jupiter:5.10.1"] }

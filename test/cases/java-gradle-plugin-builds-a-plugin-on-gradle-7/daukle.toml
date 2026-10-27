@@ -1,0 +1,17 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "7.6.4"
+plugins = [{ id = "java-gradle-plugin" }]
+
+[toolchains.gradle.configure.gradlePlugin.plugins.greeter]
+id = "example.greeter"
+implementationClass = "example.GreeterPlugin"
