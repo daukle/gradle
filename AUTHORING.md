@@ -187,6 +187,11 @@ edge. The test report lands in `reports/tests/test/aggregated-results` on 9.6.0 
 their files into the generated build under `build/daukle/gradle`, not the project root, so an IDE
 opening the project does not see them.
 
+A Gradle plugin is built the same way: `java-gradle-plugin` with
+`configure.gradlePlugin.plugins.<name>` holding `id` and `implementationClass`, or
+`groovy-gradle-plugin` with its precompiled scripts in `src/main/groovy`, both compiling against
+the Gradle API the distribution carries, so nothing is pinned.
+
 A plugin that downloads a tool when Gradle resolves one of its configurations needs that
 configuration pinned, because the generated build declares no repository. `configurations.<name>`
 is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need

@@ -1,0 +1,1 @@
+build/daukle/gradle/build/libs/greeter-1.0.0.jar META-INF/gradle-plugins/example.greeter.properties

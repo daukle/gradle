@@ -1,0 +1,1 @@
+build/daukle/gradle/build/version-catalog/libs.versions.toml junit-jupiter
