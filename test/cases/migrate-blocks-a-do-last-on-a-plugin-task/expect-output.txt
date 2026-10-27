@@ -1,1 +1,0 @@
-jar: carries code that build.gradle compiled (a doFirst, a doLast or a task type the script defines), which is build logic written as code

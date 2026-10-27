@@ -1,0 +1,1 @@
+:stamp: carried, configured and compared, not run by the proof

@@ -820,11 +820,23 @@ old build or the dump failed.
    `JavaExec`), the `application` extension, and `enabled`; a task type with no reader compares by
    type only; and each configuration's classpath, by membership and by the order of entries that
    share a `.class` name.
-4. **Two build-logic signals**, both blocking under the boundary row: a task action compiled from the
-   build script (Groovy `ClosureTaskAction`, Kotlin's script class), and a task the old project has
-   and the generated build lacks. Neither alone suffices: on `intisy/tools/brazier` the action signal
-   finds 17 of 18 build-defined tasks and the difference finds the other. `buildSrc/` blocks whenever
-   it exists. Version catalogs need nothing and are skipped by their
+4. **Build logic written as code is carried** (`D-165`, `lib/migrate_carry.lua`). Two signals find
+   it: a task action compiled from the build script (Groovy `ClosureTaskAction`, Kotlin's script
+   class), and a task the old project has and a first render of the generated build, from the keys
+   alone, lacks. `lib/migrate_logic.lua` selects the top-level statements holding those actions or
+   registering those tasks, plus the definitions they use and the callers of a helper they land in;
+   the statements go verbatim, in source order (Kotlin imports first), one blank line apart, into
+   `daukle/gradle/logic/<build>/<project>.gradle(.kts)`, which the project's `logic` key names and
+   which returns to core as the result's `files` (daukle 0.12.0, `api = 4`). The generated build is
+   then rendered and dumped again WITH the carried text in memory, and that second dump is what the
+   comparison reads, its derived root, real-tree paths and `build/out/` directories mapped back to
+   the real root first (`lib/migrate_real_tree.lua`). A carried task stops blocking; still blocking:
+   an action from another script or from a class that could not be read, an action no statement
+   holds, a missing task no statement registers, an unparsed script, a parent project that becomes
+   no module, and any build in a subdirectory instance (`dir`), whose files core takes only under
+   `daukle/gradle-<dir>/`. A derived root an earlier carrying render linked is rendered carrying in
+   the first pass too, and blocks when this migration carries nothing there. `buildSrc/` blocks
+   whenever it exists. Version catalogs need nothing and are skipped by their
    `org.gradle.accessors.dm.LibrariesFor` type.
 5. **The environment gate.** A model string that holds an environment variable's value (8 or more
    characters; shorter values would false-block `17` or `true`) is rewritten in the model file to
@@ -842,7 +854,9 @@ old build or the dump failed.
 build, and core compares every jar task BOTH builds have as an archive (a zip's headers carry
 timestamps, its entries do not). A fat jar from a carried plugin is therefore proved. Test counts
 are not compared. The old build writes only each project's own `build/` (and `buildSrc/build` on
-Gradle 8, which blocks anyway).
+Gradle 8, which blocks anyway). The proof prints `<task>: carried, configured and compared, not run
+by the proof` for each carried task its task graph does not hold, from an init script the migrator
+leaves and `gradle:jars` empties after its first run.
 
 ### What blocks, by `GRADLE-SURFACE.md` row
 
@@ -851,7 +865,7 @@ spells it.
 
 | row | blocks |
 | --- | --- |
-| The boundary: what "100% of Gradle" does not include | a build-defined task or action; `buildSrc/`; a plugin class the build script compiles |
+| The boundary: what "100% of Gradle" does not include | build logic the migration cannot carry (item 4 above); `buildSrc/`; a plugin class the build script compiles |
 | 1. The settings file, a settings-level `plugins {}` block | a settings plugin whose configuration cannot be carried |
 | 2. Dependency configurations | an artifact with no repository (`files()`, `gradleApi()`), a non-Maven (Ivy) repository, a `mavenLocal()` or `file:` repository; a configuration the old build could not resolve; a classpath that differs; a project consumed with `api` transitives |
 | 3. The `java` extension and source layout | a source root outside the project; a source set wired to something no key says; source and target levels that differ; a non-UTF-8 encoding (effective encoding not UTF-8 AND a source file holding a byte of 0x80 or above); a toolchain `vendor` or `implementation` that is set |

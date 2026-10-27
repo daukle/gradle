@@ -180,17 +180,25 @@ local function file_exists(path)
   return false
 end
 
+--- Whether a carrying build linked this derived root to the real tree.
+---
+--- @implNote decided by the record the links script writes rather than by
+--- looking for links: core lists a hard link as a plain file.
+--- @param derived_root the derived root, relative to the project
+function carried.is_linked(derived_root)
+  return file_exists(derived_root .. "/" .. carried.LINK_RECORD)
+end
+
 --- Refuses to render a build without logic into a derived root that a
 --- carrying build linked to the real tree.
 ---
---- @implNote decided by the record the links script writes rather than by
---- looking for links: core lists a hard link as a plain file, and daukle.write
---- opens a path for writing in place, so a generated `build.gradle` would be
---- written through the hard link into the user's own build file.
+--- @implNote daukle.write opens a path for writing in place, so a generated
+--- `build.gradle` would be written through the hard link into the user's own
+--- build file.
 --- @param derived_root the derived root, relative to the project
 function carried.refuse_a_linked_root(derived_root)
   local record = derived_root .. "/" .. carried.LINK_RECORD
-  if file_exists(record) then
+  if carried.is_linked(derived_root) then
     error('"' .. derived_root .. '" holds links to the project\'s own files, which a build'
           .. ' carrying logic placed (listed in "' .. record .. '"), and a build without'
           .. ' "logic" would write through them: run "daukle clean" first', 0)

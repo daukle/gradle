@@ -9,7 +9,14 @@ ok rule 4 follows a chain of helpers
 ok a definition carried only by rule 3 does not pull its other callers
 ok rule 3 extends what rule 4 carried
 ok a script that did not parse blocks with the reason
+ok an action whose class file could not be read blocks by its task
 ok a task action with no compiled script is ignored
 ok daukle/gradle/logic/brazier/tools/idea.gradle.kts
 ok daukle/gradle/logic/root/root.gradle
 ok daukle/gradle/logic/root/app.gradle
+ok a task whose action is carried is covered
+ok a task with an action that was not found is not covered
+ok a missing task a carried statement registers is covered
+ok a Kotlin file takes its imports first, one blank line between statements
+ok a Groovy file keeps source order
+ok a CRLF statement keeps CRLF between statements

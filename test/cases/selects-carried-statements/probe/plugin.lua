@@ -111,6 +111,9 @@ local CASES = {
   { "a script that did not parse blocks with the reason",
     function() return migrate_logic.select(project_with({}, { unparsed = "unexpected token", statements = false }), {}, "root") end,
     "carried= blocked=unexpected token" },
+  { "an action whose class file could not be read blocks by its task",
+    function() return migrate_logic.select(project_with({ { script = "build.gradle" } }), {}, "root") end,
+    "carried= blocked=greet" },
   { "a task action with no compiled script is ignored",
     function() return migrate_logic.select(project_with({ { type = "Foo" } }), {}, "root") end,
     "carried= blocked=" },
@@ -121,6 +124,52 @@ local PATHS = {
   { "root", ":", "groovy", "daukle/gradle/logic/root/root.gradle" },
   { "root", ":app", "groovy", "daukle/gradle/logic/root/app.gradle" },
 }
+
+local function covered_names(selection)
+  local names = {}
+  for name in pairs(selection.covered) do names[#names + 1] = name end
+  table.sort(names)
+  return table.concat(names, ",")
+end
+
+local COVERED = {
+  { "a task whose action is carried is covered",
+    function() return migrate_logic.select(project_with({ GREET_ACTION }), {}, "root") end, "greet" },
+  { "a task with an action that was not found is not covered",
+    function()
+      return migrate_logic.select(project_with({ GREET_ACTION, { sourceFile = "build.gradle", lastLine = 99 } }), {}, "root")
+    end, "" },
+  { "a missing task a carried statement registers is covered",
+    function() return migrate_logic.select(project_with({}), { "made" }, "root") end, "made" },
+}
+
+local TEXTS = {
+  { "a Kotlin file takes its imports first, one blank line between statements",
+    { { text = "val a = 1" }, { text = "import x.Y" } }, "kotlin", "import x.Y\n\nval a = 1\n" },
+  { "a Groovy file keeps source order",
+    { { text = "def a = 1" }, { text = "import x.Y" } }, "groovy", "def a = 1\n\nimport x.Y\n" },
+  { "a CRLF statement keeps CRLF between statements",
+    { { text = "tasks.register('a') {\r\n}" }, { text = "def b = 2" } }, "groovy",
+    "tasks.register('a') {\r\n}\r\n\r\ndef b = 2\r\n" },
+}
+
+local function report_covered()
+  local lines = {}
+  for _, entry in ipairs(COVERED) do
+    local actual = covered_names(entry[2]())
+    lines[#lines + 1] = (actual == entry[3] and "ok " or "FAIL " .. actual .. " ") .. entry[1]
+  end
+  return lines
+end
+
+local function report_texts()
+  local lines = {}
+  for _, entry in ipairs(TEXTS) do
+    local actual = migrate_logic.text(entry[2], entry[3])
+    lines[#lines + 1] = (actual == entry[4] and "ok " or "FAIL " .. string.format("%q", actual) .. " ") .. entry[1]
+  end
+  return lines
+end
 
 local function report_selections()
   local lines = {}
@@ -145,6 +194,8 @@ daukle.task{
   run = function()
     local lines = report_selections()
     for _, line in ipairs(report_paths()) do lines[#lines + 1] = line end
+    for _, line in ipairs(report_covered()) do lines[#lines + 1] = line end
+    for _, line in ipairs(report_texts()) do lines[#lines + 1] = line end
     return daukle.write{ path = "results.txt", text = table.concat(lines, "\n") .. "\n" }
   end,
 }

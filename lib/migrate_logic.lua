@@ -56,24 +56,43 @@ local function boundary_blocker(construct, where, why)
   return blocker(construct, where, why, BOUNDARY_ROW)
 end
 
+local function is_script_compiled(action)
+  return action.script ~= nil or action.sourceFile ~= nil
+end
+
 local function script_actions(project)
   local actions = {}
   for _, task in ipairs(project.tasks or {}) do
     for _, action in ipairs(task.actions or {}) do
-      if action.sourceFile ~= nil then
-        actions[#actions + 1] = { task = task.name, sourceFile = action.sourceFile, lastLine = action.lastLine }
+      if is_script_compiled(action) then
+        actions[#actions + 1] = { task = task.name, script = action.script, sourceFile = action.sourceFile,
+                                  lastLine = action.lastLine }
       end
     end
   end
   return actions
 end
 
---- Rule 1: the statements holding a script-compiled action's last line, and
---- the blockers for an action that no statement of the build script holds.
+local function unreadable_class_blocker(action, where)
+  return boundary_blocker(action.task, where, "has an action compiled from " .. action.script
+    .. " whose class file could not be read, so no statement can be found to carry it")
+end
+
+--- Rule 1: the statements holding a script-compiled action's last line, the
+--- blockers for an action that no statement of the build script holds, and
+--- the tasks with such an action.
 local function statements_with_actions(script, tasks, where)
   local seeds, blockers, reported, reported_tasks = {}, {}, {}, {}
+  local located, unlocated = {}, {}
   for _, action in ipairs(script_actions({ tasks = tasks })) do
-    if not is_build_script(action.sourceFile, script.path) then
+    if action.sourceFile == nil then
+      unlocated[action.task] = true
+      if not reported_tasks[action.task] then
+        reported_tasks[action.task] = true
+        blockers[#blockers + 1] = unreadable_class_blocker(action, where)
+      end
+    elseif not is_build_script(action.sourceFile, script.path) then
+      unlocated[action.task] = true
       if not reported[action.sourceFile] then
         reported[action.sourceFile] = true
         blockers[#blockers + 1] = boundary_blocker(action.sourceFile, where, "compiled an action of task "
@@ -83,14 +102,18 @@ local function statements_with_actions(script, tasks, where)
       local statement = action.lastLine and statement_holding(script.statements, action.lastLine)
       if statement then
         seeds[#seeds + 1] = statement
-      elseif not reported_tasks[action.task] then
-        reported_tasks[action.task] = true
-        blockers[#blockers + 1] = boundary_blocker(action.task, where, "has an action compiled from "
-          .. script.path .. " that no statement of it holds")
+        located[action.task] = true
+      else
+        unlocated[action.task] = true
+        if not reported_tasks[action.task] then
+          reported_tasks[action.task] = true
+          blockers[#blockers + 1] = boundary_blocker(action.task, where, "has an action compiled from "
+            .. script.path .. " that no statement of it holds")
+        end
       end
     end
   end
-  return seeds, blockers
+  return seeds, blockers, { located = located, unlocated = unlocated }
 end
 
 --- Rule 2: the statements registering a task the generated build lacks.
@@ -107,13 +130,17 @@ local function statements_registering(statements, missing_task_names)
   return seeds
 end
 
-local function unregistered_blockers(statements, missing_task_names, carried, where)
+local function registered_by(statements, carried)
   local registered = {}
   for _, statement in ipairs(statements) do
     if carried[statement.index] then
       for _, name in ipairs(statement.registers or {}) do registered[name] = true end
     end
   end
+  return registered
+end
+
+local function unregistered_blockers(missing_task_names, registered, where)
   local blockers = {}
   for _, name in ipairs(missing_task_names) do
     if not registered[name] then
@@ -122,6 +149,16 @@ local function unregistered_blockers(statements, missing_task_names, carried, wh
     end
   end
   return blockers
+end
+
+--- The tasks the carried statements account for: each one they register or
+--- hold an action of, unless another of its actions was not found.
+local function covered_tasks(registered, actions)
+  local covered = {}
+  for name in pairs(registered) do covered[name] = true end
+  for name in pairs(actions.located) do covered[name] = true end
+  for name in pairs(actions.unlocated) do covered[name] = nil end
+  return covered
 end
 
 local function add(carried, statement)
@@ -195,7 +232,7 @@ local function append_all(target, items)
 end
 
 local function unparsed_result(script, where)
-  return { carried = {}, blockers = {
+  return { carried = {}, covered = {}, blockers = {
     boundary_blocker(script.unparsed, where, "is why the build script " .. script.path
       .. " cannot be read, so no statement of it is carried"),
   } }
@@ -203,12 +240,13 @@ end
 
 --- @param project a dumped project: its `script` and its tasks' `actions`
 --- @param missing_task_names the tasks signal 2 found the generated build lacks
---- @return table { carried = statements in source order, blockers = blockers }
+--- @return table { carried = statements in source order, blockers = blockers,
+---         covered = set of the task names the carried statements account for }
 function migrate_logic.select(project, missing_task_names, where)
   local script = project.script or { path = "", statements = {} }
   if script.unparsed ~= nil then return unparsed_result(script, where) end
   local statements = script.statements
-  local seeds, blockers = statements_with_actions(script, project.tasks, where)
+  local seeds, blockers, actions = statements_with_actions(script, project.tasks, where)
   append_all(seeds, statements_registering(statements, missing_task_names))
   local carried = {}
   for _, seed in ipairs(seeds) do add(carried, seed) end
@@ -217,8 +255,39 @@ function migrate_logic.select(project, missing_task_names, where)
     local changed = carry_used_definitions(statements, carried)
     changed = carry_callers(statements, active, carried) or changed
   until not changed
-  append_all(blockers, unregistered_blockers(statements, missing_task_names, carried, where))
-  return { carried = in_source_order(statements, carried), blockers = blockers }
+  local registered = registered_by(statements, carried)
+  append_all(blockers, unregistered_blockers(missing_task_names, registered, where))
+  return { carried = in_source_order(statements, carried), blockers = blockers,
+           covered = covered_tasks(registered, actions) }
+end
+
+local function is_import(statement)
+  return string.match(statement.text, "^import%s") ~= nil
+end
+
+--- @implNote Kotlin takes an import only ahead of every other statement, and
+--- the wrapper lifts the file's leading imports above its own blocks (spec 7.2).
+local function in_file_order(statements, dsl)
+  if dsl ~= "kotlin" then return statements end
+  local imports, rest = {}, {}
+  for _, statement in ipairs(statements) do
+    if is_import(statement) then imports[#imports + 1] = statement else rest[#rest + 1] = statement end
+  end
+  append_all(imports, rest)
+  return imports
+end
+
+--- The carried file: each statement's text verbatim, one blank line between.
+---
+--- @implNote the blank line takes the line ending the statements use, so a
+--- CRLF script does not gain LF lines between its own.
+function migrate_logic.text(statements, dsl)
+  local texts, line_end = {}, "\n"
+  for _, statement in ipairs(in_file_order(statements, dsl)) do
+    texts[#texts + 1] = statement.text
+    if string.find(statement.text, "\r\n", 1, true) then line_end = "\r\n" end
+  end
+  return table.concat(texts, line_end .. line_end) .. line_end
 end
 
 return migrate_logic
