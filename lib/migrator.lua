@@ -245,6 +245,10 @@ end
 
 --- What the migration carries, and the generated build the comparison reads:
 --- the baseline when nothing is carried, else a second render carrying it.
+---
+--- @implNote no second render over a stale link: the writer would refuse to
+--- render the root without logic there, and its advice, `daukle clean`, is
+--- one core refuses while a migration is unfinished.
 local function carry(context, built, blockers)
   local where = built.projects[1].where
   local linked = migrate_carry.linked_roots(context, built)
@@ -253,7 +257,9 @@ local function carry(context, built, blockers)
   local generated_models = generated_builds(context, built)
   local carrying = migrate_carry.select(built, generated, generated_models, context.instance)
   append(blockers, carrying.blockers)
-  append(blockers, migrate_carry.stale_link_blockers(built.config, linked))
+  local stale = migrate_carry.stale_link_blockers(built.config, linked)
+  append(blockers, stale)
+  if #stale > 0 then return carrying, nil, refusals end
   if #carrying.files == 0 then return carrying, generated, refusals, generated_models end
   generated, refusals = dump_generated(context, built, built.config, carrying.texts, where)
   if generated == nil then return carrying, nil, refusals end
