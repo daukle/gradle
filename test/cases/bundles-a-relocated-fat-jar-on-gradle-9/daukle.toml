@@ -27,9 +27,8 @@ version = "9.3.2"
 
 # `enableAutoRelocation` and not shadow 8.x's `enableRelocation`, which this
 # version answers with "Could not set unknown property". Both are Gradle
-# Property types, which is the only reason a relocation is expressible at all:
-# shadow's other spelling is `relocate 'a', 'b'`, a two-argument METHOD, and
-# `configure` renders blocks and assignments and no call.
+# Property types; shadow's other spelling, `relocate(from, to)`, is a method
+# call, which `relocates-a-package-with-an-exclusion-on-gradle-9` proves.
 [toolchains.gradle.configure.shadowJar]
 enableAutoRelocation = true
 relocationPrefix = "com.example.shaded"

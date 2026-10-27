@@ -1,0 +1,1 @@
+build/daukle/gradle/build/libs/fat-jar-1.0.0-all.jar

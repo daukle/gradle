@@ -145,10 +145,13 @@ local function plain_value_problem(value, path)
   return assignment_problem(value, path)
 end
 
+local CALL_KEYS = { call = true, body = true }
+
 local function call_problem(value, path)
   for key in pairs(value) do
-    if key ~= "call" then
-      return '"' .. path .. '" mixes "call" with the key "' .. tostring(key) .. '": a call holds only its arguments'
+    if not CALL_KEYS[key] then
+      return '"' .. path .. '" mixes "call" with the key "' .. tostring(key) .. '": a call holds only its'
+             .. ' arguments and an optional "body"'
     end
   end
   local arguments = value.call
@@ -159,7 +162,11 @@ local function call_problem(value, path)
     local problem = plain_value_problem(arguments[index], path .. ".call[" .. index .. "]")
     if problem ~= nil then return problem end
   end
-  return nil
+  if value.body == nil then return nil end
+  if type(value.body) ~= "table" or not is_block(value.body) then
+    return '"' .. path .. '.body" must be a block: it is the closure the call is given'
+  end
+  return body_problem(value.body, path .. ".body")
 end
 
 local function list_mix_problem(value, path)
@@ -301,7 +308,14 @@ local function render_assignment(lines, indent, key, value, depth)
 end
 
 local function render_call(lines, indent, key, call, depth)
-  lines[#lines + 1] = indent .. key .. "(" .. table.concat(render_literals(call.call, depth), ", ") .. ")"
+  local head = indent .. key .. "(" .. table.concat(render_literals(call.call, depth), ", ") .. ")"
+  if call.body == nil then
+    lines[#lines + 1] = head
+    return
+  end
+  lines[#lines + 1] = head .. " {"
+  render_body(lines, indent .. "  ", call.body, depth)
+  lines[#lines + 1] = indent .. "}"
 end
 
 local function render_each(render, lines, indent, key, value, depth)

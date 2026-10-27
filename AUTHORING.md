@@ -411,7 +411,14 @@ dependsOn = { call = ["test"] }                           # jacocoTestReport { d
 
 [toolchains.gradle.configure.application]
 applicationDefaultJvmArgs = ["-Xmx1g"]                    # application { applicationDefaultJvmArgs = ['-Xmx1g'] }
+
+[toolchains.gradle.configure.shadowJar.relocate]          # shadowJar { relocate('a', 'b') { exclude('a.text.**') } }
+call = ["a", "b"]
+body = { exclude = { call = ["a.text.**"] } }
 ```
+
+A call's `body` is the closure it is given, checked and rendered like any block; a call holds
+`call` and `body` and nothing else.
 
 An argument is a string, number, boolean or one of the four markers above, and nothing that
 evaluates Groovy. A key holding an ARRAY of call tables calls the method once per entry
