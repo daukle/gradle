@@ -1,0 +1,24 @@
+schema = 1
+project = "example/fat-jar"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# shadow's `relocate(from, to) { exclude(...) }`: a method call that takes a
+# closure, which is a `call` with a `body`. daukle/maven/classpath.lua is the
+# fat-jar case's, shadow's plugin closure plus commons-lang3.
+[toolchains.gradle]
+version = "9.6.0"
+main = "com.example.Main"
+tasks = ["shadowJar", "runShadow"]
+
+[[toolchains.gradle.plugins]]
+id = "com.gradleup.shadow"
+version = "9.3.2"
+
+[toolchains.gradle.configure.shadowJar.relocate]
+call = ["org.apache.commons.lang3", "com.example.shaded.lang3"]
+body = { exclude = { call = ["org.apache.commons.lang3.text.**"] } }

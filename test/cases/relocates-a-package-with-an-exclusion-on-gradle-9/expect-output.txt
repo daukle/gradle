@@ -1,0 +1,2 @@
+provisioning gradle 9.6.0
+Hello from a fat jar
