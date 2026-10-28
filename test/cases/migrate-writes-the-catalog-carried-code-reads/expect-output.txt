@@ -1,2 +1,3 @@
 provisioning gradle 9.6.0
 :versions: carried, configured and compared, not run by the proof
+verbatim.groovy: line 5 carried verbatim, coverage owed (GRADLE-SURFACE.md: The boundary: what "100% of Gradle" does not include)

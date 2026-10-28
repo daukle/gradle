@@ -1,0 +1,1 @@
+"builds.greeting.catalogs.libs" names "daukle/gradle/catalogs/greeting/libs.versions.toml"; since daukle/gradle 2.0.0 a catalog lives in daukle.toml: put that file's tables in [toolchains.gradle.builds.greeting.catalogs.libs.versions] and its siblings (libraries, bundles, plugins), then delete the file

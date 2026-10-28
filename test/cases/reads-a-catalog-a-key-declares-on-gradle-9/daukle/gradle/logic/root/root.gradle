@@ -1,6 +1,0 @@
-tasks.named('classes') {
-    doLast {
-        println 'catalog gson is ' + libs.versions.gson.get()
-        println 'catalog library is ' + libs.gson.get()
-    }
-}

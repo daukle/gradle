@@ -1,3 +1,4 @@
 provisioning gradle 9.6.0
 hello from an included library
 included catalog gson is 2.10.1
+daukle/gradle: builds.greeting.verbatim.groovy is plain Gradle code no daukle key covers yet

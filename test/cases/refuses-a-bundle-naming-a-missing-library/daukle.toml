@@ -1,0 +1,16 @@
+schema = 1
+project = "example/refused"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.register('noop') {}
+'''
+
+[toolchains.gradle.catalogs.libs.bundles]
+json = ["gson"]

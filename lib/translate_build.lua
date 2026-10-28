@@ -265,19 +265,21 @@ function translate_build.build(model, included_models, options)
   return result
 end
 
---- Sets the `logic` key of one project in a translated config.
+--- Sets the `verbatim` key of one project in a translated config.
 ---
 --- @param place { build = <an included build's directory> } or { module = <name> } or { root = true }
+--- @param dsl "groovy" or "kotlin", the member the text is set as
 --- @return false for a project that is neither, which no key can name
-function translate_build.set_logic(config, place, path)
+function translate_build.set_verbatim(config, place, dsl, text)
+  local value = { [dsl] = text }
   if place.build ~= nil then
-    config.builds[place.build].logic = path
+    config.builds[place.build].verbatim = value
   elseif place.module ~= nil then
     config.modules = config.modules or {}
     config.modules[place.module] = config.modules[place.module] or {}
-    config.modules[place.module].logic = path
+    config.modules[place.module].verbatim = value
   elseif place.root then
-    config.logic = path
+    config.verbatim = value
   else
     return false
   end

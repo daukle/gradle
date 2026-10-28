@@ -1,0 +1,3 @@
+provisioning gradle 9.6.0
+regenerated gson is 2.10.1
+daukle/gradle: verbatim.groovy is plain Gradle code no daukle key covers yet

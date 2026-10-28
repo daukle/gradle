@@ -1,4 +1,4 @@
-daukle/gradle/catalogs/greeting/libs.versions.toml
+build/daukle/gradle/included/greeting/build/catalogs/libs.versions.toml
 [versions]
 gson = "2.10.1"
 

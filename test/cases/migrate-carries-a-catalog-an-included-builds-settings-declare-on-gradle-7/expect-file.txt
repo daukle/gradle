@@ -1,4 +1,3 @@
-daukle/gradle/catalogs/greeting/libs.versions.toml
-daukle/gradle/logic/greeting/root.gradle.kts
+build/daukle/gradle/included/greeting/build/catalogs/libs.versions.toml
 build/daukle/migrate/old/gradle/libs.versions.toml
 build/daukle/migrate/old/greeting/settings.gradle.kts

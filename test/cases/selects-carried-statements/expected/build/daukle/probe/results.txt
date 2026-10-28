@@ -13,10 +13,6 @@ ok a script that did not parse blocks with the reason when a missing task needs 
 ok a script that did not parse and has nothing to carry does not block
 ok an action whose class file could not be read blocks by its task
 ok a task action with no compiled script is ignored
-ok daukle/gradle/logic/brazier/tools/idea.gradle.kts
-ok daukle/gradle/logic/root/root.gradle
-ok daukle/gradle/logic/root/app.gradle
-ok daukle/gradle-app/logic/root/root.gradle
 ok a task whose action is carried is covered
 ok a task with an action that was not found is not covered
 ok a missing task a carried statement registers is covered

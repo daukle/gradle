@@ -1,0 +1,36 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# The catalog is generated from these keys on every run, so deleting build/
+# between two runs leaves nothing to restore by hand; and core hands the tables
+# over in an order that changes per run, so the file must come out sorted.
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.named('classes') {
+    doLast { println 'regenerated gson is ' + libs.versions.gson.get() }
+}
+'''
+
+[toolchains.gradle.catalogs.libs.versions]
+gson = "2.10.1"
+guava = "33.0.0-jre"
+checkstyle = { strictly = "[8.0, 9.0[", prefer = "8.45" }
+
+[toolchains.gradle.catalogs.libs.libraries]
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
+
+[toolchains.gradle.catalogs.libs.bundles]
+json = ["gson", "guava"]
+
+[toolchains.gradle.catalogs.libs.plugins]
+benmanes = { id = "com.github.ben-manes.versions", version = "0.51.0" }

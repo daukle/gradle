@@ -1,0 +1,15 @@
+schema = 1
+project = "example/two"
+version = "1.0.0"
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+# A module's retired "logic" is refused before any other module key is read,
+# and a Kotlin script's text goes in the kotlin member.
+[toolchains.gradle]
+
+[toolchains.gradle.modules.app]
+logic = "daukle/gradle/logic/root/app.gradle.kts"

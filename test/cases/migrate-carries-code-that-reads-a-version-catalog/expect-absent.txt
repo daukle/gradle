@@ -1,3 +1,5 @@
 gradle/libs.versions.toml
 build.gradle
 settings.gradle
+daukle/gradle/logic
+daukle/gradle/catalogs

@@ -1,0 +1,3 @@
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.named('jar') {

@@ -1,0 +1,20 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# The first run carries code, so the derived root links the project's own
+# build.gradle; daukle.after.toml then drops "verbatim". A render without it
+# writes build.gradle into the derived root in place, which through a hard link
+# is the user's file, so it is refused until "daukle clean".
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.register('carried')
+'''

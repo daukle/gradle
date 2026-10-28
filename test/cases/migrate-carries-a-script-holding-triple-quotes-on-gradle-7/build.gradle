@@ -1,0 +1,11 @@
+plugins {
+  id 'java'
+}
+
+// A Groovy triple-quoted string cannot sit in a TOML literal, so the migration writes this
+// script as a multi-line basic string, which must still read back byte for byte.
+tasks.named('jar') {
+  doLast {
+    println '''packed with triple quotes'''
+  }
+}

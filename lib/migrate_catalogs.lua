@@ -1,6 +1,6 @@
---- The version catalogs a migration writes for carried code to read: each one
---- rendered as TOML from what the dump read back out of Gradle (spec D-190,
---- sections 3.2 and 3.5).
+--- The version catalogs a migration declares for carried code to read: each
+--- one turned from what the dump read back out of Gradle into the
+--- `catalogs.<name>` key lib/catalogs renders (spec D-190, 3.5; spec D-198, 4.4).
 local migrate_catalogs = {}
 
 local migrate_surface = daukle.require("lib/migrate_surface")
@@ -8,18 +8,8 @@ local tables = daukle.require("lib/tables")
 
 local sorted_keys = tables.sorted_keys
 
---- @param build "root" or the included build's directory
-function migrate_catalogs.file_path(build, name, instance)
-  return "daukle/" .. instance .. "/catalogs/" .. build .. "/" .. name .. ".versions.toml"
-end
-
 local function boundary_blocker(construct, where, why)
   return migrate_surface.blocker(construct, where, why, migrate_surface.BOUNDARY_ROW)
-end
-
-local function toml_string(text)
-  local escaped = string.gsub(string.gsub(tostring(text), "\\", "\\\\"), '"', '\\"')
-  return '"' .. escaped .. '"'
 end
 
 --- @implNote Gradle lists `my-lib` and `other_lib` as `my.lib` and
@@ -45,16 +35,16 @@ local function is_empty(constraint)
 end
 
 --- @implNote `strictly` sets the required version as well, so `require` is
---- written only where it says something `strictly` does not.
+--- kept only where it says something `strictly` does not.
 local function constraint_value(constraint)
-  if constraint.strictly == "" and constraint.prefer == "" then return toml_string(constraint.required) end
-  local fields = {}
+  if constraint.strictly == "" and constraint.prefer == "" then return constraint.required end
+  local value = {}
   if constraint.required ~= "" and constraint.required ~= constraint.strictly then
-    fields[#fields + 1] = "require = " .. toml_string(constraint.required)
+    value.require = constraint.required
   end
-  if constraint.strictly ~= "" then fields[#fields + 1] = "strictly = " .. toml_string(constraint.strictly) end
-  if constraint.prefer ~= "" then fields[#fields + 1] = "prefer = " .. toml_string(constraint.prefer) end
-  return "{ " .. table.concat(fields, ", ") .. " }"
+  if constraint.strictly ~= "" then value.strictly = constraint.strictly end
+  if constraint.prefer ~= "" then value.prefer = constraint.prefer end
+  return value
 end
 
 local function same_constraint(left, right)
@@ -90,40 +80,39 @@ end
 local function itself(constraint) return constraint end
 local function version_of(entry) return (entry or {}).version end
 
-local function version_lines(versions)
-  local lines = {}
+local function versions_table(versions)
+  local out = {}
   for _, alias in ipairs(sorted_keys(versions)) do
-    lines[#lines + 1] = key_of(alias) .. " = " .. constraint_value(normalized(versions[alias]))
+    out[key_of(alias)] = constraint_value(normalized(versions[alias]))
   end
-  return lines
+  return out
 end
 
-local function library_version_field(constraint, versions)
-  if is_empty(constraint) then return "" end
+local function library_version(constraint, versions)
+  if is_empty(constraint) then return nil end
   local reference = version_reference(constraint, versions)
-  if reference ~= nil then return ", version.ref = " .. toml_string(key_of(reference)) end
-  return ", version = " .. constraint_value(constraint)
+  if reference ~= nil then return { ref = key_of(reference) } end
+  return constraint_value(constraint)
 end
 
-local function library_lines(libraries, versions)
-  local lines = {}
+local function libraries_table(libraries, versions)
+  local out = {}
   for _, alias in ipairs(sorted_keys(libraries)) do
     local library = libraries[alias]
-    lines[#lines + 1] = key_of(alias) .. " = { module = " .. toml_string(library.module)
-                        .. library_version_field(normalized(library.version), versions) .. " }"
+    out[key_of(alias)] = { module = library.module,
+                           version = library_version(normalized(library.version), versions) }
   end
-  return lines
+  return out
 end
 
-local function plugin_lines(plugins)
-  local lines = {}
+local function plugins_table(plugins)
+  local out = {}
   for _, alias in ipairs(sorted_keys(plugins)) do
     local plugin = plugins[alias]
     local constraint = normalized(plugin.version)
-    local version = is_empty(constraint) and "" or ", version = " .. constraint_value(constraint)
-    lines[#lines + 1] = key_of(alias) .. " = { id = " .. toml_string(plugin.id) .. version .. " }"
+    out[key_of(alias)] = { id = plugin.id, version = (not is_empty(constraint)) and constraint_value(constraint) or nil }
   end
-  return lines
+  return out
 end
 
 local function aliases_by_module(libraries)
@@ -139,8 +128,8 @@ end
 --- @implNote the dump reads a bundle back as its member modules, not their
 --- aliases, so a module that no library or several libraries name cannot be
 --- mapped back and blocks by name.
-local function bundle_lines(catalog_name, bundles, libraries, where, blockers)
-  local lines, aliases = {}, aliases_by_module(libraries)
+local function bundles_table(catalog_name, bundles, libraries, where, blockers)
+  local out, aliases = {}, aliases_by_module(libraries)
   for _, bundle in ipairs(sorted_keys(bundles)) do
     local members = {}
     for _, module in ipairs(bundles[bundle]) do
@@ -150,37 +139,38 @@ local function bundle_lines(catalog_name, bundles, libraries, where, blockers)
           .. module .. ", which " .. (#candidates == 0 and "no library" or "more than one library")
           .. " of the catalog names, so the bundle cannot be written back as library aliases")
       else
-        members[#members + 1] = toml_string(key_of(candidates[1]))
+        members[#members + 1] = key_of(candidates[1])
       end
     end
-    lines[#lines + 1] = key_of(bundle) .. " = [" .. table.concat(members, ", ") .. "]"
+    out[key_of(bundle)] = members
   end
-  return lines
+  return out
 end
 
-local function append_section(sections, header, lines)
-  if #lines == 0 then return end
-  sections[#sections + 1] = header .. "\n" .. table.concat(lines, "\n") .. "\n"
+local function non_empty(section)
+  if next(section) == nil then return nil end
+  return section
 end
 
---- A dumped catalog as the TOML file that declares it, and the blockers for
---- what that file cannot say.
+--- A dumped catalog as the `catalogs.<name>` value that declares it, and the
+--- blockers for what that value cannot say.
 ---
 --- @param catalog the dump's { versions, libraries, bundles, plugins } of one catalog
 --- @param where   what a blocker names as the place it was found
---- @return { text, blockers }
-function migrate_catalogs.rendered(catalog_name, catalog, where)
+--- @return { catalog, blockers }
+function migrate_catalogs.table_of(catalog_name, catalog, where)
   local versions, libraries = catalog.versions or {}, catalog.libraries or {}
   local plugins, bundles = catalog.plugins or {}, catalog.bundles or {}
   local blockers = rejection_blockers(catalog_name, "versions", versions, itself, where)
   tables.append(blockers, rejection_blockers(catalog_name, "libraries", libraries, version_of, where))
   tables.append(blockers, rejection_blockers(catalog_name, "plugins", plugins, version_of, where))
-  local sections = {}
-  append_section(sections, "[versions]", version_lines(versions))
-  append_section(sections, "[libraries]", library_lines(libraries, versions))
-  append_section(sections, "[bundles]", bundle_lines(catalog_name, bundles, libraries, where, blockers))
-  append_section(sections, "[plugins]", plugin_lines(plugins))
-  return { text = table.concat(sections, "\n"), blockers = blockers }
+  local value = {
+    versions = non_empty(versions_table(versions)),
+    libraries = non_empty(libraries_table(libraries, versions)),
+    bundles = non_empty(bundles_table(catalog_name, bundles, libraries, where, blockers)),
+    plugins = non_empty(plugins_table(plugins)),
+  }
+  return { catalog = value, blockers = blockers }
 end
 
 return migrate_catalogs

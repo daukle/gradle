@@ -1,0 +1,3 @@
+provisioning gradle 9.6.0
+verbatim.groovy: line 7 carried verbatim, coverage owed (GRADLE-SURFACE.md: 4. Packaging and publishing)
+packed with triple quotes

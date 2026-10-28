@@ -12,5 +12,31 @@ gradle = "./plugins"
 # conventional one, still linked into the derived root, did not register libs too.
 [toolchains.gradle]
 version = "9.6.0"
-logic = "daukle/gradle/logic/root/root.gradle"
-catalogs = { libs = "daukle/gradle/catalogs/root/libs.versions.toml" }
+
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.named('classes') {
+    doLast {
+        println 'catalog gson is ' + libs.versions.gson.get()
+        println 'catalog library is ' + libs.gson.get()
+        println 'catalog guava is ' + libs.guava.get()
+        println 'catalog bundle holds ' + libs.bundles.json.get().collect { it.module.name }.join(',')
+        println 'catalog plugin is ' + libs.plugins.benmanes.get().pluginId
+        println 'catalog rich version is ' + libs.versions.checkstyle.get()
+    }
+}
+'''
+
+[toolchains.gradle.catalogs.libs.versions]
+gson = "2.10.1"
+checkstyle = { strictly = "[8.0, 9.0[", prefer = "8.45" }
+
+[toolchains.gradle.catalogs.libs.libraries]
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+guava = { group = "com.google.guava", name = "guava", version = "33.0.0-jre" }
+
+[toolchains.gradle.catalogs.libs.bundles]
+json = ["gson", "guava"]
+
+[toolchains.gradle.catalogs.libs.plugins]
+benmanes = { id = "com.github.ben-manes.versions", version = "0.51.0" }

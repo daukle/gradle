@@ -1,5 +1,5 @@
 --- Which top-level statements of a build script `daukle/gradle` carries
---- verbatim into a logic file, and where that file lives. The init script
+--- verbatim into a `verbatim` key, and that key's text. The init script
 --- reports facts per statement and never selects; this selects and never parses.
 local migrate_logic = {}
 
@@ -7,20 +7,6 @@ local migrate_surface = daukle.require("lib/migrate_surface")
 
 local blocker = migrate_surface.blocker
 local BOUNDARY_ROW = migrate_surface.BOUNDARY_ROW
-
-local EXTENSIONS = { groovy = ".gradle", kotlin = ".gradle.kts" }
-local ROOT = "root"
-
---- @param build "root" or the included build's directory name
---- @param project_path ":" for a build's root project, else ":a:b"
---- @param instance the toolchain instance, whose `daukle/<instance>/` holds the file
-function migrate_logic.file_path(build, project_path, dsl, instance)
-  local project = ROOT
-  if project_path ~= ":" then
-    project = string.gsub(string.sub(project_path, 2), ":", "/")
-  end
-  return "daukle/" .. instance .. "/logic/" .. build .. "/" .. project .. EXTENSIONS[dsl]
-end
 
 local function normalized(path)
   return string.lower((string.gsub(path, "\\", "/")))

@@ -1,2 +1,4 @@
 :notes: carried, configured and compared, not run by the proof
 provisioning gradle 7.6.4
+verbatim.groovy: line 13 carried verbatim, coverage owed (GRADLE-SURFACE.md: The boundary: what "100% of Gradle" does not include)
+verbatim.groovy: line 5 carried verbatim, coverage owed (GRADLE-SURFACE.md: The boundary: what "100% of Gradle" does not include)
