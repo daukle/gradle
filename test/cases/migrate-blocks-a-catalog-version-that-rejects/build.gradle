@@ -1,0 +1,9 @@
+plugins {
+  id 'java'
+}
+
+tasks.register('versions') {
+  doLast {
+    println libs.versions.gson.get()
+  }
+}

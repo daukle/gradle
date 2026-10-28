@@ -1,0 +1,11 @@
+schema = 1
+project = "example/refused"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle.builds.greeting]
+catalogs = { libs = "daukle/gradle/catalogs/greeting/libs.versions.toml" }

@@ -5,6 +5,7 @@
 local migrate_carry = {}
 
 local migrate_logic = daukle.require("lib/migrate_logic")
+local migrate_catalogs = daukle.require("lib/migrate_catalogs")
 local migrate_blockers = daukle.require("lib/migrate_blockers")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local translate_build = daukle.require("lib/translate_build")
@@ -81,25 +82,54 @@ local function duplicate_blocker(target, path)
 end
 
 local function new_result()
-  return { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {}, withheld = {} }
+  return { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
 end
 
---- @implNote a project whose carried code reads a version catalog carries
---- none of it: the render carrying it would fail on the unresolved accessor
---- and take every other build's comparison with it (D-194). Its tasks count
---- as covered, because the catalog blocker already names why they are absent.
-local function withhold(target, selection, result)
-  result.covered[target.project] = selection.covered
-  result.withheld[target.project] = true
+local function add_file(result, path, text)
+  result.files[#result.files + 1] = { path = path, text = text }
+  result.texts[path] = text
 end
 
-local function carry_target(target, config, instance, result, taken)
+local function catalogs_block(config, place)
+  if place.build ~= nil then return config.builds[place.build] end
+  return config
+end
+
+local function missing_catalog_blocker(target, name)
+  return boundary_blocker(name, target.where, "is a version catalog that carried code reads, and the dump"
+                          .. " holds no contents for it, so it cannot be written")
+end
+
+--- Writes each catalog the carried code reads, once per build, and declares
+--- it by the `catalogs` key of the build the code is carried into.
+---
+--- @param dumped the build's catalogs as the dump read them, by name
+local function carry_catalogs(target, names, dumped, config, instance, result)
+  local block = catalogs_block(config, target.place)
+  for _, name in ipairs(names) do
+    local path = migrate_catalogs.file_path(target.build, name, instance)
+    local catalog = (dumped or {})[name]
+    if catalog == nil then
+      result.blockers[#result.blockers + 1] = missing_catalog_blocker(target, name)
+    else
+      if result.texts[path] == nil then
+        local rendered = migrate_catalogs.rendered(name, catalog, target.where)
+        append(result.blockers, rendered.blockers)
+        add_file(result, path, rendered.text)
+      end
+      block.catalogs = block.catalogs or {}
+      block.catalogs[name] = path
+    end
+  end
+end
+
+local function carry_target(target, built, instance, result, taken)
+  local config = built.config
   local missing = target.counterpart ~= nil
                   and migrate_blockers.missing_task_names(target.project, target.counterpart) or {}
   local selection = migrate_logic.select(target.project, missing, target.where)
   append(result.blockers, selection.blockers)
   if #selection.carried == 0 then return end
-  if selection.reads_catalog then return withhold(target, selection, result) end
   local dsl = dsl_of(target.project)
   local path = migrate_logic.file_path(target.build, target.project.path, dsl, instance)
   if taken[path] then
@@ -111,25 +141,26 @@ local function carry_target(target, config, instance, result, taken)
     return
   end
   taken[path] = true
-  local text = migrate_logic.text(selection.carried, dsl, (target.project.script or {}).lineEnding)
-  result.files[#result.files + 1] = { path = path, text = text }
-  result.texts[path] = text
+  add_file(result, path, migrate_logic.text(selection.carried, dsl, (target.project.script or {}).lineEnding))
+  carry_catalogs(target, selection.catalogs or {}, (built.catalogs or {})[target.build], config, instance, result)
   result.covered[target.project] = selection.covered
   append(result.tasks, carried_task_paths(target, selection.covered))
 end
 
---- Selects what every project carries, setting its `logic` key in
---- `built.config`.
+--- Selects what every project carries, setting its `logic` and `catalogs`
+--- keys in `built.config`.
 ---
+--- @param built            what `translate_build.build` returned, with `catalogs`: each build's dumped
+---                         catalogs, by "root" or the included build's directory
 --- @param generated        the generated root build's model, rendered without carried code
 --- @param generated_models the generated included builds' models, by directory
 --- @param instance         the toolchain instance migrated to
 --- @return { files = { { path, text } }, texts = path -> text, covered = project -> set of task names,
----           tasks = { { build, path, shown } }, blockers, withheld = set of projects carrying nothing }
+---           tasks = { { build, path, shown } }, blockers }
 function migrate_carry.select(built, generated, generated_models, instance)
   local result, taken = new_result(), {}
   for _, target in ipairs(targets(built, generated, generated_models)) do
-    carry_target(target, built.config, instance, result, taken)
+    carry_target(target, built, instance, result, taken)
   end
   return result
 end

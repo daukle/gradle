@@ -1,0 +1,15 @@
+plugins {
+  id 'java'
+}
+
+tasks.named('classes') {
+  doLast {
+    println 'catalog gson is ' + libs.versions.gson.get()
+  }
+}
+
+tasks.register('versions') {
+  doLast {
+    println libs.versions.gson.get()
+  }
+}

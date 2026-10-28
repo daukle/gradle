@@ -841,8 +841,8 @@ old build or the dump failed.
    `daukle/<instance>/logic/` and its root links reach `context.root`. A derived root an earlier
    carrying render linked is rendered carrying in the first pass too, and blocks, before any second
    render, when this migration carries nothing there. The dump skips a version catalog's accessor
-   extension, found by its `org.gradle.accessors.dm.LibrariesFor` type, and lists the catalogs' names
-   per project so carried code reading one blocks.
+   extension, found by its `org.gradle.accessors.dm.LibrariesFor` type, lists the catalogs' names per
+   project, and records each catalog's versions, libraries, bundles and plugins once per build.
 5. **The environment gate.** A model string that holds an environment variable's value (8 or more
    characters; shorter values would false-block `17` or `true`) is rewritten in the model file to
    `${env:NAME}`, so `build/` never holds the secret, and blocks wherever it would be written to
@@ -860,7 +860,10 @@ rule 1 or 2 statement landed in, along the chain (rule 4). They go, in source or
 `daukle/<instance>/logic/<build>/<project path>.gradle` (or `.gradle.kts`; `root` is the root
 project, `app/core` is `:app:core`), named by the project's `logic` key. A statement the keys also
 cover (a `tasks.named('jar')` block that sets a manifest attribute beside a `doLast`) is carried
-whole and passes, because the comparison reads the second render.
+whole and passes, because the comparison reads the second render. A version catalog a carried
+statement reads (`libs.versions.gson.get()`), whether from `gradle/libs.versions.toml` or declared
+in a settings script, is written from the dump to `daukle/<instance>/catalogs/<build>/<name>.versions.toml`
+and named by the build's `catalogs` key, and the comparison checks each alias of it per build.
 
 **Real-tree layout.** A build that carries runs from its derived root, whose top-level names link to
 the project's own: a junction for a directory and a hard link for a file on Windows (a copy, reported,
@@ -886,8 +889,9 @@ compared, not executed beyond what `gradle:jars` schedules.
   `project(":x").projectDir` and `.buildFileName`, `rootProject.buildFileName`)
   are not code. An unparsed settings script blocks as well;
 - a plugin class a build script compiles, and `buildSrc/` whenever it exists (an included plugin build migrates);
-- a version catalog read by carried code (`libs.versions.gson.get()` in a carried statement), named by
-  the catalog; a catalog the keys use (`implementation libs.gson`) is pinned and needs nothing;
+- in a catalog carried code reads, a constraint holding a rejected version and a bundle member more
+  than one library names, each by its alias; a catalog the keys use (`implementation libs.gson`) is
+  pinned and needs nothing;
 - a build script that did not parse, or is not UTF-8 (decoded strictly, because a replaced byte would
   not be carried verbatim), but only when the project has something to carry (a script-compiled
   action, or a task the keys alone do not give); otherwise it migrates as it did before `D-165`;
@@ -993,7 +997,10 @@ gradle.org.
   exit code in `expect-exit.txt`, then the `expect-output.txt` and `expect-contains.txt` the other
   cases use, then `expect-manifest.txt`: paragraphs whose lines must all sit in one table of the
   written `daukle.toml`, in any order, since core writes a table's keys in Lua's iteration order;
-  a `!` line is a prefix no line of such a table may start with
+  a `!` line is a prefix no line of such a table may start with. A migrate case with `after-migrate`
+  then runs each daukle command it lists (`migrate --done`, then a task), each of which must
+  succeed, and their output must carry `expect-after-output.txt`: the proof runs before the old files
+  are moved, so only a later build shows the migrated project still works without them
 
 ```sh
 DAUKLE=/path/to/daukle DAUKLE_GRADLE_E2E=1 sh test/cases.sh

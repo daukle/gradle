@@ -1,0 +1,2 @@
+build/daukle/gradle/migrate-model.json "module": "com.google.code.gson:gson"
+build/daukle/gradle/migrate-model.json "id": "org.barfuin.gradle.taskinfo"

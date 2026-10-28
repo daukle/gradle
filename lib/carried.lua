@@ -199,6 +199,13 @@ function carried.real_directory_of_included(name, root)
   return string.rep("../", separators + 1) .. root .. "/" .. name
 end
 
+--- From an included build's derived root to the real root of the instance it belongs to.
+--- @param root the instance's real root from the main derived root, `context.root`
+function carried.real_root_from_included(name, root)
+  local _, separators = string.gsub(composite.path_of(name), "/", "")
+  return string.rep("../", separators + 1) .. root .. "/"
+end
+
 local function file_exists(path)
   local directory, file = string.match(path, "^(.*)/([^/]+)$")
   for _, entry in ipairs(daukle.list(directory) or {}) do

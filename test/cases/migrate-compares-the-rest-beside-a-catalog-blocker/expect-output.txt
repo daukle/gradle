@@ -1,2 +1,3 @@
-libs: is a version catalog that carried code reads
+provisioning gradle 9.6.0
+libs.versions.gson: rejects 2.10.0, and a version catalog the migration writes carries no rejected version
 :test.environment.GREETING: differs in the build daukle/gradle generates from the translated keys

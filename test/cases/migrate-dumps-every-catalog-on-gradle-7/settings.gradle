@@ -1,0 +1,9 @@
+rootProject.name = 'catalogcode'
+
+dependencyResolutionManagement {
+  versionCatalogs {
+    tools {
+      library('junit', 'org.junit.jupiter', 'junit-jupiter').version('5.10.0')
+    }
+  }
+}

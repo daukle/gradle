@@ -798,6 +798,7 @@ gradle.taskGraph.whenReady {
                settingsCore: settingsFacts.settingsCore ?: [:],
                settingsScript: settingsFacts.settingsScript,
                projects: []]
+  model.catalogs = safely { catalogsOf(gradle.rootProject) }
   try { model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it) } }
   finally { closeKotlinParsers() }
   def file = outputFor(gradle)

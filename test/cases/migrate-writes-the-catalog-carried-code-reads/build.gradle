@@ -1,0 +1,10 @@
+plugins {
+  id 'java'
+}
+
+tasks.register('versions') {
+  description = "${libs.versions.gson.get()} ${libs.junit.api.get().module} ${libs.bundles.test.all.get().size()} ${libs.plugins.taskinfo.get().pluginId}"
+  doLast {
+    println libs.versions.gson.get()
+  }
+}

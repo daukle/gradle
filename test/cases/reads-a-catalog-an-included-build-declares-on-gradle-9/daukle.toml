@@ -1,0 +1,20 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# An included build declares its own catalog, which its carried logic reads. The
+# file sits under the main build's daukle/gradle/, so the build's settings reach
+# it from build/daukle/gradle/included/greeting/.
+[toolchains.gradle]
+version = "9.6.0"
+main = "example.App"
+requiresBuilds = ["greeting"]
+
+[toolchains.gradle.builds.greeting]
+logic = "daukle/gradle/logic/greeting/root.gradle"
+catalogs = { libs = "daukle/gradle/catalogs/greeting/libs.versions.toml" }
