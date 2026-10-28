@@ -11,11 +11,12 @@
 --- resolves nothing.
 
 daukle.plugin{
-  --[[ 4, which daukle 0.12.0 is the first to provide, for the `files` a
-       migration carrying build logic returns: an older daukle refuses this
-       plugin by name, with its own version, instead of dropping the files and
-       proving a build whose logic file is missing. ]]
-  api = 4,
+  --[[ 5, which daukle 0.13.0 is the first to provide, for the mark that
+       tells `jvmArgs = []` from an empty block (D-176). 4 was the `files` a
+       migration carrying build logic returns. An older daukle refuses this
+       plugin by name, with its own version, instead of rendering an empty
+       list as a block. ]]
+  api = 5,
   uses = { "provision", "artifact", "exec", "write", "read", "parse", "list", "json_parse",
            "pin", "fetch", "cache" },
   exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules", "lib/migrate_logic",
