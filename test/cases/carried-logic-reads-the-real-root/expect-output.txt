@@ -4,3 +4,5 @@ rootDir reads hello from the real root
 root file() reads hello from the real root
 module file() reads hello from the real app
 module rootProject.file reads hello from the real root
+daukle/gradle: modules.app.verbatim.groovy is plain Gradle code no daukle key covers yet
+daukle/gradle: verbatim.groovy is plain Gradle code no daukle key covers yet

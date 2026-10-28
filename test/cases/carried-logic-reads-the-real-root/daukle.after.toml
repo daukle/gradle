@@ -13,7 +13,30 @@ gradle = "./plugins"
 # as it did in the old build. A module reads its own real directory.
 [toolchains.gradle]
 version = "9.6.0"
-logic = "daukle/gradle/logic/root/root.gradle"
 
-[toolchains.gradle.modules.app]
-logic = "daukle/gradle/logic/root/app.gradle"
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.register('readTheRoot') {
+    doLast {
+        println 'rootProject.file reads ' + rootProject.file('config/greeting.txt').text.trim()
+        println 'rootDir reads ' + new File(rootDir, 'config/greeting.txt').text.trim()
+        println 'root file() reads ' + file('config/greeting.txt').text.trim()
+        rootProject.file('config/written.txt').text = 'written through the link'
+    }
+}
+'''
+
+[toolchains.gradle.modules.app.verbatim]
+groovy = '''
+tasks.register('readTheModule') {
+    dependsOn ':readTheRoot'
+    doLast {
+        println 'module file() reads ' + file('local.txt').text.trim()
+        println 'module rootProject.file reads ' + rootProject.file('config/greeting.txt').text.trim()
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn 'readTheModule'
+}
+'''

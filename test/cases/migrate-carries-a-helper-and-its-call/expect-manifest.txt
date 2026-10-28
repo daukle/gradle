@@ -1,2 +1,4 @@
-[toolchains.gradle]
-logic = "daukle/gradle/logic/root/root.gradle"
+[toolchains.gradle.verbatim]
+groovy = '''
+def registerNotes() {
+registerNotes()

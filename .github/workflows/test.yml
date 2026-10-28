@@ -10,7 +10,7 @@ jobs:
     uses: intisy/workflows/.github/workflows/test.yml@main
     with:
       line_endings: true
-      line_endings_exempt: 'test/cases/migrate-keeps-inventoried-statements-verbatim/build.gradle'
+      line_endings_exempt: 'test/cases/migrate-keeps-inventoried-statements-verbatim/build.gradle test/cases/migrate-carries-a-crlf-script/build.gradle'
       toolchains: cmake
       runners: '["ubuntu-latest", "windows-latest", "macos-latest"]'
       extra_repository: daukle/daukle

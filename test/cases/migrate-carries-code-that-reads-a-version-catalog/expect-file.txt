@@ -1,2 +1,2 @@
-daukle/gradle/catalogs/root/libs.versions.toml
+build/daukle/gradle/build/catalogs/libs.versions.toml
 build/daukle/migrate/old/gradle/libs.versions.toml

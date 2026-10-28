@@ -1,2 +1,2 @@
-daukle/gradle/logic/root/root.gradle def registerNotes() {
-daukle/gradle/logic/root/root.gradle registerNotes()
+daukle.toml def registerNotes() {
+daukle.toml registerNotes()

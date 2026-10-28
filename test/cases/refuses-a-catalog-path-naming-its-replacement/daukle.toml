@@ -1,0 +1,18 @@
+schema = 1
+project = "example/refused"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# daukle/gradle 2.0.0 retired a catalog named by its file: the refusal names the
+# file and the tables its contents now belong in.
+[toolchains.gradle.builds.greeting]
+catalogs = { libs = "daukle/gradle/catalogs/greeting/libs.versions.toml" }
+
+[toolchains.gradle.builds.greeting.verbatim]
+groovy = '''
+tasks.register('noop') {}
+'''

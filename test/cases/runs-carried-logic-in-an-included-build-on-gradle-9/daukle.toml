@@ -15,5 +15,9 @@ version = "9.6.0"
 main = "example.App"
 requiresBuilds = ["greeting"]
 
-[toolchains.gradle.builds.greeting]
-logic = "daukle/gradle/logic/greeting/root.gradle.kts"
+[toolchains.gradle.builds.greeting.verbatim]
+kotlin = '''
+tasks.compileJava {
+    doLast { println("included carried reads " + rootProject.file("note.txt").readText().trim()) }
+}
+'''

@@ -127,13 +127,6 @@ local CASES = {
     "carried= blocked=" },
 }
 
-local PATHS = {
-  { "brazier", ":tools:idea", "kotlin", "daukle/gradle/logic/brazier/tools/idea.gradle.kts" },
-  { "root", ":", "groovy", "daukle/gradle/logic/root/root.gradle" },
-  { "root", ":app", "groovy", "daukle/gradle/logic/root/app.gradle" },
-  { "root", ":", "groovy", "daukle/gradle-app/logic/root/root.gradle", "gradle-app" },
-}
-
 local function covered_names(selection)
   local names = {}
   for name in pairs(selection.covered) do names[#names + 1] = name end
@@ -192,20 +185,10 @@ local function report_selections()
   return lines
 end
 
-local function report_paths()
-  local lines = {}
-  for _, entry in ipairs(PATHS) do
-    local actual = migrate_logic.file_path(entry[1], entry[2], entry[3], entry[5] or "gradle")
-    lines[#lines + 1] = (actual == entry[4] and "ok " or "FAIL " .. actual .. " ") .. entry[4]
-  end
-  return lines
-end
-
 daukle.task{
   name = "probe:report",
   run = function()
     local lines = report_selections()
-    for _, line in ipairs(report_paths()) do lines[#lines + 1] = line end
     for _, line in ipairs(report_covered()) do lines[#lines + 1] = line end
     for _, line in ipairs(report_texts()) do lines[#lines + 1] = line end
     return daukle.write{ path = "results.txt", text = table.concat(lines, "\n") .. "\n" }

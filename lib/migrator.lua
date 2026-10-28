@@ -172,8 +172,8 @@ local function generated_builds(context, built)
   return models
 end
 
-local function write_generated_files(generation, config, carried_texts)
-  for path, text in pairs(writer.generated_files(generation, config, carried_texts)) do
+local function write_generated_files(generation, config)
+  for path, text in pairs(writer.generated_files(generation, config)) do
     daukle.write{ path = path, text = text }
   end
 end
@@ -184,14 +184,14 @@ end
 ---
 --- @implNote the writer's refusals are asked for as reasons first, because
 --- the sandbox has no pcall and a raise would discard every blocker found.
---- @param carried_texts the carried files' text by path, which core has not written yet
-local function dump_generated(context, built, config, carried_texts, where)
+--- @param blank whether carried code renders blank, for the keys-only baseline
+local function dump_generated(context, built, config, where, blank)
   local rendered = rendered_config(config)
   local generation = generation_context(context, built, rendered)
-  local problems = writer.generation_problems(generation, rendered, carried_texts)
+  local problems = writer.generation_problems(generation, rendered)
   if #problems > 0 then return nil, generation_blockers(problems, where) end
-  writer.write_build_file(generation, rendered, { carried_texts = carried_texts })
-  write_generated_files(generation, rendered, carried_texts)
+  writer.write_build_file(generation, rendered, { blank_verbatim = blank })
+  write_generated_files(generation, rendered)
   local failure = run_dump(context, rendered.version, derived(context, "."), {
     "--project-dir", ".",
     "--offline",
@@ -236,13 +236,12 @@ local function project_blockers(built, covered)
   return blockers
 end
 
-local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
+local NOTHING_CARRIED = { covered = {}, tasks = {}, statements = {}, blockers = {} }
 
 --- The generated build's model rendered from the keys alone, which is what
 --- signal 2 and the selection read; or nil and the blockers that stopped it.
 local function dump_baseline(context, built, linked, where)
-  local config, texts = migrate_carry.baseline_config(built.config, linked, context.instance)
-  return dump_generated(context, built, config, texts, where)
+  return dump_generated(context, built, migrate_carry.baseline_config(built.config, linked), where, true)
 end
 
 --- What the migration carries, and the generated build the comparison reads:
@@ -257,13 +256,13 @@ local function carry(context, built, blockers)
   local generated, refusals = dump_baseline(context, built, linked, where)
   if generated == nil then return NOTHING_CARRIED, nil, refusals end
   local generated_models = generated_builds(context, built)
-  local carrying = migrate_carry.select(built, generated, generated_models, context.instance)
+  local carrying = migrate_carry.select(built, generated, generated_models)
   append(blockers, carrying.blockers)
   local stale = migrate_carry.stale_link_blockers(built.config, linked)
   append(blockers, stale)
   if #stale > 0 then return carrying, nil, refusals end
-  if #carrying.files == 0 then return carrying, generated, refusals, generated_models end
-  generated, refusals = dump_generated(context, built, built.config, carrying.texts, where)
+  if #carrying.statements == 0 then return carrying, generated, refusals, generated_models end
+  generated, refusals = dump_generated(context, built, built.config, where, false)
   if generated == nil then return carrying, nil, refusals end
   return carrying, generated, refusals, generated_builds(context, built)
 end
@@ -334,7 +333,8 @@ local function run(context)
     append(blockers, migrate_comparison.blockers(model, built, generated, generated_models,
                                                  within(context.dir, settings), context.dir))
   end
-  daukle.write{ path = migrate_carry.REPORT_SCRIPT, text = migrate_carry.report_script(carrying.tasks) }
+  daukle.write{ path = migrate_carry.REPORT_SCRIPT,
+                text = migrate_carry.report_script(carrying.tasks, carrying.statements) }
   local proof = proof_of(context, built, generated, generated_models, blockers)
   return {
     manifest = { project = built.name, version = built.version, modules = built.modules,
@@ -342,7 +342,6 @@ local function run(context)
     foreign = {},
     blockers = blockers,
     owned = migrate_owned.paths(context, model, included),
-    files = carrying.files,
     proof = proof,
   }
 end

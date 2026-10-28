@@ -15,6 +15,12 @@ version = "9.6.0"
 main = "example.App"
 requiresBuilds = ["greeting"]
 
-[toolchains.gradle.builds.greeting]
-logic = "daukle/gradle/logic/greeting/root.gradle"
-catalogs = { libs = "daukle/gradle/catalogs/greeting/libs.versions.toml" }
+[toolchains.gradle.builds.greeting.verbatim]
+groovy = '''
+tasks.named('compileJava') {
+    doLast { println 'included catalog gson is ' + libs.versions.gson.get() }
+}
+'''
+
+[toolchains.gradle.builds.greeting.catalogs.libs.versions]
+gson = "2.10.1"

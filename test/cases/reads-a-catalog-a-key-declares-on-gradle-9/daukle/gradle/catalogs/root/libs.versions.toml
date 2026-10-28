@@ -1,5 +1,0 @@
-[versions]
-gson = "2.10.1"
-
-[libraries]
-gson = { module = "com.google.code.gson:gson", version.ref = "gson" }

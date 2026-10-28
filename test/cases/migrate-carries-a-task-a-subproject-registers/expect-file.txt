@@ -1,1 +1,0 @@
-daukle/gradle/logic/root/core.gradle

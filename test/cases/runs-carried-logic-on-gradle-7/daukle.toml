@@ -16,8 +16,22 @@ gradle = "./plugins"
 [toolchains.gradle]
 version = "7.6.4"
 
-[toolchains.gradle.modules.app]
-logic = "daukle/gradle/logic/root/app.gradle.kts"
+[toolchains.gradle.modules.app.verbatim]
+kotlin = '''
+val generateConfig by tasks.registering {
+    doLast { println("app generateConfig ran in " + projectDir.name) }
+}
 
-[toolchains.gradle.modules.lib]
-logic = "daukle/gradle/logic/root/lib.gradle"
+tasks.compileJava {
+    dependsOn(generateConfig)
+}
+'''
+
+[toolchains.gradle.modules.lib.verbatim]
+groovy = '''
+tasks.named('jar') {
+    doLast {
+        println 'lib jar carried doLast from ' + project.path
+    }
+}
+'''

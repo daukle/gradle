@@ -12,4 +12,12 @@ gradle = "./plugins"
 # a hard link, which no listing tells apart from a plain file (D-195).
 [toolchains.gradle]
 version = "9.6.0"
-logic = "daukle/gradle/logic/root/root.gradle"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.register('greet') {
+    doLast {
+        println 'hello'
+    }
+}
+'''

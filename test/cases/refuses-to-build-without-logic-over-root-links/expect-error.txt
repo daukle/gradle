@@ -1,1 +1,0 @@
-holds links to the project's own files, which a build carrying logic placed

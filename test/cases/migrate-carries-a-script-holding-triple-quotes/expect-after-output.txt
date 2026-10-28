@@ -1,0 +1,1 @@
+daukle/gradle: verbatim.groovy is plain Gradle code no daukle key covers yet

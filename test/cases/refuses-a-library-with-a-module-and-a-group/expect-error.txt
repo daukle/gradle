@@ -1,0 +1,1 @@
+"catalogs.libs.libraries.gson" must name its module as module = "group:name", or as group and name, not both

@@ -1,3 +1,0 @@
-tasks.named('compileJava') {
-    doLast { println 'included catalog gson is ' + libs.versions.gson.get() }
-}

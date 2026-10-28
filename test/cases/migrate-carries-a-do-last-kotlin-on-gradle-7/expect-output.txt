@@ -1,2 +1,4 @@
 :stamp: carried, configured and compared, not run by the proof
 provisioning gradle 7.6.4
+verbatim.kotlin: line 1 carried verbatim, coverage owed (GRADLE-SURFACE.md: The boundary: what "100% of Gradle" does not include)
+verbatim.kotlin: line 7 carried verbatim, coverage owed (GRADLE-SURFACE.md: The boundary: what "100% of Gradle" does not include)

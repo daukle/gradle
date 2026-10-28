@@ -1,0 +1,1 @@
+"catalogs.libs.versions" holds the alias "gson.core": write "-" for each ".", which gives the same accessor

@@ -2,3 +2,4 @@ provisioning gradle 9.6.0
 P2 generateConfig ran
 carried configure of TaskInfoExtension
 carried taskinfo accessor
+daukle/gradle: verbatim.kotlin is plain Gradle code no daukle key covers yet

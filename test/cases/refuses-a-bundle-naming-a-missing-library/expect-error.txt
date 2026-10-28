@@ -1,0 +1,1 @@
+"catalogs.libs.bundles.json" names "gson", which is not a library of this catalog
