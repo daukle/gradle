@@ -113,12 +113,15 @@ def isAssignable = { MetaProperty property, Object raw ->
  * from a string, and an object names the properties no script can assign in `$readOnly`.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
+ * An enum arrives as its constant's name, the one string Groovy assigns back to it: `JavaVersion`
+ * prints as `17`, which a rendered `version = '17'` cannot be converted from.
  */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   def value
   try { value = unwrap(raw) } catch (Throwable failure) { return unrendered('unreadable: ' + failure.class.simpleName) }
   if (value == null) return null
+  if (value instanceof Enum) return value.name()
   if (value instanceof File) return ['$file': pathFrom(base, value)]
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion

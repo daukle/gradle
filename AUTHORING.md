@@ -930,6 +930,9 @@ Measured details that decide a block:
 
 ### What a user will notice
 
+- **An enum in a third-party extension is written by its constant's name**: `JavaVersion.VERSION_11`
+  becomes `version = "VERSION_11"`, which Groovy converts back. Its printed form, `11`, does not
+  convert, and the generated build failed to configure on it (brazier's `javaVersion {}`).
 - **A build with no version becomes `0.1.0`**, written by the plugin, so its jar is named
   `<name>-0.1.0.jar` where it was `<name>.jar`, and `project.version` in processed resources changes.
   The proof does not see the file name. Coupled to core's default; a core change fails the proof.
