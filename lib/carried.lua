@@ -31,9 +31,10 @@ local OUTPUT = "build/out/"
 --- @implNote daukle.write writes IN PLACE, so a hard link under one of these
 --- names would turn every write of it into a write of the user's own file.
 --- `buildSrc` is never linked because Gradle builds a `buildSrc` it finds in
---- the settings directory, writing into the user's tree.
+--- the settings directory, writing into the user's tree, and `.kotlin`
+--- because the Kotlin Gradle Plugin 2.x writes its session files there.
 carried.UNLINKED = {
-  "build", "daukle", ".gradle", "settings.gradle", "settings.gradle.kts", ".daukle-generated",
+  "build", "daukle", ".gradle", ".kotlin", "settings.gradle", "settings.gradle.kts", ".daukle-generated",
   "buildSrc", carried.ROOT_LINKS, carried.PLUGIN_CLASSPATH, carried.SETTINGS_PLUGINS,
   carried.JARS_SCRIPT, carried.DISCOVERY_REPORT, carried.TOOL_DEFAULTS_SCRIPT,
   composite.INCLUDED_DIR,
