@@ -1,0 +1,1 @@
+build/daukle/gradle/migrate-model.json build.gradle is not UTF-8, so its text cannot be carried byte for byte

@@ -728,7 +728,7 @@ def projectOf = { File base, project ->
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
    dependencies: dependenciesOf(project), tasks: tasksOf(base, project),
    catalogs: catalogNamesOf(project),
-   script: scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile)]
+   script: scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile, true)]
 }
 
 def repositoriesByName = { Iterable repositories ->
@@ -772,7 +772,7 @@ def settingsFacts = [:]
 gradle.settingsEvaluated { settings ->
   def base = settings.rootDir
   def settingsFile = settingsFileOf(settings)
-  settingsFacts.settingsScript = settingsFile == null ? null : scriptInventoryOf(base, gradle.gradleHomeDir, settingsFile)
+  settingsFacts.settingsScript = settingsFile == null ? null : scriptInventoryOf(base, gradle.gradleHomeDir, settingsFile, false)
   settingsFacts.pluginManagementRepositories = repositoriesOf(settings.pluginManagement.repositories)
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
   settingsFacts.settingsExtensions = extensionsOf(base, settings)

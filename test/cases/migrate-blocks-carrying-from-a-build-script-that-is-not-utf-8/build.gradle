@@ -1,0 +1,9 @@
+plugins {
+  id 'java'
+}
+
+tasks.register('gen') {
+  doLast {
+    println 'café, written in Latin-1'
+  }
+}

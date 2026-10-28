@@ -24,8 +24,23 @@ class ScriptSource {
   String originalSlice(int start, int end) { original.substring(originalOffsets[start], originalOffsets[end]) }
 }
 
-def scriptSourceOf = { File file ->
-  def original = file.getText('UTF-8')
+/**
+ * @implNote strict, because a lenient decode turns a byte that is not UTF-8 into U+FFFD, and a
+ * statement carried from that text would no longer be the script's own bytes (D-165).
+ */
+def strictUtf8TextOf = { File file ->
+  def decoder = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+      .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+      .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+  try {
+    decoder.decode(java.nio.ByteBuffer.wrap(file.bytes)).toString()
+  } catch (java.nio.charset.CharacterCodingException ignored) {
+    throw new IllegalArgumentException(file.name + ' is not UTF-8, so its text cannot be carried byte for byte')
+  }
+}
+
+def scriptSourceOf = { File file, boolean carriedVerbatim ->
+  def original = carriedVerbatim ? strictUtf8TextOf(file) : file.getText('UTF-8')
   if (!original.isEmpty() && original.charAt(0) == BYTE_ORDER_MARK) original = original.substring(1)
   def parsed = new StringBuilder(original.length())
   def originalOffsets = new int[original.length() + 1]
@@ -486,13 +501,16 @@ def kotlinStatementsOf = { KotlinParser parser, ScriptSource source ->
 /**
  * A build script's top-level statements with the facts the migrator selects by (D-165, section 4.1),
  * or `unparsed` with the reason its DSL's parser gave; null for a project with no build file.
+ *
+ * @implNote only a script whose statements may be `carriedVerbatim` is decoded strictly: a settings
+ * script's statements are classified and never carried, so a byte that is not UTF-8 costs it nothing.
  */
-def scriptInventoryOf = { File base, File gradleHome, File file ->
+def scriptInventoryOf = { File base, File gradleHome, File file, boolean carriedVerbatim ->
   if (!file.isFile()) return null
   def kotlin = file.name.endsWith('.kts')
   def inventory = [path: pathFrom(base, file), dsl: kotlin ? 'kotlin' : 'groovy']
   try {
-    def source = scriptSourceOf(file)
+    def source = scriptSourceOf(file, carriedVerbatim)
     inventory.lineEnding = source.original.contains('\r\n') ? 'crlf' : 'lf'
     inventory + (kotlin ? kotlinStatementsOf(kotlinParserFor(gradleHome), source) : [statements: groovyStatementsOf(source)])
   } catch (Throwable failure) {
