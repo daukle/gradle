@@ -1,2 +1,2 @@
 [versions]
-gson = "2.10.1"
+gson = { require = "2.10.1", reject = ["2.10.0"] }

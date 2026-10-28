@@ -172,8 +172,10 @@ local function generated_builds(context, built)
   return models
 end
 
-local function write_generated_files(generation, config)
-  for path, text in pairs(writer.generated_files(generation, config)) do daukle.write{ path = path, text = text } end
+local function write_generated_files(generation, config, carried_texts)
+  for path, text in pairs(writer.generated_files(generation, config, carried_texts)) do
+    daukle.write{ path = path, text = text }
+  end
 end
 
 --- The model of the build `daukle/gradle` renders from `config`, dumped with
@@ -189,7 +191,7 @@ local function dump_generated(context, built, config, carried_texts, where)
   local problems = writer.generation_problems(generation, rendered, carried_texts)
   if #problems > 0 then return nil, generation_blockers(problems, where) end
   writer.write_build_file(generation, rendered, { carried_texts = carried_texts })
-  write_generated_files(generation, rendered)
+  write_generated_files(generation, rendered, carried_texts)
   local failure = run_dump(context, rendered.version, derived(context, "."), {
     "--project-dir", ".",
     "--offline",
@@ -234,7 +236,7 @@ local function project_blockers(built, covered)
   return blockers
 end
 
-local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {}, withheld = {} }
+local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
 
 --- The generated build's model rendered from the keys alone, which is what
 --- signal 2 and the selection read; or nil and the blockers that stopped it.
@@ -280,6 +282,15 @@ local function settings_code_blockers(context, model, included, settings)
   return blockers
 end
 
+--- Each build's catalogs as the dump read them, by "root" or the included build's directory.
+local function dumped_catalogs(model, included)
+  local catalogs = { root = model.catalogs }
+  for _, entry in ipairs(model.includedBuilds or {}) do
+    catalogs[entry.dir] = (included[entry.name] or {}).catalogs
+  end
+  return catalogs
+end
+
 local function refused(context, refusal)
   return { manifest = { toolchains = { [context.instance] = {} } }, foreign = {}, blockers = { refusal },
            owned = {} }
@@ -310,6 +321,7 @@ local function run(context)
   local built = translate_build.build(model, included, { dir = context.dir, settings = settings })
   built.config.version = gradle_version
   built.version = built.version or UNVERSIONED
+  built.catalogs = dumped_catalogs(model, included)
   local blockers = built.blockers
   append(blockers, settings_code_blockers(context, model, included, settings))
   local carrying, generated, refusals, generated_models = carry(context, built, blockers)
@@ -320,7 +332,7 @@ local function run(context)
   generated_models = generated_models or {}
   if generated ~= nil then
     append(blockers, migrate_comparison.blockers(model, built, generated, generated_models,
-                                                 within(context.dir, settings), context.dir, carrying.withheld))
+                                                 within(context.dir, settings), context.dir))
   end
   daukle.write{ path = migrate_carry.REPORT_SCRIPT, text = migrate_carry.report_script(carrying.tasks) }
   local proof = proof_of(context, built, generated, generated_models, blockers)

@@ -1,0 +1,2 @@
+provisioning gradle 7.6.4
+:versions: carried, configured and compared, not run by the proof

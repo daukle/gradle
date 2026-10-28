@@ -1,0 +1,2 @@
+stderr.txt does not configure
+stderr.txt unversioned

@@ -1,0 +1,10 @@
+plugins {
+  id 'java'
+}
+
+tasks.register('versions') {
+  description = "${libs.bundles.json.get().size()} ${libs.plugins.unversioned.get().pluginId}"
+  doLast {
+    println description
+  }
+}

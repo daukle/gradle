@@ -19,6 +19,40 @@ def catalogNamesOf = { owner ->
   owner.extensions.extensionsSchema.elements.findAll { isCatalogAccessor(it) }.collect { it.name }
 }
 
+def constraintOf = { constraint ->
+  [required: constraint.requiredVersion, strictly: constraint.strictVersion, prefer: constraint.preferredVersion,
+   rejected: constraint.rejectedVersions]
+}
+
+def moduleOf = { dependency -> dependency.module.group + ':' + dependency.module.name }
+
+/**
+ * Every version catalog of the build, as Gradle holds it after settings, so a migration can write
+ * one carried code reads back out (D-190).
+ *
+ * @implNote read through the extension rather than from any file, because a catalog declared in
+ * settings code reads back the same way as `gradle/libs.versions.toml`, measured on 7.6.4 and 9.6.0.
+ * Aliases come back normalised (`my-lib` as `my.lib`), a library carries its resolved version and
+ * not the `version.ref` it named, and a bundle its member modules and not their aliases.
+ */
+def catalogsOf = { project ->
+  def extension = project.extensions.findByType(VersionCatalogsExtension)
+  if (extension == null) return [:]
+  extension.catalogNames.sort().collectEntries { name ->
+    def catalog = extension.named(name)
+    [name, [versions: catalog.versionAliases.collectEntries { [it, constraintOf(catalog.findVersion(it).get())] },
+            libraries: catalog.libraryAliases.collectEntries { alias ->
+              def library = catalog.findLibrary(alias).get().get()
+              [alias, [module: moduleOf(library), version: constraintOf(library.versionConstraint)]]
+            },
+            bundles: catalog.bundleAliases.collectEntries { [it, catalog.findBundle(it).get().get().collect(moduleOf)] },
+            plugins: catalog.pluginAliases.collectEntries { alias ->
+              def plugin = catalog.findPlugin(alias).get().get()
+              [alias, [id: plugin.pluginId, version: constraintOf(plugin.version)]]
+            }]]
+  }
+}
+
 def BYTE_ORDER_MARK = (char) 0xFEFF
 def CARRIAGE_RETURN = (char) 13
 def LINE_FEED = (char) 10

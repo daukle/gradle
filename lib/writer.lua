@@ -8,6 +8,7 @@ local composite = daukle.require("lib/composite")
 local source_sets = daukle.require("lib/source_sets")
 local builds = daukle.require("lib/builds")
 local carried = daukle.require("lib/carried")
+local catalogs = daukle.require("lib/catalogs")
 local build_file_kotlin = daukle.require("lib/build_file_kotlin")
 
 local BUILD_FILE = "build.gradle"
@@ -113,7 +114,13 @@ local function write_carrying_included_build(build, at, jars, options, carried_t
                 text = settings_file.root_links(carried.real_directory_of_included(build.name, place.root)) }
   daukle.write{ path = at .. "/settings.gradle",
                 text = settings_file.included_real_tree_settings(build.gradle_name,
-                                                                 carried.script_of(nil, build.logic)) }
+                                                                 carried.script_of(nil, build.logic),
+                                                                 build.catalogs,
+                                                                 carried.real_root_from_included(build.name, place.root),
+                                                                 carried_texts) }
+  for _, file in ipairs(catalogs.stand_ins(build.catalogs, carried_texts)) do
+    daukle.write{ path = at .. "/" .. file.path, text = file.text }
+  end
   write_carrying_project({ directory = at .. "/", logic = build.logic,
                            label = "builds." .. build.name .. ".logic",
                            render = real_tree_render(build.name, nil, build.layout, jars, options),
@@ -238,7 +245,7 @@ local function write_real_tree(build)
 end
 
 --- What settings.gradle names for a build that carries logic, or nil.
-local function real_tree_settings(context, config, declared)
+local function real_tree_settings(context, config, declared, carried_texts)
   if not carried.build_carries(config) then return nil end
   local blocks = type(config.modules) == "table" and config.modules or {}
   local projects = {}
@@ -252,6 +259,7 @@ local function real_tree_settings(context, config, declared)
   local instance = validation.instance_of(context)
   return { root_script = carried.script_of(nil, config.logic), real_root = context.root,
            derived = carried.derived_from_real_root(context.root, instance),
+           catalogs = validation.checked_catalogs(context, config), catalog_texts = carried_texts,
            classpath_file = carried.classpath_in_settings(config) and carried.PLUGIN_CLASSPATH or nil,
            projects = projects }
 end
@@ -334,20 +342,24 @@ end
 
 --- The files generate returns: settings.gradle, and for a build that carries
 --- logic the root links script it applies. The migrator writes the same text
---- for its task-set comparison, so both read one renderer.
-local function settings_text(context, config)
+--- for its task-set comparison, so both read one renderer, and with
+--- `carried_texts` the catalogs it has not had written yet as well.
+local function settings_text(context, config, carried_texts)
   local record = validation.composite_of(context, config)
   local applies_settings_plugins = validation.settings_plugins_of(config, record.owners) ~= nil
   local declared = module_graph.declared(context)
   return settings_file.settings(validation.project_name(context), declared,
                                 applies_settings_plugins, record,
-                                real_tree_settings(context, config, declared))
+                                real_tree_settings(context, config, declared, carried_texts))
 end
 
-local function generated_files(context, config)
-  local files = { [SETTINGS_FILE] = settings_text(context, config) }
+local function generated_files(context, config, carried_texts)
+  local files = { [SETTINGS_FILE] = settings_text(context, config, carried_texts) }
   if carried.build_carries(config) then
     files[carried.ROOT_LINKS] = settings_file.root_links(context.root)
+    for _, file in ipairs(catalogs.stand_ins(validation.checked_catalogs(context, config), carried_texts)) do
+      files[file.path] = file.text
+    end
   end
   return files
 end

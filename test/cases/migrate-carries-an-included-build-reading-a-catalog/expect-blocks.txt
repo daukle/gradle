@@ -1,0 +1,9 @@
+daukle/gradle/catalogs/greeting/libs.versions.toml
+[versions]
+gson = "2.10.1"
+
+[libraries]
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+
+[plugins]
+taskinfo = { id = "org.barfuin.gradle.taskinfo", version = "2.2.0" }

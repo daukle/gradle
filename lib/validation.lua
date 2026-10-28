@@ -7,6 +7,7 @@ local jdks = daukle.require("java:lib/jdks")
 local source_sets = daukle.require("lib/source_sets")
 local extensions = daukle.require("lib/extensions")
 local carried = daukle.require("lib/carried")
+local catalogs = daukle.require("lib/catalogs")
 
 local DEFAULT_JDK = "17"
 
@@ -144,9 +145,15 @@ local function checked_builds(context, config)
       release = string_key(build.block, "release", release, scope .. "release"),
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
-      logic = carried.checked(build.block.logic, scope .. "logic", instance_of(context)) }
+      logic = carried.checked(build.block.logic, scope .. "logic", instance_of(context)),
+      catalogs = catalogs.checked(build.block.catalogs, scope .. "catalogs", instance_of(context),
+                                  build.block.logic ~= nil) }
   end
   return checked, read
+end
+
+local function checked_catalogs(context, config)
+  return catalogs.checked(config.catalogs, "catalogs", instance_of(context), carried.build_carries(config))
 end
 
 local function is_pinned_plugin(entry)
@@ -350,6 +357,7 @@ local function validated(context, config)
   jdk_for(context, config)
   layout_of(config)
   carried.checked(config.logic, "logic", instance_of(context))
+  checked_catalogs(context, config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   local record = composite_of(context, config)
@@ -393,6 +401,7 @@ return {
   checked_modules = checked_modules,
   instance_of = instance_of,
   checked_builds = checked_builds,
+  checked_catalogs = checked_catalogs,
   composite_of = composite_of,
   project_name = project_name,
   checked_plugins = checked_plugins,

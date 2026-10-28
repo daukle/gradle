@@ -1,0 +1,2 @@
+provisioning gradle 9.6.0
+:greeting:versions: carried, configured and compared, not run by the proof
