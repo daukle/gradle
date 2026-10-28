@@ -487,8 +487,7 @@ def kotlinStatementsOf = { KotlinParser parser, ScriptSource source ->
  * A build script's top-level statements with the facts the migrator selects by (D-165, section 4.1),
  * or `unparsed` with the reason its DSL's parser gave; null for a project with no build file.
  */
-def scriptInventoryOf = { File base, File gradleHome, project ->
-  def file = project.buildFile
+def scriptInventoryOf = { File base, File gradleHome, File file ->
   if (!file.isFile()) return null
   def kotlin = file.name.endsWith('.kts')
   def inventory = [path: pathFrom(base, file), dsl: kotlin ? 'kotlin' : 'groovy']

@@ -297,6 +297,7 @@ local function run(context)
   built.config.version = gradle_version
   built.version = built.version or UNVERSIONED
   local blockers = built.blockers
+  append(blockers, migrate_blockers.settings_code(model, within(context.dir, settings)))
   local carrying, generated, refusals, generated_models = carry(context, built, blockers)
   append(blockers, refusals)
   append(blockers, project_blockers(built, carrying.covered))

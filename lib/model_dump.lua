@@ -573,6 +573,10 @@ def deciding = { element, extension ->
 def CATALOG_ACCESSOR_PREFIX = 'org.gradle.accessors.dm.LibrariesFor'
 def isCatalogAccessor = { element -> element.publicType.concreteClass.name.startsWith(CATALOG_ACCESSOR_PREFIX) }
 
+def catalogNamesOf = { owner ->
+  owner.extensions.extensionsSchema.elements.findAll { isCatalogAccessor(it) }.collect { it.name }
+}
+
 def extensionsOf = { File base, owner ->
   def container = owner.extensions
   container.extensionsSchema.elements.findAll { it.name != 'ext' && !isCatalogAccessor(it) }.collectEntries { element ->
@@ -720,7 +724,8 @@ def projectOf = { File base, project ->
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
    dependencies: dependenciesOf(project), tasks: tasksOf(base, project),
-   script: scriptInventoryOf(base, gradle.gradleHomeDir, project)]
+   catalogs: catalogNamesOf(project),
+   script: scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile)]
 }
 
 def repositoriesByName = { Iterable repositories ->
@@ -756,9 +761,15 @@ def settingsCoreOf = { settings ->
    }]
 }
 
+def settingsFileOf = { settings ->
+  ['settings.gradle', 'settings.gradle.kts'].collect { new File(settings.settingsDir, it) }.find { it.isFile() }
+}
+
 def settingsFacts = [:]
 gradle.settingsEvaluated { settings ->
   def base = settings.rootDir
+  def settingsFile = settingsFileOf(settings)
+  settingsFacts.settingsScript = settingsFile == null ? null : scriptInventoryOf(base, gradle.gradleHomeDir, settingsFile)
   settingsFacts.pluginManagementRepositories = repositoriesOf(settings.pluginManagement.repositories)
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
   settingsFacts.settingsExtensions = extensionsOf(base, settings)
@@ -856,6 +867,7 @@ gradle.taskGraph.whenReady {
                settingsExtensions: settingsFacts.settingsExtensions ?: [:],
                settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
                settingsCore: settingsFacts.settingsCore ?: [:],
+               settingsScript: settingsFacts.settingsScript,
                projects: []]
   try { model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it) } }
   finally { closeKotlinParsers() }

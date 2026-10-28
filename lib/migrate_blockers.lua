@@ -92,6 +92,46 @@ function migrate_blockers.build_logic(project, where, carried)
   return blockers
 end
 
+--- The declarations of a settings script the translation reads from the model
+--- or the keys carry; anything else in it is code, which has nowhere to go.
+local SETTINGS_DECLARATIONS = {
+  include = true, includeFlat = true, includeBuild = true, pluginManagement = true, plugins = true,
+  dependencyResolutionManagement = true, buildCache = true, toolchainManagement = true,
+  enableFeaturePreview = true, buildscript = true, import = true,
+}
+
+local function settings_head(text)
+  if string.match(text, "^rootProject%.name%s*=") then return "rootProject" end
+  return string.match(text, "^[%a_][%w_]*")
+end
+
+local function is_declaration(statement, extensions)
+  local head = settings_head(statement.text)
+  return head == "rootProject" or SETTINGS_DECLARATIONS[head] == true or (extensions or {})[head] ~= nil
+end
+
+--- Settings script statements that are code: a hook, a call, a computation.
+--- @implNote an unparsed settings script blocks too, because nothing in it can be told from code.
+function migrate_blockers.settings_code(model, where)
+  local script = model.settingsScript
+  if script == nil then return {} end
+  if script.unparsed ~= nil then
+    return { blocker(script.path, where, "is a settings script that cannot be read (" .. script.unparsed
+                     .. "), so it cannot be told from code", BOUNDARY_ROW) }
+  end
+  local blockers = {}
+  for _, statement in ipairs(script.statements or {}) do
+    if not is_declaration(statement, model.settingsExtensions) then
+      local construct = string.format("%s:%d", script.path, statement.startLine)
+      blockers[#blockers + 1] = blocker(construct, where, "is code in the settings"
+                                        .. " script " .. script.path .. ", which a migration does not carry"
+                                        .. " (only build scripts are), so it would silently stop running",
+                                        BOUNDARY_ROW)
+    end
+  end
+  return blockers
+end
+
 local function task_names(project)
   local names = {}
   for _, task in ipairs(project.tasks or {}) do names[task.name] = true end

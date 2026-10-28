@@ -232,6 +232,23 @@ local function append_all(target, items)
   for _, item in ipairs(items) do target[#target + 1] = item end
 end
 
+--- Carried statements that read a version catalog: the generated build links
+--- the real `gradle/` directory but declares no catalog of its own, so a
+--- catalog accessor in carried code would depend on that link and not on a key.
+local function catalog_blockers(carried, catalogs, where)
+  local blockers = {}
+  for _, statement in ipairs(carried) do
+    for _, catalog in ipairs(catalogs or {}) do
+      if includes(statement.uses, catalog) then
+        blockers[#blockers + 1] = boundary_blocker(catalog, where, "is a version catalog that carried code reads"
+          .. " (line " .. string.format("%d", statement.startLine) .. "), and a version catalog is not carried:"
+          .. " no key declares it")
+      end
+    end
+  end
+  return blockers
+end
+
 local function unparsed_result(script, where)
   return { carried = {}, covered = {}, blockers = {
     boundary_blocker(script.unparsed, where, "is why the build script " .. script.path
@@ -258,8 +275,9 @@ function migrate_logic.select(project, missing_task_names, where)
   until not changed
   local registered = registered_by(statements, carried)
   append_all(blockers, unregistered_blockers(missing_task_names, registered, where))
-  return { carried = in_source_order(statements, carried), blockers = blockers,
-           covered = covered_tasks(registered, actions) }
+  local selected = in_source_order(statements, carried)
+  append_all(blockers, catalog_blockers(selected, project.catalogs, where))
+  return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions) }
 end
 
 local function is_import(statement)

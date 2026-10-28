@@ -700,10 +700,9 @@ refused as well, and so is one plugin id declared by two builds.
 
 ### What is outside it
 
-- **A `generateConfig`-style task**, a task with a `doLast` body that writes a source file, is build
-  logic written as code and outside the declarative boundary, whichever build it sits in. Turn its
-  output into a resource the plugin reads or a committed constant, or run the generator through
-  `run = { tool, args }`.
+- **A `generateConfig`-style task** in a build script is carried by `daukle migrate`; written by hand
+  into a manifest it is outside the declarative boundary. Turn its output into a resource the plugin
+  reads or a committed constant, or run the generator through `run = { tool, args }`.
 - **Modules inside an included build.** A build is one project; a `modules` key in its block is
   refused as unknown rather than ignored.
 - **A build that is both a plugin build and a library build.** Gradle allows one directory under
@@ -831,15 +830,15 @@ old build or the dump failed.
    then rendered and dumped again WITH the carried text in memory, and that second dump is what the
    comparison reads, its derived root, real-tree paths and `build/out/` directories mapped back to
    the real root first (`lib/migrate_real_tree.lua`). A carried task stops blocking; still blocking:
-   an action from another script or from a class that could not be read, an action no statement
-   holds, a missing task no statement registers, an unparsed script, and a parent project that
+   the list under "What is carried, where, and what still blocks", and a parent project that
    becomes no module. A build in a subdirectory is the instance `gradle-<dir>` (the detect rule's
    scope is the tree, and core keeps only the outermost Gradle build), so its file is under
    `daukle/gradle-<dir>/logic/` and its root links reach `context.root`. A derived root an earlier
    carrying render linked is rendered carrying in the first pass too, and blocks, before any second
    render, when this migration carries nothing there. `buildSrc/` blocks
-   whenever it exists. Version catalogs need nothing and are skipped by their
-   `org.gradle.accessors.dm.LibrariesFor` type.
+   whenever it exists. The dump skips a version catalog's accessor extension, found by its
+   `org.gradle.accessors.dm.LibrariesFor` type, and lists the catalogs' names per project so carried
+   code reading one blocks.
 5. **The environment gate.** A model string that holds an environment variable's value (8 or more
    characters; shorter values would false-block `17` or `true`) is rewritten in the model file to
    `${env:NAME}`, so `build/` never holds the secret, and blocks wherever it would be written to
@@ -847,6 +846,45 @@ old build or the dump failed.
 6. **Owns** `build.gradle(.kts)` of every project, `settings.gradle(.kts)`, `gradle.properties`,
    `gradle/`, `gradlew`, `gradlew.bat` (and the same under each included build); core moves them aside
    and deletes them after the proof. An included build sitting at `gradle/` keeps its sources.
+
+### What is carried, where, and what still blocks
+
+**Carried.** Four rules select a build script's top-level statements, verbatim: the statements
+holding an action the script compiled (rule 1), the statements registering a task the keys alone do
+not give (rule 2), the definitions a carried statement uses (rule 3), and the callers of a helper a
+rule 1 or 2 statement landed in, along the chain (rule 4). They go, in source order, into
+`daukle/<instance>/logic/<build>/<project path>.gradle` (or `.gradle.kts`; `root` is the root
+project, `app/core` is `:app:core`), named by the project's `logic` key. A statement the keys also
+cover (a `tasks.named('jar')` block that sets a manifest attribute beside a `doLast`) is carried
+whole and passes, because the comparison reads the second render.
+
+**Real-tree layout.** A build that carries runs from its derived root, whose top-level names link to
+the project's own: a junction for a directory and a hard link for a file on Windows (a copy, reported,
+where the link is refused), symlinks on POSIX. Carried code reading `rootProject.file(...)` or
+`rootDir` therefore sees the user's files. `settings.gradle(.kts)`, `build/`, `daukle/`, `.gradle`
+and `buildSrc` are never linked.
+
+**What the proof does not run.** A carried task the proof's task graph does not hold is reported as
+`<task>: carried, configured and compared, not run by the proof`. Carried code is configured and
+compared, not executed beyond what `gradle:jars` schedules.
+
+**Still blocks**, each naming the construct:
+
+- an `apply from:` script: an action it compiled is not in the build script, so its text is not carried;
+- code in a settings script (`gradle.beforeProject {}` and the like), named as `settings.gradle:<line>`;
+  declarations the translation reads (`include`, `includeBuild`, `pluginManagement`, `plugins`,
+  `dependencyResolutionManagement`, `buildCache`, `toolchainManagement`, a registered extension's block)
+  are not code. An unparsed settings script blocks as well;
+- `buildSrc` and convention plugins: a plugin class a script compiles, and `buildSrc/`;
+- a version catalog read by carried code (`libs.versions.gson.get()` in a carried statement), named by
+  the catalog; a catalog the keys use (`implementation libs.gson`) is pinned and needs nothing;
+- a build script that did not parse (the unit case `selects-carried-statements` asserts it; an invalid
+  script cannot be fed to a Gradle that still configures it);
+- an action no statement holds, or a missing task no statement registers.
+
+**Two limits.** A hard link is broken by a tool that replaces a file by rename; whether any editor or
+formatter does here is unmeasured. And a build that stops carrying needs `daukle clean` before a
+non-carrying build is rendered, because the derived root still holds links into the project.
 
 ### What `build` and the proof do
 
@@ -867,7 +905,7 @@ spells it.
 
 | row | blocks |
 | --- | --- |
-| The boundary: what "100% of Gradle" does not include | build logic the migration cannot carry (item 4 above); `buildSrc/`; a plugin class the build script compiles |
+| The boundary: what "100% of Gradle" does not include | the list under "What is carried, where, and what still blocks" above |
 | 1. The settings file, a settings-level `plugins {}` block | a settings plugin whose configuration cannot be carried |
 | 2. Dependency configurations | an artifact with no repository (`files()`, `gradleApi()`), a non-Maven (Ivy) repository, a `mavenLocal()` or `file:` repository; a configuration the old build could not resolve; a classpath that differs; a project consumed with `api` transitives |
 | 3. The `java` extension and source layout | a source root outside the project; a source set wired to something no key says; source and target levels that differ; a non-UTF-8 encoding (effective encoding not UTF-8 AND a source file holding a byte of 0x80 or above); a toolchain `vendor` or `implementation` that is set |
