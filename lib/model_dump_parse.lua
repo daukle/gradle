@@ -1,8 +1,24 @@
 --- The part of the model dump's init script that reads build logic written as code: each build
---- script's top-level statements through its own DSL's parser, and the source lines of each
---- script-compiled task action from its class file. Spliced into `model_dump.SCRIPT` ahead of the
---- closures that call it, and it uses that script's `pathFrom`. D-165, sections 3 and 4.2.
+--- script's top-level statements through its own DSL's parser, the source lines of each
+--- script-compiled task action from its class file, and the version catalogs carried code may read.
+--- Spliced into `model_dump.SCRIPT` ahead of the closures that call it, and it uses that script's
+--- `pathFrom`. D-165, sections 3 and 4.2.
 local SCRIPT = [==[
+/**
+ * Whether an extension is a version catalog's generated accessor, which the model needs nothing of:
+ * every library and plugin it names is already in the resolved rows and the applied plugins.
+ *
+ * @implNote by type, because a build names its catalogs freely: Gradle generates one class per
+ * catalog, `org.gradle.accessors.dm.LibrariesFor<Name>`, measured as the extension's public type for
+ * `libs` and a second catalog `tools` on 7.6.4, 8.13 and 9.6.0.
+ */
+def CATALOG_ACCESSOR_PREFIX = 'org.gradle.accessors.dm.LibrariesFor'
+def isCatalogAccessor = { element -> element.publicType.concreteClass.name.startsWith(CATALOG_ACCESSOR_PREFIX) }
+
+def catalogNamesOf = { owner ->
+  owner.extensions.extensionsSchema.elements.findAll { isCatalogAccessor(it) }.collect { it.name }
+}
+
 def BYTE_ORDER_MARK = (char) 0xFEFF
 def CARRIAGE_RETURN = (char) 13
 def LINE_FEED = (char) 10

@@ -1,4 +1,5 @@
 local model_dump_parse = daukle.require("lib/model_dump_parse")
+local model_dump_environment = daukle.require("lib/model_dump_environment")
 
 --- The init script that writes a Gradle build's evaluated model as JSON.
 ---
@@ -24,10 +25,6 @@ local PROPERTY = "daukle.migrate.model"
 
 --- The configuration name the dump gives the launcher rows it resolves itself.
 local IMPLIED_LAUNCHER = "daukleImpliedLauncher"
-
---- What stands in a model string for an environment variable's value: the
---- marker, the variable's name, and a closing brace.
-local ENVIRONMENT_MARKER = "${env:"
 
 local SCRIPT = [==[
 import groovy.json.JsonOutput
@@ -565,20 +562,7 @@ def deciding = { element, extension ->
   held ?: type
 }
 
-/**
- * Whether an extension is a version catalog's generated accessor, which the model needs nothing of:
- * every library and plugin it names is already in the resolved rows and the applied plugins.
- *
- * @implNote by type, because a build names its catalogs freely: Gradle generates one class per
- * catalog, `org.gradle.accessors.dm.LibrariesFor<Name>`, measured as the extension's public type for
- * `libs` and a second catalog `tools` on 7.6.4, 8.13 and 9.6.0.
- */
-def CATALOG_ACCESSOR_PREFIX = 'org.gradle.accessors.dm.LibrariesFor'
-def isCatalogAccessor = { element -> element.publicType.concreteClass.name.startsWith(CATALOG_ACCESSOR_PREFIX) }
-
-def catalogNamesOf = { owner ->
-  owner.extensions.extensionsSchema.elements.findAll { isCatalogAccessor(it) }.collect { it.name }
-}
+]==] .. model_dump_parse.SCRIPT .. [==[
 
 def extensionsOf = { File base, owner ->
   def container = owner.extensions
@@ -688,8 +672,6 @@ def TASK_READERS = [[org.gradle.api.tasks.bundling.Jar, 'jar', jarReader],
                     [org.gradle.api.tasks.javadoc.Javadoc, 'javadoc', javadocReader],
                     [org.gradle.api.tasks.JavaExec, 'javaExec', javaExecReader]]
 
-]==] .. model_dump_parse.SCRIPT .. [==[
-
 def actionsOf = { File base, task ->
   task.actions.collect { action ->
     def inner = action
@@ -793,63 +775,7 @@ def outputFor = { invocation ->
   new File(file.parentFile, (file.name - ~/\.json$/) + '-' + suffix + '.json')
 }
 
-def ENVIRONMENT_FLOOR = 8
-def ENVIRONMENT_MARKER = ']==] .. ENVIRONMENT_MARKER .. [==['
-
-/**
- * A model string with every environment variable value it holds, whole or inside it (a token in a
- * repository url), replaced by `${env:<name>}`, the longest value first; a string that held one is
- * remembered in `matches` with the names of the variables it held.
- */
-def redactedString = { String text, Map environment, Map matches ->
-  def held = environment.findAll { name, value -> text.contains(value) }
-  if (held.isEmpty()) return text
-  def redacted = text
-  held.sort { -it.value.length() }.each { name, value -> redacted = redacted.replace(value, ENVIRONMENT_MARKER + name + '}') }
-  matches[redacted] = held.keySet().sort()
-  redacted
-}
-
-def redacted
-redacted = { Object value, Map environment, Map matches ->
-  if (value instanceof CharSequence) return redactedString(value.toString(), environment, matches)
-  if (value instanceof Map) return value.collectEntries { key, item -> [key, redacted(item, environment, matches)] }
-  if (value instanceof Iterable) return value.collect { redacted(it, environment, matches) }
-  value
-}
-
-/**
- * The model with no environment variable's value in it, and `environmentMatches` naming each string
- * that held one, which the migrator then blocks wherever it would write it.
- *
- * @implNote compared here rather than hashed for the migrator, because the plugin has no digest
- * verb, and redacted because the model file lies in `build/`, where a secret has no place either. A
- * value shorter than ENVIRONMENT_FLOOR is skipped, so a `17` or a `true` in the environment cannot
- * block a jdk or a flag that merely holds it. Map keys are not redacted: they are the model's own
- * structure and Gradle's names.
- */
-def withoutEnvironment = { Map model ->
-  def environment = System.getenv().findAll { name, value -> value != null && value.length() >= ENVIRONMENT_FLOOR }
-  def matches = [:]
-  def safe = redacted(model, environment, matches)
-  safe.environmentMatches = matches.keySet().sort().collect { [value: it, names: matches[it]] }
-  safe
-}
-
-/**
- * The model as written: `withoutEnvironment`'s, except that each project's `script` inventory is
- * kept as it was read.
- *
- * @implNote the inventory is source text already on disk, which a later task carries verbatim, and a
- * statement redacted to `${env:...}` would no longer compile; every value the build evaluated is
- * still redacted and still blocks (D-165).
- */
-def writableModel = { Map model ->
-  def scripts = model.projects.collect { it.remove('script') }
-  def safe = withoutEnvironment(model)
-  safe.projects.eachWithIndex { project, index -> project.script = scripts[index] }
-  safe
-}
+]==] .. model_dump_environment.SCRIPT .. [==[
 
 gradle.projectsEvaluated {
   def help = gradle.rootProject.tasks.findByName('help')
@@ -880,25 +806,6 @@ gradle.taskGraph.whenReady {
 }
 ]==]
 
---- Whether a model string held an environment variable's value.
-local function holds_environment(text)
-  return type(text) == "string" and string.find(text, ENVIRONMENT_MARKER, 1, true) ~= nil
-end
-
---- The names of the environment variables whose values a string held, or nil.
-local function environment_names(text)
-  if not holds_environment(text) then return nil end
-  local names, from = {}, 1
-  while true do
-    local first, last = string.find(text, ENVIRONMENT_MARKER, from, true)
-    if first == nil then break end
-    local close = string.find(text, "}", last + 1, true)
-    if close == nil then break end
-    names[#names + 1] = string.sub(text, last + 1, close - 1)
-    from = close + 1
-  end
-  return names
-end
-
 return { SCRIPT = SCRIPT, PROPERTY = PROPERTY, IMPLIED_LAUNCHER = IMPLIED_LAUNCHER,
-         holds_environment = holds_environment, environment_names = environment_names }
+         holds_environment = model_dump_environment.holds_environment,
+         environment_names = model_dump_environment.environment_names }
