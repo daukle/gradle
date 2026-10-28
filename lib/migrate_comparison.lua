@@ -4,6 +4,7 @@
 local migrate_comparison = {}
 
 local migrate_blockers = daukle.require("lib/migrate_blockers")
+local migrate_catalog_differences = daukle.require("lib/migrate_catalog_differences")
 local migrate_classpaths = daukle.require("lib/migrate_classpaths")
 local migrate_task_values = daukle.require("lib/migrate_task_values")
 local migrate_paths = daukle.require("lib/migrate_paths")
@@ -95,6 +96,17 @@ local function compared_included(built, record, old_root, counterpart)
          migrate_real_tree.generated(generated, counterpart.model.rootDir, real_root, {})
 end
 
+local function main_catalog_blockers(built, generated)
+  return migrate_catalog_differences.blockers(built.config.catalogs, (built.catalogs or {}).root, generated.catalogs,
+                                              built.projects[1].where)
+end
+
+local function included_catalog_blockers(built, record, counterpart)
+  local block = (built.config.builds or {})[record.dir] or {}
+  return migrate_catalog_differences.blockers(block.catalogs, (built.catalogs or {})[record.dir],
+                                              counterpart.model.catalogs, record.where)
+end
+
 --- @param model            the old root build's model
 --- @param built            what `translate_build.build` returned
 --- @param generated        the generated root build's model
@@ -107,6 +119,7 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
   local old_root = model.rootDir
   local old_model, generated_model = compared_models(model, built, generated)
   local blockers = settings_blockers(old_model, generated_model, settings)
+  append(blockers, main_catalog_blockers(built, generated))
   local old_projects, generated_projects = by_path(old_model), by_path(generated_model)
   for _, entry in ipairs(built.projects) do
     local counterpart = generated_projects[entry.project.path]
@@ -125,6 +138,7 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
                                  root = migrate_paths.within(dir, record.dir) }
       local old, new = compared_included(built, record, old_root, counterpart)
       append(blockers, project_blockers(old, new, record.where, build_comparison))
+      append(blockers, included_catalog_blockers(built, record, counterpart))
     end
   end
   return blockers
