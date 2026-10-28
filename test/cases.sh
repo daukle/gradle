@@ -52,18 +52,24 @@ fail() {
 # were green on Gradle 8.13 from the day they were written, because the
 # manifest's version reached generate and no check looked at the task.
 output_carries_clauses() {
-  if [ -f "$case_dir/expect-output.txt" ]; then
-    if ! grep -q . "$case_dir/expect-output.txt"; then
-      fail "$name" "expect-output.txt is empty, so this case asserts nothing"
+  outputs_carry_clauses expect-output.txt "$sandbox/stdout.txt" "$sandbox/stderr.txt"
+}
+
+outputs_carry_clauses() {
+  clauses=$1
+  shift
+  if [ -f "$case_dir/$clauses" ]; then
+    if ! grep -q . "$case_dir/$clauses"; then
+      fail "$name" "$clauses is empty, so this case asserts nothing"
       return 1
     fi
     while IFS= read -r clause || [ -n "$clause" ]; do
       [ -n "$clause" ] || continue
-      if ! grep -qF "$clause" "$sandbox/stdout.txt" "$sandbox/stderr.txt"; then
+      if ! grep -qF "$clause" "$@"; then
         fail "$name" "output does not carry: $clause"
         return 1
       fi
-    done < "$case_dir/expect-output.txt"
+    done < "$case_dir/$clauses"
   fi
   return 0
 }
@@ -306,6 +312,23 @@ tree_has_paths() {
 # and the files it names carry and lack, with the same expect-output.txt,
 # expect-contains.txt, expect-blocks.txt and expect-lacks.txt every other case
 # uses, then expect-manifest.txt, then the paths it expects present and absent.
+# A case with after-migrate then runs each daukle command it lists, in order,
+# each of which must succeed, and their output must carry
+# expect-after-output.txt: what proves a build still works once the migration
+# moved the old files aside, which the migration's own proof ran before.
+run_after_migrate() {
+  [ -f "$case_dir/after-migrate" ] || return 0
+  while IFS= read -r command || [ -n "$command" ]; do
+    [ -n "$command" ] || continue
+    if ! (cd "$sandbox" && "$daukle" $command >>after-stdout.txt 2>>after-stderr.txt </dev/null); then
+      fail "$name" "after the migration, daukle $command failed"
+      tail -n 30 "$sandbox/after-stderr.txt" >&2
+      return 1
+    fi
+  done < "$case_dir/after-migrate"
+  outputs_carry_clauses expect-after-output.txt "$sandbox/after-stdout.txt" "$sandbox/after-stderr.txt"
+}
+
 run_migrate_case() {
   serve_plugin || return 0
   status=0
@@ -325,6 +348,7 @@ run_migrate_case() {
   files_lack_literals || return 0
   manifest_carries_clauses || return 0
   tree_has_paths || return 0
+  run_after_migrate || return 0
   passed=$((passed + 1))
 }
 
@@ -347,7 +371,8 @@ run_case() {
          "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve" \
          "$sandbox/expect-absent.txt" "$sandbox/task-after" "$sandbox/daukle.after.toml"          "$sandbox/remove-after.txt"
   if [ -f "$case_dir/migrate" ]; then
-    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
+    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
+          "$sandbox/after-migrate" "$sandbox/expect-after-output.txt"
     run_migrate_case
     return
   fi

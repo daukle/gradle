@@ -1,0 +1,5 @@
+[toolchains.gradle.builds.greeting]
+logic = "daukle/gradle/logic/greeting/root.gradle.kts"
+
+[toolchains.gradle.builds.greeting.catalogs]
+libs = "daukle/gradle/catalogs/greeting/libs.versions.toml"
