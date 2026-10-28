@@ -870,7 +870,17 @@ whole and passes, because the comparison reads the second render. A version cata
 statement reads (`libs.versions.gson.get()`), whether from `gradle/libs.versions.toml` or declared
 in a settings script, is written from the dump into the build's `catalogs.<name>` key, and the
 comparison checks each alias of it per build. The migration's proof prints one line per carried
-statement, `<key>: line <n> carried verbatim, coverage owed (<GRADLE-SURFACE.md row>)`.
+statement, `<key>: line <n> carried verbatim, coverage owed (<GRADLE-SURFACE.md row>)`, `<n>` being
+the statement's first line in the OLD build script, not a line of the value.
+
+**Translated instead of carried.** A source set's own `Test` task, registered under the set's name
+on JUnit Platform with no `doFirst` or `doLast`, becomes `sourceSets.<name>.test = true`, whose render
+is that task; the set's classpaths may then hold `main`'s output, as a test set's do. **Its blind
+spot is the `Test` reader's**: the comparison sees what the dump reads of a `Test` task (fork
+options, filters, `jvmArgs`, `systemProperties`, `testClassesDirs`, `failFast` and the like) and
+`enabled`, and not its task ordering (`shouldRunAfter`, `mustRunAfter`, `finalizedBy`), `testLogging`
+or `workingDir`, so a registration setting one of those translates without it. The same holds for
+every task the migration translates by its reader (`D-200`).
 
 ### Gradle code written by hand: `verbatim` and `catalogs`
 
@@ -911,8 +921,8 @@ Its `.versions.toml` is generated on every run under the derived root's own `bui
 no root link takes, with every table sorted. Write `-` where Gradle shows `.` in an alias: TOML reads
 a dotted key as a nested table, and `-` gives the same accessor, so an alias holding `.` is refused.
 **Two parser quirks a hand-written value can meet**, each failing with its line: a one-line basic
-string holding `'''` (write `'` for one of the quotes, or use `"""`), and a `"""` string whose
-text ends in `\` (write the last one as `\`).
+string holding `'''` (write `\u0027` for one of the quotes, or use `"""`), and a `"""` string whose
+text ends in `\` (write the last one as `\u005C`).
 
 `logic` and a path-valued `catalogs.<name>`, which `1.18.0` to `1.20.0` read from files under
 `daukle/gradle/`, are refused by name since `2.0.0`, each naming the table its text belongs in: a

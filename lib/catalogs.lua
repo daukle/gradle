@@ -19,8 +19,20 @@ local function refuse(message)
   error(message, 0)
 end
 
+--- Groovy's keywords, which settings.gradle cannot take as a catalog's name.
+local GROOVY_KEYWORDS = {}
+for keyword in string.gmatch("abstract as assert boolean break byte case catch char class const continue def"
+                             .. " default do double else enum extends false final finally float for goto if"
+                             .. " implements import in instanceof int interface long native new null package"
+                             .. " private protected public return short static strictfp super switch"
+                             .. " synchronized this threadsafe throw throws trait transient true try var void"
+                             .. " volatile while", "%S+") do
+  GROOVY_KEYWORDS[keyword] = true
+end
+
 local function is_identifier(name)
-  return type(name) == "string" and string.match(name, "^[%a_][%w_]*$") ~= nil
+  return type(name) == "string" and string.match(name, "^[%a_][%w_]*$") ~= nil and not GROOVY_KEYWORDS[name]
+         and name ~= CONVENTION_CATALOG_NAME
 end
 
 local function is_list(value)
@@ -47,6 +59,7 @@ local function refuse_unknown_members(value, label, allowed, what)
 end
 
 local function checked_rich_version(value, label)
+  if next(value) == nil then refuse('"' .. label .. '" is an empty version: write one, or remove it') end
   local allowed = {}
   for _, member in ipairs(RICH_MEMBERS) do allowed[member] = true end
   refuse_unknown_members(value, label, allowed, "a version")
@@ -162,7 +175,8 @@ function catalogs.checked(value, label, carries_verbatim)
   local entries = {}
   for _, name in ipairs(sorted_keys(value)) do
     if not is_identifier(name) then
-      refuse('"' .. label .. '" names the catalog "' .. tostring(name) .. '", which is not an identifier')
+      refuse('"' .. label .. '" names the catalog "' .. tostring(name) .. '", which is not an identifier'
+             .. " settings.gradle can name: not a Groovy keyword, and not " .. CONVENTION_CATALOG_NAME)
     end
     checked_catalog(value[name], label .. "." .. name)
     entries[#entries + 1] = { name = name, catalog = value[name] }
@@ -179,8 +193,13 @@ function catalogs.file_of(name)
   return DIRECTORY .. name .. ".versions.toml"
 end
 
+local function escaped_byte(character)
+  return string.format("\\u%04X", string.byte(character))
+end
+
 local function toml_string(text)
   local escaped = string.gsub(string.gsub(tostring(text), "\\", "\\\\"), '"', '\\"')
+  escaped = string.gsub(escaped, "[%c]", escaped_byte)
   return '"' .. escaped .. '"'
 end
 

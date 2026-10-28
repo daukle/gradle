@@ -1,0 +1,1 @@
+"catalogs" names the catalog "class", which is not an identifier settings.gradle can name: not a Groovy keyword, and not daukleConventionCatalog
