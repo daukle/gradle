@@ -1,0 +1,15 @@
+schema = 1
+project = "example/pruned"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A carrying build links every real top-level entry into its derived root. A
+# file deleted from the real tree must not survive there: on Windows its link is
+# a hard link, which no listing tells apart from a plain file (D-195).
+[toolchains.gradle]
+version = "9.6.0"
+logic = "daukle/gradle/logic/root/root.gradle"

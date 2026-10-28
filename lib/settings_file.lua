@@ -207,7 +207,9 @@ end
 --- @implNote what was placed is recorded under the never-linked `build/`, so a
 --- later render without logic can refuse to write through a hard link, which
 --- no listing tells apart from a plain file. The record exists before the
---- first link does, so a run that dies while placing still leaves it.
+--- first link does, so a run that dies while placing still leaves it. The
+--- previous record is also what prunes an entry whose real one is gone: a hard
+--- link or a copy outlives its real file, and only the record says it was ours.
 --- @param real_directory the real directory, relative to the settings directory
 function settings_file.root_links(real_directory)
   return table.concat({
@@ -288,11 +290,20 @@ function settings_file.root_links(real_directory)
     "}",
     "",
     "def daukleRecordFile = daukleDerived.resolve(" .. groovy.quoted(carried.LINK_RECORD) .. ")",
+    "def daukleRecorded = !daukleRecordFile.toFile().isFile() ? [] : daukleRecordFile.toFile().readLines()",
+    "  .findAll { it.startsWith('link ') || it.startsWith('copy ') }.collect { it.substring(5) }",
     "Files.createDirectories(daukleRecordFile.parent)",
     "daukleRecordFile.toFile().text = 'placing\\n'",
     "daukleDerived.toFile().listFiles().each { File entry ->",
     "  if (daukleIsLink(entry.toPath()) && !daukleReal.resolve(entry.name).toFile().exists()) {",
     "    Files.delete(entry.toPath())",
+    "  }",
+    "}",
+    "daukleRecorded.each { String name ->",
+    "  if (name in daukleUnlinked || name.contains('/') || name.contains('\\\\') || name in ['.', '..']) return",
+    "  def placed = daukleDerived.resolve(name)",
+    "  if (Files.exists(placed, LinkOption.NOFOLLOW_LINKS) && !daukleReal.resolve(name).toFile().exists()) {",
+    "    daukleRemove(placed)",
     "  }",
     "}",
     "def daukleRecord = []",

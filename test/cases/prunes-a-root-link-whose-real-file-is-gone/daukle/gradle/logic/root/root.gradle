@@ -1,0 +1,5 @@
+tasks.register('greet') {
+    doLast {
+        println 'hello'
+    }
+}
