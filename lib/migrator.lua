@@ -234,7 +234,7 @@ local function project_blockers(built, covered)
   return blockers
 end
 
-local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
+local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {}, withheld = {} }
 
 --- The generated build's model rendered from the keys alone, which is what
 --- signal 2 and the selection read; or nil and the blockers that stopped it.
@@ -320,7 +320,7 @@ local function run(context)
   generated_models = generated_models or {}
   if generated ~= nil then
     append(blockers, migrate_comparison.blockers(model, built, generated, generated_models,
-                                                 within(context.dir, settings), context.dir))
+                                                 within(context.dir, settings), context.dir, carrying.withheld))
   end
   daukle.write{ path = migrate_carry.REPORT_SCRIPT, text = migrate_carry.report_script(carrying.tasks) }
   local proof = proof_of(context, built, generated, generated_models, blockers)

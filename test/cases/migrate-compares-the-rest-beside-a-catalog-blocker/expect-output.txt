@@ -1,0 +1,2 @@
+libs: is a version catalog that carried code reads
+:test.environment.GREETING: differs in the build daukle/gradle generates from the translated keys

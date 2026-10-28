@@ -262,7 +262,8 @@ end
 --- @param project a dumped project: its `script` and its tasks' `actions`
 --- @param missing_task_names the tasks signal 2 found the generated build lacks
 --- @return table { carried = statements in source order, blockers = blockers,
----         covered = set of the task names the carried statements account for }
+---         covered = set of the task names the carried statements account for,
+---         reads_catalog = whether a carried statement reads a version catalog }
 function migrate_logic.select(project, missing_task_names, where)
   local script = project.script or { path = "", statements = {} }
   if script.unparsed ~= nil then return unparsed_result(project, missing_task_names, where) end
@@ -278,8 +279,10 @@ function migrate_logic.select(project, missing_task_names, where)
   until not changed
   local registered = registered_by(statements, carried)
   local selected = in_source_order(statements, carried)
-  append_all(blockers, catalog_blockers(selected, project.catalogs, where))
-  return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions, missing_task_names) }
+  local catalog = catalog_blockers(selected, project.catalogs, where)
+  append_all(blockers, catalog)
+  return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions, missing_task_names),
+           reads_catalog = #catalog > 0 }
 end
 
 local function is_import(statement)
