@@ -279,11 +279,43 @@ local function sorted_set_names(sets)
   return names
 end
 
-local function translate_custom_set(translation, project, rows, name, set)
-  check_classpath_wiring(translation, name, set, {}, as_set(set.output))
+local TEST_TYPE = "org.gradle.api.tasks.testing.Test"
+local JUNIT_PLATFORM_OPTIONS = "org.gradle.api.tasks.testing.junitplatform.JUnitPlatformOptions"
+
+local function holds_a_script_action(task)
+  for _, action in ipairs(task.actions or {}) do
+    if action.script ~= nil or action.sourceFile ~= nil then return true end
+  end
+  return false
+end
+
+--- Whether the set's own `Test` task is the one `sourceSets.<name>.test`
+--- renders, so the set translates as a test set instead of its task being
+--- carried (spec D-198, 4.5).
+---
+--- @implNote a task holding an action is never translated: no key says
+--- "run this code", and a translated registration beside a carried one is a
+--- duplicate task. The comparison still checks the rest of the task's values.
+local function is_translatable_test_task(project, name)
+  for _, task in ipairs(project.tasks or {}) do
+    if task.name == name then
+      return task.type == TEST_TYPE and (task.values or {}).framework == JUNIT_PLATFORM_OPTIONS
+             and not holds_a_script_action(task)
+    end
+  end
+  return false
+end
+
+--- @param main_output the main set's output, which a test set's classpaths
+--- hold as Gradle's own `test` does
+local function translate_custom_set(translation, project, rows, name, set, main_output)
+  local test = is_translatable_test_task(project, name)
+  local seen = test and main_output or {}
+  check_classpath_wiring(translation, name, set, seen, union(seen, as_set(set.output)))
   check_encoding(translation, project, name, set)
   local block_of = translate_set_layout(translation, name, set, { java = "sourceRoot", resources = "resourceRoot" })
   copy_into(block_of, translate_dependencies.custom(translation, project, rows, name, set))
+  if test then block_of.test = true end
   return block_of
 end
 
@@ -311,7 +343,7 @@ local function translate_source_sets(translation, project, config)
   end
   for _, name in ipairs(sorted_set_names(sets)) do
     config.sourceSets = config.sourceSets or {}
-    config.sourceSets[name] = translate_custom_set(translation, project, rows, name, sets[name])
+    config.sourceSets[name] = translate_custom_set(translation, project, rows, name, sets[name], main_output)
   end
 end
 

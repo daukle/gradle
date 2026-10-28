@@ -1,0 +1,6 @@
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.register('integration', Test) {
+
+[toolchains.gradle.sourceSets.integration]
+!test =
