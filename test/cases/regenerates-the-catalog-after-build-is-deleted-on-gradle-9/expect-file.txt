@@ -1,0 +1,2 @@
+build/daukle/gradle/build/out/root/classes/java/main/example/App.class
+build/daukle/gradle/build/catalogs/libs.versions.toml

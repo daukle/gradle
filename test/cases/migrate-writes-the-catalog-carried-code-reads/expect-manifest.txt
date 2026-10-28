@@ -1,5 +1,4 @@
-[toolchains.gradle]
-logic = "daukle/gradle/logic/root/root.gradle"
+[toolchains.gradle.verbatim]
+groovy = '''
 
-[toolchains.gradle.catalogs]
-libs = "daukle/gradle/catalogs/root/libs.versions.toml"
+[toolchains.gradle.catalogs.libs]

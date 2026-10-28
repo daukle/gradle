@@ -1,0 +1,10 @@
+plugins {
+  id 'java'
+}
+
+// A script with CRLF line ends migrates to a literal string that keeps them.
+tasks.named('jar') {
+  doLast {
+    println 'packed from a crlf script'
+  }
+}

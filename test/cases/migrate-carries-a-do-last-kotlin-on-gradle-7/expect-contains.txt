@@ -1,2 +1,2 @@
-daukle/gradle/logic/root/root.gradle.kts import java.util.Locale
-daukle/gradle/logic/root/root.gradle.kts tasks.register("stamp") {
+daukle.toml import java.util.Locale
+daukle.toml tasks.register("stamp") {

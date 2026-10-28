@@ -1,1 +1,1 @@
-daukle/gradle/logic/root/root.gradle tasks.register('bundleNotes', Copy) {
+daukle.toml tasks.register('bundleNotes', Copy) {

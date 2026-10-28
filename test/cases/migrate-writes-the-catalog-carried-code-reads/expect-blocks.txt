@@ -1,4 +1,4 @@
-daukle/gradle/catalogs/root/libs.versions.toml
+build/daukle/gradle/build/catalogs/libs.versions.toml
 [versions]
 gson = "2.10.1"
 junit = { strictly = "[5.9,6.0[", prefer = "5.10.0" }

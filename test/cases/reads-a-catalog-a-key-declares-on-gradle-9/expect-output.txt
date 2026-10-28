@@ -1,3 +1,8 @@
 provisioning gradle 9.6.0
 catalog gson is 2.10.1
 catalog library is com.google.code.gson:gson:2.10.1
+daukle/gradle: verbatim.groovy is plain Gradle code no daukle key covers yet
+catalog guava is com.google.guava:guava:33.0.0-jre
+catalog bundle holds gson,guava
+catalog plugin is com.github.ben-manes.versions
+catalog rich version is [8.0, 9.0[

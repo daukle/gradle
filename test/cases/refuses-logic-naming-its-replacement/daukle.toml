@@ -1,0 +1,13 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# daukle/gradle 2.0.0 retired "logic": the refusal names the file and the
+# table its text now belongs in.
+[toolchains.gradle]
+logic = "daukle/gradle/root.gradle"

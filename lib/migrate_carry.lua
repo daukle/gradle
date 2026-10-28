@@ -1,7 +1,7 @@
 --- What a migration carries of the old build's code: per project and included
---- build, the statements lib/migrate_logic selects, the `logic` key naming
---- their file, the file's text for core to write, and the tasks they account
---- for, which signal 1 no longer blocks (spec D-165, sections 4.1, 4.3, 4.5).
+--- build, the statements lib/migrate_logic selects, set as that project's
+--- `verbatim` key, and the tasks they account for, which signal 1 no longer
+--- blocks (spec D-165, sections 4.1, 4.3, 4.5; spec D-198, 4.3).
 local migrate_carry = {}
 
 local migrate_logic = daukle.require("lib/migrate_logic")
@@ -29,7 +29,7 @@ local function by_path(model)
   return projects
 end
 
---- Every project a `logic` key can be set for, with what places it: the main
+--- Every project a `verbatim` key can be set for, with what places it: the main
 --- build's root or module, or an included build's root.
 ---
 --- @return { { project, where, counterpart, build, place, label, gradle_build } }
@@ -76,18 +76,24 @@ local function no_place_blocker(target)
                           .. " it becomes no module, so there is no project to carry it into")
 end
 
-local function duplicate_blocker(target, path)
-  return boundary_blocker(path, target.where, "would hold the build logic of two projects, " .. target.label
+local function duplicate_blocker(target, label)
+  return boundary_blocker(label, target.where, "would hold the build logic of two projects, " .. target.label
                           .. " among them, so neither is carried")
 end
 
 local function new_result()
-  return { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
+  return { covered = {}, tasks = {}, statements = {}, blockers = {} }
 end
 
-local function add_file(result, path, text)
-  result.files[#result.files + 1] = { path = path, text = text }
-  result.texts[path] = text
+local function is_placed(place)
+  return place.build ~= nil or place.module ~= nil or place.root == true
+end
+
+--- The `verbatim` key a place sets, as the warn line and the blockers name it.
+local function label_of(place)
+  if place.build ~= nil then return "builds." .. place.build .. ".verbatim" end
+  if place.module ~= nil then return "modules." .. place.module .. ".verbatim" end
+  return "verbatim"
 end
 
 local function catalogs_block(config, place)
@@ -100,30 +106,61 @@ local function missing_catalog_blocker(target, name)
                           .. " holds no contents for it, so it cannot be written")
 end
 
---- Writes each catalog the carried code reads, once per build, and declares
---- it by the `catalogs` key of the build the code is carried into.
+--- Declares each catalog the carried code reads, once per build, by the
+--- `catalogs` key of the build the code is carried into.
 ---
 --- @param dumped the build's catalogs as the dump read them, by name
-local function carry_catalogs(target, names, dumped, config, instance, result)
+local function carry_catalogs(target, names, dumped, config, result)
   local block = catalogs_block(config, target.place)
   for _, name in ipairs(names) do
-    local path = migrate_catalogs.file_path(target.build, name, instance)
     local catalog = (dumped or {})[name]
     if catalog == nil then
       result.blockers[#result.blockers + 1] = missing_catalog_blocker(target, name)
-    else
-      if result.texts[path] == nil then
-        local rendered = migrate_catalogs.rendered(name, catalog, target.where)
-        append(result.blockers, rendered.blockers)
-        add_file(result, path, rendered.text)
-      end
+    elseif (block.catalogs or {})[name] == nil then
+      local declared = migrate_catalogs.table_of(name, catalog, target.where)
+      append(result.blockers, declared.blockers)
       block.catalogs = block.catalogs or {}
-      block.catalogs[name] = path
+      block.catalogs[name] = declared.catalog
     end
   end
 end
 
-local function carry_target(target, built, instance, result, taken)
+local function task_types(project)
+  local types = {}
+  for _, task in ipairs(project.tasks or {}) do types[task.name] = task.type end
+  return types
+end
+
+local function holds_an_action_of(statement, task)
+  for _, action in ipairs(task.actions or {}) do
+    local line = action.lastLine
+    if line ~= nil and statement.startLine <= line and line <= statement.endLine then return true end
+  end
+  return false
+end
+
+--- The `GRADLE-SURFACE.md` row a carried statement is coverage owed against:
+--- that of the first task it registers, else of the first whose action it
+--- holds, else the boundary's, as for a definition or a helper.
+local function row_of(statement, project)
+  local types = task_types(project)
+  for _, name in ipairs(statement.registers or {}) do
+    return migrate_surface.row_of_task_type(types[name])
+  end
+  for _, task in ipairs(project.tasks or {}) do
+    if holds_an_action_of(statement, task) then return migrate_surface.row_of_task_type(task.type) end
+  end
+  return migrate_surface.BOUNDARY_ROW
+end
+
+local function record_statements(result, carried_statements, label, project)
+  for _, statement in ipairs(carried_statements) do
+    result.statements[#result.statements + 1] = { label = label, line = statement.startLine,
+                                                  row = row_of(statement, project) }
+  end
+end
+
+local function carry_target(target, built, result, taken)
   local config = built.config
   local missing = target.counterpart ~= nil
                   and migrate_blockers.missing_task_names(target.project, target.counterpart) or {}
@@ -131,36 +168,37 @@ local function carry_target(target, built, instance, result, taken)
   append(result.blockers, selection.blockers)
   if #selection.carried == 0 then return end
   local dsl = dsl_of(target.project)
-  local path = migrate_logic.file_path(target.build, target.project.path, dsl, instance)
-  if taken[path] then
-    result.blockers[#result.blockers + 1] = duplicate_blocker(target, path)
-    return
-  end
-  if not translate_build.set_logic(config, target.place, path) then
+  if not is_placed(target.place) then
     result.blockers[#result.blockers + 1] = no_place_blocker(target)
     return
   end
-  taken[path] = true
-  add_file(result, path, migrate_logic.text(selection.carried, dsl, (target.project.script or {}).lineEnding))
-  carry_catalogs(target, selection.catalogs or {}, (built.catalogs or {})[target.build], config, instance, result)
+  local label = label_of(target.place)
+  if taken[label] then
+    result.blockers[#result.blockers + 1] = duplicate_blocker(target, label)
+    return
+  end
+  taken[label] = true
+  translate_build.set_verbatim(config, target.place, dsl,
+                               migrate_logic.text(selection.carried, dsl, (target.project.script or {}).lineEnding))
+  record_statements(result, selection.carried, label .. "." .. dsl, target.project)
+  carry_catalogs(target, selection.catalogs or {}, (built.catalogs or {})[target.build], config, result)
   result.covered[target.project] = selection.covered
   append(result.tasks, carried_task_paths(target, selection.covered))
 end
 
---- Selects what every project carries, setting its `logic` and `catalogs`
+--- Selects what every project carries, setting its `verbatim` and `catalogs`
 --- keys in `built.config`.
 ---
 --- @param built            what `translate_build.build` returned, with `catalogs`: each build's dumped
 ---                         catalogs, by "root" or the included build's directory
 --- @param generated        the generated root build's model, rendered without carried code
 --- @param generated_models the generated included builds' models, by directory
---- @param instance         the toolchain instance migrated to
---- @return { files = { { path, text } }, texts = path -> text, covered = project -> set of task names,
----           tasks = { { build, path, shown } }, blockers }
-function migrate_carry.select(built, generated, generated_models, instance)
+--- @return { covered = project -> set of task names, tasks = { { build, path, shown } },
+---           statements = { { label, line, row } }, blockers }
+function migrate_carry.select(built, generated, generated_models)
   local result, taken = new_result(), {}
   for _, target in ipairs(targets(built, generated, generated_models)) do
-    carry_target(target, built, instance, result, taken)
+    carry_target(target, built, result, taken)
   end
   return result
 end
@@ -172,9 +210,9 @@ local function derived_root_of(context, place)
 end
 
 --- Each derived root an earlier carrying render linked to the real tree, as
---- the place whose `logic` key renders it carrying, and its derived root.
+--- the place whose `verbatim` key renders it carrying, and its derived root.
 ---
---- @implNote a render without logic would write through those links into the
+--- @implNote a render without carried code would write through those links into the
 --- user's own files, so the comparison's first render must carry there too.
 function migrate_carry.linked_roots(context, built)
   local linked = {}
@@ -187,13 +225,15 @@ function migrate_carry.linked_roots(context, built)
   return linked
 end
 
---- The config the first render reads: the translation's, with an empty
---- carried file wherever a derived root is linked, so nothing is written
+--- What a baseline `verbatim` holds: `verbatim.checked` refuses an empty
+--- text, and the baseline renders it blank anyway.
+migrate_carry.BASELINE_TEXT = "// the keys-only baseline\n"
+
+--- The config the first render reads: the translation's, with a `verbatim`
+--- wherever a derived root is linked, rendered blank, so nothing is written
 --- through a link and the task set is the one the keys alone give.
----
---- @return the config, and the carried texts it names
-function migrate_carry.baseline_config(config, linked, instance)
-  local copy, texts = {}, {}
+function migrate_carry.baseline_config(config, linked)
+  local copy = {}
   for key, value in pairs(config) do copy[key] = value end
   if config.builds ~= nil then
     copy.builds = {}
@@ -203,20 +243,17 @@ function migrate_carry.baseline_config(config, linked, instance)
     end
   end
   for _, entry in ipairs(linked) do
-    local build = entry.place.build or MAIN_BUILD
-    local path = migrate_logic.file_path(build, ROOT_PATH, GROOVY, instance)
-    translate_build.set_logic(copy, entry.place, path)
-    texts[path] = ""
+    translate_build.set_verbatim(copy, entry.place, GROOVY, migrate_carry.BASELINE_TEXT)
   end
-  return copy, texts
+  return copy
 end
 
 local function carries_at(config, place)
-  if place.build ~= nil then return ((config.builds or {})[place.build] or {}).logic ~= nil end
+  if place.build ~= nil then return ((config.builds or {})[place.build] or {}).verbatim ~= nil end
   return carried.build_carries(config)
 end
 
---- A linked derived root the final config renders without logic: the proof
+--- A linked derived root the final config renders without carried code: the proof
 --- would write through its links, so the migration blocks there.
 function migrate_carry.stale_link_blockers(config, linked)
   local blockers = {}
@@ -237,14 +274,21 @@ migrate_carry.REPORT_SCRIPT = carried.MIGRATE_PREFIX .. "carried-tasks.gradle"
 
 local NOT_RUN = ": carried, configured and compared, not run by the proof"
 
+--- One report line per carried statement, which the migration prints once.
+local function statement_line(statement)
+  return statement.label .. ": line " .. string.format("%d", statement.line) .. " carried verbatim, coverage owed ("
+         .. statement.row .. ")"
+end
+
 --- The report script's text, which names each carried task the proof's task
---- graph does not hold; empty when nothing is carried.
+--- graph does not hold and each carried statement; empty when nothing is carried.
 ---
 --- @implNote decided by the graph the proof itself schedules, in each build
 --- of the composite, rather than guessed from task types: carried code can
---- make a jar depend on anything.
-function migrate_carry.report_script(tasks)
-  if #tasks == 0 then return "" end
+--- make a jar depend on anything. The statements print from the main build
+--- alone, since every build of the composite runs this script.
+function migrate_carry.report_script(tasks, statements)
+  if #tasks == 0 and #statements == 0 then return "" end
   local lines = { "// Generated by daukle/gradle for the proof of a migration. Do not edit.",
                   "def daukleCarried = [" }
   for _, task in ipairs(tasks) do
@@ -252,9 +296,15 @@ function migrate_carry.report_script(tasks)
                         .. groovy.quoted(task.shown .. NOT_RUN) .. "],"
   end
   lines[#lines + 1] = "]"
+  lines[#lines + 1] = "def daukleStatements = ["
+  for _, statement in ipairs(statements) do
+    lines[#lines + 1] = "  " .. groovy.quoted(statement_line(statement)) .. ","
+  end
+  lines[#lines + 1] = "]"
   lines[#lines + 1] = "gradle.taskGraph.whenReady { graph ->"
   lines[#lines + 1] = "  def build = gradle.parent == null ? '' : gradle.rootProject.name"
   lines[#lines + 1] = "  daukleCarried.findAll { it[0] == build && !graph.hasTask(it[1]) }.each { println it[2] }"
+  lines[#lines + 1] = "  if (gradle.parent == null) daukleStatements.each { println it }"
   lines[#lines + 1] = "}"
   return table.concat(lines, "\n") .. "\n"
 end

@@ -253,13 +253,13 @@ end
 
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
-  main = true, requiresBuilds = true, sourceSets = true, configurations = true, logic = true,
+  main = true, requiresBuilds = true, sourceSets = true, configurations = true, verbatim = true,
 }
 
 --- Module keys that stay legal beside declared modules: one pinned closure
 --- serves every module, and a module's own entry replaces it by name; a
---- project-wide `logic` is the root project's own.
-local PROJECT_WIDE_KEYS = { configurations = true, logic = true }
+--- project-wide `verbatim` is the root project's own.
+local PROJECT_WIDE_KEYS = { configurations = true, verbatim = true }
 
 for index = 1, #configurations.all do
   MODULE_KEYS[configurations.all[index].key] = true

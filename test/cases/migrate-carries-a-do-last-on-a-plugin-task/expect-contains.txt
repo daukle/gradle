@@ -1,1 +1,1 @@
-daukle/gradle/logic/root/root.gradle tasks.named('jar') {
+daukle.toml tasks.named('jar') {

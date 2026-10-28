@@ -1,11 +1,11 @@
---- Build logic a project carries as code: the file a `logic` key names under
---- `daukle/<instance>/logic/`, and where a build that carries any runs it from the
---- project's real directories (spec D-165, sections 4.4 and 7).
+--- Build logic a project carries as code, in its `verbatim` key, and where a
+--- build that carries any runs it from the project's real directories (spec
+--- D-165, sections 4.4 and 7; spec D-198, 4.2).
 local carried = {}
 
-local module_graph = daukle.require("lib/modules")
 local composite = daukle.require("lib/composite")
 local groovy = daukle.require("lib/groovy")
+local verbatim = daukle.require("lib/verbatim")
 
 local REAL_ROOT_OF_ROOT = "../../.."
 carried.ROOT_LINKS = "root-links.gradle"
@@ -40,22 +40,9 @@ carried.UNLINKED = {
   composite.INCLUDED_DIR,
 }
 
-local function starts_with(text, prefix)
-  return string.sub(text, 1, #prefix) == prefix
-end
-
-local function ends_with(text, suffix)
-  return string.sub(text, -#suffix) == suffix
-end
-
-function carried.is_kotlin(path)
-  return type(path) == "string" and ends_with(path, KOTLIN)
-end
-
---- The directory an instance's `logic` files live in, below its committed
---- `daukle/<instance>/`, which is where core writes a migrator's files.
-function carried.directory_of(instance)
-  return "daukle/" .. instance .. "/logic/"
+--- @param checked what `verbatim.checked` returned, nil for no carried code
+function carried.is_kotlin(checked)
+  return checked ~= nil and checked.dsl == "kotlin"
 end
 
 --- An instance's derived root, relative to the project.
@@ -78,74 +65,37 @@ function carried.derived_from_real_root(root, instance)
   return climb .. carried.derived_of(instance)
 end
 
-local function is_logic_path(value, directory)
-  if not starts_with(value, directory) then return false end
-  if not (ends_with(value, GROOVY) or ends_with(value, KOTLIN)) then return false end
-  return module_graph.problem_of(string.sub(value, #directory + 1)) == nil
-end
-
---- Why a `logic` value is refused, or nil.
-function carried.problem_of(value, label, instance)
-  if value == nil then return nil end
-  local directory = carried.directory_of(instance)
-  local wanted = '"' .. label .. '" must name a file under "' .. directory
-                 .. '" ending ".gradle" or ".gradle.kts"'
-  if type(value) ~= "string" then return wanted .. ", not a " .. type(value) end
-  if not is_logic_path(value, directory) then return wanted .. ', not "' .. value .. '"' end
-  return nil
-end
-
-function carried.checked(value, label, instance)
-  local problem = carried.problem_of(value, label, instance)
-  if problem ~= nil then error(problem, 0) end
-  return value
-end
-
-local function module_logic_paths(config)
-  local paths = {}
+local function module_verbatims(config)
+  local values = {}
   local blocks = type(config.modules) == "table" and config.modules or {}
   for name, block in pairs(blocks) do
-    if type(block) == "table" and block.logic ~= nil then paths[name] = block.logic end
+    if type(block) == "table" and block.verbatim ~= nil then values[name] = block.verbatim end
   end
-  return paths
+  return values
 end
 
---- Every `logic` the main build names, as "label" -> path.
-function carried.paths_of(config)
-  local paths = {}
-  if config.logic ~= nil then paths["logic"] = config.logic end
-  for name, path in pairs(module_logic_paths(config)) do
-    paths["modules." .. name .. ".logic"] = path
-  end
-  for name, block in pairs(type(config.builds) == "table" and config.builds or {}) do
-    if type(block) == "table" and block.logic ~= nil then
-      paths["builds." .. name .. ".logic"] = block.logic
-    end
-  end
-  return paths
+--- The main build's root project's carried code, checked, or nil.
+function carried.root_of(config)
+  return verbatim.checked(config.verbatim, "verbatim")
 end
 
---- Every `logic` path mapped to empty text, for a discovery's bare baseline.
----
---- @implNote that baseline leaves the plugins out, and carried code naming a
---- plugin's task or extension would fail to configure without them.
-function carried.empty_texts(config)
-  local texts = {}
-  for _, path in pairs(carried.paths_of(config)) do texts[path] = "" end
-  return texts
+--- A module's carried code, checked, or nil.
+function carried.module_of(config, name)
+  local block = (type(config.modules) == "table" and config.modules[name]) or {}
+  return verbatim.checked(block.verbatim, "modules." .. name .. ".verbatim")
 end
 
---- Whether the main build carries logic anywhere, which puts EVERY one of its
+--- Whether the main build carries code anywhere, which puts EVERY one of its
 --- projects in the real-tree layout: a generated module directory would
 --- collide with the root link of the real one (spec 7.1).
 function carried.build_carries(config)
-  return config.logic ~= nil or next(module_logic_paths(config)) ~= nil
+  return config.verbatim ~= nil or next(module_verbatims(config)) ~= nil
 end
 
 local function build_carries_kotlin(config)
-  if carried.is_kotlin(config.logic) then return true end
-  for _, path in pairs(module_logic_paths(config)) do
-    if carried.is_kotlin(path) then return true end
+  if carried.is_kotlin(carried.root_of(config)) then return true end
+  for name in pairs(module_verbatims(config)) do
+    if carried.is_kotlin(carried.module_of(config, name)) then return true end
   end
   return false
 end
@@ -168,8 +118,9 @@ end
 
 --- The generated build file of the root project (name nil) or a module,
 --- relative to its build's derived root.
-function carried.script_of(name, logic)
-  return SCRIPTS .. base_of(name) .. (carried.is_kotlin(logic) and KOTLIN or GROOVY)
+--- @param checked what `verbatim.checked` returned, nil for no carried code
+function carried.script_of(name, checked)
+  return SCRIPTS .. base_of(name) .. (carried.is_kotlin(checked) and KOTLIN or GROOVY)
 end
 
 --- The Groovy render a Kotlin wrapper applies.
@@ -223,7 +174,7 @@ function carried.is_linked(derived_root)
   return file_exists(derived_root .. "/" .. carried.LINK_RECORD)
 end
 
---- Refuses to render a build without logic into a derived root that a
+--- Refuses to render a build without carried code into a derived root that a
 --- carrying build linked to the real tree.
 ---
 --- @implNote daukle.write opens a path for writing in place, so a generated
@@ -234,28 +185,9 @@ function carried.refuse_a_linked_root(derived_root)
   local record = derived_root .. "/" .. carried.LINK_RECORD
   if carried.is_linked(derived_root) then
     error('"' .. derived_root .. '" holds links to the project\'s own files, which a build'
-          .. ' carrying logic placed (listed in "' .. record .. '"), and a build without'
-          .. ' "logic" would write through them: run "daukle clean" first', 0)
+          .. ' carrying code placed (listed in "' .. record .. '"), and a build without'
+          .. ' "verbatim" would write through them: run "daukle clean" first', 0)
   end
-end
-
-local function missing_message(label, path)
-  return '"' .. label .. '" names "' .. path .. '", which does not exist'
-end
-
---- @param carried_texts path -> text, which stands in for the files before
---- core has written them; nil reads every file
-function carried.missing_problem(label, path, carried_texts)
-  if carried_texts ~= nil and carried_texts[path] ~= nil then return nil end
-  if file_exists(path) then return nil end
-  return missing_message(label, path)
-end
-
---- The carried text, verbatim.
-function carried.text_of(label, path, carried_texts)
-  if carried_texts ~= nil and carried_texts[path] ~= nil then return carried_texts[path] end
-  if not file_exists(path) then error(missing_message(label, path), 0) end
-  return daukle.read(path)
 end
 
 return carried

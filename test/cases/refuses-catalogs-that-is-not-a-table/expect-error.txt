@@ -1,1 +1,1 @@
-"catalogs" must be a table of catalog name to file path, not a string
+"catalogs" must be a table of catalog name to catalog, not a string

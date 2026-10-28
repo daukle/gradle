@@ -830,15 +830,15 @@ old build or the dump failed.
    alone, lacks. `lib/migrate_logic.lua` selects the top-level statements holding those actions or
    registering those tasks, plus the definitions they use and the callers of a helper they land in;
    the statements go verbatim, in source order (Kotlin imports first), one blank line apart, into
-   `daukle/<instance>/logic/<build>/<project>.gradle(.kts)`, which the project's `logic` key names and
-   which returns to core as the result's `files` (daukle 0.12.0, `api = 4`). The generated build is
-   then rendered and dumped again WITH the carried text in memory, and that second dump is what the
+   that project's `verbatim` key, as its `groovy` or `kotlin` member, in the fragment core writes as
+   `daukle.toml`; the migration writes no other file. The generated build is
+   then rendered and dumped again WITH the carried text, and that second dump is what the
    comparison reads, its derived root, real-tree paths and `build/out/` directories mapped back to
    the real root first (`lib/migrate_real_tree.lua`). A carried task stops blocking; still blocking:
    the list under "What is carried, where, and what still blocks", and a parent project that
    becomes no module. `migrate` detects a Gradle build at the repository root only, never one in a
-   subdirectory. An instance with a `dir`, written by hand, runs its carried file too: it is under
-   `daukle/<instance>/logic/` and its root links reach `context.root`. A derived root an earlier
+   subdirectory. An instance with a `dir`, written by hand, runs its `verbatim` too: its root links
+   reach `context.root`. A derived root an earlier
    carrying render linked is rendered carrying in the first pass too, and blocks, before any second
    render, when this migration carries nothing there. The dump skips a version catalog's accessor
    extension, found by its `org.gradle.accessors.dm.LibrariesFor` type, lists the catalogs' names per
@@ -856,14 +856,77 @@ old build or the dump failed.
 **Carried.** Four rules select a build script's top-level statements, verbatim: the statements
 holding an action the script compiled (rule 1), the statements registering a task the keys alone do
 not give (rule 2), the definitions a carried statement uses (rule 3), and the callers of a helper a
-rule 1 or 2 statement landed in, along the chain (rule 4). They go, in source order, into
-`daukle/<instance>/logic/<build>/<project path>.gradle` (or `.gradle.kts`; `root` is the root
-project, `app/core` is `:app:core`), named by the project's `logic` key. A statement the keys also
+rule 1 or 2 statement landed in, along the chain (rule 4). They go, in source order, into the
+project's `verbatim` key: `[toolchains.gradle.verbatim]` for the root project,
+`[toolchains.gradle.modules.<name>.verbatim]` for a module and
+`[toolchains.gradle.builds.<dir>.verbatim]` for an included build's root, holding `groovy` or
+`kotlin`. Core writes a text holding a newline as a multi-line literal (`'''`) where TOML allows it
+and as an escaped multi-line basic string (`"""`) where it does not (a script holding `'''`, a
+lone CR, a control character), so it reads back byte for byte, CRLF included; that needs core
+`0.14.1`, and on an older core a migration writes each script as one escaped line, and fails core's
+read-back for a script holding `'''`. A statement the keys also
 cover (a `tasks.named('jar')` block that sets a manifest attribute beside a `doLast`) is carried
 whole and passes, because the comparison reads the second render. A version catalog a carried
 statement reads (`libs.versions.gson.get()`), whether from `gradle/libs.versions.toml` or declared
-in a settings script, is written from the dump to `daukle/<instance>/catalogs/<build>/<name>.versions.toml`
-and named by the build's `catalogs` key, and the comparison checks each alias of it per build.
+in a settings script, is written from the dump into the build's `catalogs.<name>` key, and the
+comparison checks each alias of it per build. The migration's proof prints one line per carried
+statement, `<key>: line <n> carried verbatim, coverage owed (<GRADLE-SURFACE.md row>)`, `<n>` being
+the statement's first line in the OLD build script, not a line of the value.
+
+**Translated instead of carried.** A source set's own `Test` task, registered under the set's name
+on JUnit Platform with no `doFirst` or `doLast`, becomes `sourceSets.<name>.test = true`, whose render
+is that task; the set's classpaths may then hold `main`'s output, as a test set's do. **Its blind
+spot is the `Test` reader's**: the comparison sees what the dump reads of a `Test` task (fork
+options, filters, `jvmArgs`, `systemProperties`, `testClassesDirs`, `failFast` and the like) and
+`enabled`, and not its task ordering (`shouldRunAfter`, `mustRunAfter`, `finalizedBy`), `testLogging`
+or `workingDir`, so a registration setting one of those translates without it. The same holds for
+every task the migration translates by its reader (`D-200`).
+
+### Gradle code written by hand: `verbatim` and `catalogs`
+
+`verbatim` is the escape hatch, and a user may write it by hand at the same three places, in either
+DSL: exactly one member, `groovy` or `kotlin`, holding a non-empty string. Both members, any other
+member or an empty text are refused by name. The plugin checks the shape and nothing else, and the
+code runs in the real-tree layout below, so `file(...)` and `rootProject.file(...)` resolve against
+the project's own files. **Every use is coverage owed**, so the render writes one line ahead of the
+text that Gradle prints on every run that configures the project:
+
+```
+daukle/gradle: modules.app.verbatim.groovy is plain Gradle code no daukle key covers yet
+```
+
+(`logger.warn`, measured on 7.6.4 and 9.6.0 in Groovy and in the Kotlin wrapper; `gradle:discover`
+runs Gradle `--quiet` and does not show it.) A Kotlin text keeps its imports first, because the
+wrapper lifts them above its own `plugins {}` block.
+
+A version catalog that carried code reads is a `catalogs.<name>` key of the build, in Gradle's own
+catalog shape, accepted only in a build that sets `verbatim`:
+
+```toml
+[toolchains.gradle.catalogs.libs.versions]
+gson = "2.10.1"
+checkstyle = { strictly = "[8.0, 9.0[", prefer = "8.45" }
+
+[toolchains.gradle.catalogs.libs.libraries]
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+
+[toolchains.gradle.catalogs.libs.bundles]
+json = ["gson"]
+
+[toolchains.gradle.catalogs.libs.plugins]
+benmanes = { id = "com.github.ben-manes.versions", version = "0.51.0" }
+```
+
+Its `.versions.toml` is generated on every run under the derived root's own `build/catalogs/`, which
+no root link takes, with every table sorted. Write `-` where Gradle shows `.` in an alias: TOML reads
+a dotted key as a nested table, and `-` gives the same accessor, so an alias holding `.` is refused.
+**Two parser quirks a hand-written value can meet**, each failing with its line: a one-line basic
+string holding `'''` (write `\u0027` for one of the quotes, or use `"""`), and a `"""` string whose
+text ends in `\` (write the last one as `\u005C`).
+
+`logic` and a path-valued `catalogs.<name>`, which `1.18.0` to `1.20.0` read from files under
+`daukle/gradle/`, are refused by name since `2.0.0`, each naming the table its text belongs in: a
+file nothing regenerates from `daukle.toml` is not a place a plugin may keep what it needs.
 
 **Real-tree layout.** A build that carries runs from its derived root, whose top-level names link to
 the project's own: a junction for a directory and a hard link for a file on Windows (a copy, reported,

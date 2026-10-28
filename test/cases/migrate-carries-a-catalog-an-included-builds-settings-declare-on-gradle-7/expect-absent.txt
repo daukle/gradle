@@ -1,3 +1,5 @@
 gradle/libs.versions.toml
 greeting/settings.gradle.kts
 greeting/build.gradle.kts
+daukle/gradle/logic
+daukle/gradle/catalogs

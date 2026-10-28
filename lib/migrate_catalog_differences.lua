@@ -82,7 +82,7 @@ end
 --- holds no other, apart from the conventional `gradle/libs.versions.toml`
 --- it registers under the reserved name `daukleConventionCatalog`.
 ---
---- @param declared  the build's `catalogs` key, name -> path, or nil
+--- @param declared  the build's `catalogs` key, name -> catalog, or nil
 --- @param old       the old build's dumped catalogs, by name
 --- @param generated the generated build's dumped catalogs, by name
 --- @param where     what a blocker names as the place it was found

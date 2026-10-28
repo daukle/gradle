@@ -1,3 +1,4 @@
 provisioning gradle 7.6.4
 catalog gson is 2.10.1
 catalog library is com.google.code.gson:gson:2.10.1
+daukle/gradle: verbatim.groovy is plain Gradle code no daukle key covers yet

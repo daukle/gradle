@@ -1,2 +1,4 @@
-[toolchains.gradle]
-logic = "daukle/gradle/logic/root/root.gradle.kts"
+[toolchains.gradle.verbatim]
+kotlin = '''
+import java.util.Locale
+tasks.register("stamp") {

@@ -1,0 +1,20 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A task carried code registers is one discovery reports, since its bare
+# render leaves the carried text out.
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+tasks.register('greetVerbatim') {
+    doLast { println 'greeted' }
+}
+'''

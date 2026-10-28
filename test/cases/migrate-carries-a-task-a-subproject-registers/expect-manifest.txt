@@ -1,2 +1,3 @@
-[toolchains.gradle.modules.core]
-logic = "daukle/gradle/logic/root/core.gradle"
+[toolchains.gradle.modules.core.verbatim]
+groovy = '''
+tasks.register('bundleNotes', Copy) {

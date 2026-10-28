@@ -8,10 +8,25 @@ version = "1.0.0"
 gradle = "./plugins"
 
 # migrate detects a Gradle build at the repository root only, so a build in a
-# subdirectory is an instance written by hand: its carried file sits under
-# daukle/gradle-app/, and the jar holds the class the carried task generates.
+# subdirectory is an instance written by hand: its carried code sits in
+# [toolchains.gradle-app.verbatim], and the jar holds the class the carried task generates.
 [toolchains.gradle-app]
 toolchain = "gradle"
 version = "9.6.0"
 dir = "app"
-logic = "daukle/gradle-app/logic/root/root.gradle"
+
+[toolchains.gradle-app.verbatim]
+groovy = '''
+def generatedSources = layout.buildDirectory.dir('generated/sources/carried')
+
+tasks.register('generateGreeting') {
+    outputs.dir(generatedSources)
+    doLast {
+        def target = generatedSources.get().file('example/Generated.java').asFile
+        target.parentFile.mkdirs()
+        target.text = 'package example; public class Generated { public static String text() { return "carried"; } }'
+    }
+}
+
+sourceSets.main.java.srcDir(tasks.named('generateGreeting'))
+'''

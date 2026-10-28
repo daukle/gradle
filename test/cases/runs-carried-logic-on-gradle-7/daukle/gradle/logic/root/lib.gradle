@@ -1,5 +1,0 @@
-tasks.named('jar') {
-    doLast {
-        println 'lib jar carried doLast from ' + project.path
-    }
-}

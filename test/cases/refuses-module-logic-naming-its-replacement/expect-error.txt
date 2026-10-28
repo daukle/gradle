@@ -1,0 +1,1 @@
+"modules.app.logic" names "daukle/gradle/logic/root/app.gradle.kts"; since daukle/gradle 2.0.0 the code lives in daukle.toml: put that file's text in [toolchains.gradle.modules.app.verbatim] as kotlin = '''...''', then delete the file

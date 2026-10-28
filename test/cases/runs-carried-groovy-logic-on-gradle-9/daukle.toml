@@ -7,9 +7,24 @@ version = "1.0.0"
 [plugins]
 gradle = "./plugins"
 
-# A hand-written manifest naming a carried Groovy file, no migration: the
+# A hand-written manifest carrying Groovy in "verbatim", no migration: the
 # generated build runs the carried task, and the class its doLast writes is
 # compiled into the jar, which only happens if the carried code ran.
 [toolchains.gradle]
 version = "9.6.0"
-logic = "daukle/gradle/logic/root/root.gradle"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+def generatedSources = layout.buildDirectory.dir('generated/sources/carried')
+
+tasks.register('generateGreeting') {
+    outputs.dir(generatedSources)
+    doLast {
+        def target = generatedSources.get().file('example/Generated.java').asFile
+        target.parentFile.mkdirs()
+        target.text = 'package example; public class Generated { public static String text() { return "carried"; } }'
+    }
+}
+
+sourceSets.main.java.srcDir(tasks.named('generateGreeting'))
+'''

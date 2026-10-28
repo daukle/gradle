@@ -8,6 +8,7 @@ local source_sets = daukle.require("lib/source_sets")
 local extensions = daukle.require("lib/extensions")
 local carried = daukle.require("lib/carried")
 local catalogs = daukle.require("lib/catalogs")
+local verbatim = daukle.require("lib/verbatim")
 
 local DEFAULT_JDK = "17"
 
@@ -98,7 +99,7 @@ local entries_of_configurations = configurations.entries_of
 --- classpath is refused by `daukle sync` and not only by the task that would
 --- have written its file. One function rather than a second loop beside the
 --- writer's: two loops over the same blocks would drift.
-local function checked_modules(config, declared, read, instance)
+local function checked_modules(config, declared, read)
   local blocks = module_graph.blocks_of(config, declared)
   local project_wide = configurations.named(config, "")
   local checked = {}
@@ -117,7 +118,7 @@ local function checked_modules(config, declared, read, instance)
       named = configurations.overridden(project_wide, configurations.named(block, scope)),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
-      logic = carried.checked(block.logic, scope .. "logic", instance),
+      verbatim = verbatim.checked(block.verbatim, scope .. "verbatim"),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -145,15 +146,14 @@ local function checked_builds(context, config)
       release = string_key(build.block, "release", release, scope .. "release"),
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
-      logic = carried.checked(build.block.logic, scope .. "logic", instance_of(context)),
-      catalogs = catalogs.checked(build.block.catalogs, scope .. "catalogs", instance_of(context),
-                                  build.block.logic ~= nil) }
+      verbatim = verbatim.checked(build.block.verbatim, scope .. "verbatim"),
+      catalogs = catalogs.checked(build.block.catalogs, scope .. "catalogs", build.block.verbatim ~= nil) }
   end
   return checked, read
 end
 
 local function checked_catalogs(context, config)
-  return catalogs.checked(config.catalogs, "catalogs", instance_of(context), carried.build_carries(config))
+  return catalogs.checked(config.catalogs, "catalogs", carried.build_carries(config))
 end
 
 local function is_pinned_plugin(entry)
@@ -352,17 +352,19 @@ end
 --- generate and no task, so a check only the writer ran would be one a user
 --- never meets until the first build.
 local function validated(context, config)
+  local retired = verbatim.retired_problem(config, instance_of(context))
+  if retired ~= nil then error(retired, 0) end
   refuse_a_core_that_publishes_no_modules(context)
   distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
-  carried.checked(config.logic, "logic", instance_of(context))
+  verbatim.checked(config.verbatim, "verbatim")
   checked_catalogs(context, config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   local record = composite_of(context, config)
   source_sets.refuse_task_collisions(config,
-                                     checked_modules(config, declared, record.read, instance_of(context)))
+                                     checked_modules(config, declared, record.read))
   entries_of_configurations(config, "")
   configurations.named(config, "")
   module_graph.project_options(config)

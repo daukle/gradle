@@ -1,0 +1,15 @@
+build/daukle/gradle/build/catalogs/libs.versions.toml
+[versions]
+checkstyle = { strictly = "[8.0, 9.0[", prefer = "8.45" }
+gson = "2.10.1"
+guava = "33.0.0-jre"
+
+[libraries]
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
+
+[bundles]
+json = ["gson", "guava"]
+
+[plugins]
+benmanes = { id = "com.github.ben-manes.versions", version = "0.51.0" }

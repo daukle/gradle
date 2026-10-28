@@ -16,4 +16,18 @@ function migrate_surface.blocker(construct, where, why, surface)
   return { construct = construct, where = where, why = why, surface = surface }
 end
 
+local TASK_TYPE_ROWS = {
+  ["org.gradle.api.tasks.testing.Test"] = migrate_surface.TESTING_ROW,
+  ["org.gradle.api.tasks.bundling.Jar"] = migrate_surface.PACKAGING_ROW,
+  ["org.gradle.api.tasks.bundling.Zip"] = migrate_surface.PACKAGING_ROW,
+  ["org.gradle.api.tasks.bundling.Tar"] = migrate_surface.PACKAGING_ROW,
+  ["org.gradle.api.tasks.Copy"] = migrate_surface.PACKAGING_ROW,
+  ["org.gradle.api.tasks.Sync"] = migrate_surface.PACKAGING_ROW,
+}
+
+--- The row a task of this type's carried code is coverage owed against.
+function migrate_surface.row_of_task_type(type_name)
+  return TASK_TYPE_ROWS[type_name] or migrate_surface.BOUNDARY_ROW
+end
+
 return migrate_surface
