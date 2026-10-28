@@ -1,0 +1,1 @@
+"catalogs.libs" must name a file under "daukle/gradle/catalogs/" ending ".toml", not "gradle/libs.versions.toml"

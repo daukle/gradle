@@ -113,7 +113,9 @@ local function write_carrying_included_build(build, at, jars, options, carried_t
                 text = settings_file.root_links(carried.real_directory_of_included(build.name, place.root)) }
   daukle.write{ path = at .. "/settings.gradle",
                 text = settings_file.included_real_tree_settings(build.gradle_name,
-                                                                 carried.script_of(nil, build.logic)) }
+                                                                 carried.script_of(nil, build.logic),
+                                                                 build.catalogs,
+                                                                 carried.real_root_from_included(build.name, place.root)) }
   write_carrying_project({ directory = at .. "/", logic = build.logic,
                            label = "builds." .. build.name .. ".logic",
                            render = real_tree_render(build.name, nil, build.layout, jars, options),
@@ -252,6 +254,7 @@ local function real_tree_settings(context, config, declared)
   local instance = validation.instance_of(context)
   return { root_script = carried.script_of(nil, config.logic), real_root = context.root,
            derived = carried.derived_from_real_root(context.root, instance),
+           catalogs = validation.checked_catalogs(context, config),
            classpath_file = carried.classpath_in_settings(config) and carried.PLUGIN_CLASSPATH or nil,
            projects = projects }
 end

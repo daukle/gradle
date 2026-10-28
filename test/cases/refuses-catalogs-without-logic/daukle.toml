@@ -1,0 +1,12 @@
+schema = 1
+project = "example/refused"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# A catalog exists for carried code to read, so a build carrying none refuses the key by name.
+[toolchains.gradle]
+catalogs = { libs = "daukle/gradle/catalogs/root/libs.versions.toml" }

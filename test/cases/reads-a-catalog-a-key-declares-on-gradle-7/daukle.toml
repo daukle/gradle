@@ -1,0 +1,16 @@
+schema = 1
+project = "example/catalogued"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# The real gradle/libs.versions.toml names another gson than the catalog the key
+# declares, so a green case proves carried code read the KEYED file and that the
+# conventional one, still linked into the derived root, did not register libs too.
+[toolchains.gradle]
+version = "7.6.4"
+logic = "daukle/gradle/logic/root/root.gradle"
+catalogs = { libs = "daukle/gradle/catalogs/root/libs.versions.toml" }
