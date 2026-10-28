@@ -1,0 +1,13 @@
+plugins {
+  id 'java'
+}
+
+def registerNotes() {
+  tasks.register('notes') {
+    doLast {
+      println 'notes ran'
+    }
+  }
+}
+
+registerNotes()
