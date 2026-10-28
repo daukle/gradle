@@ -831,9 +831,9 @@ old build or the dump failed.
    comparison reads, its derived root, real-tree paths and `build/out/` directories mapped back to
    the real root first (`lib/migrate_real_tree.lua`). A carried task stops blocking; still blocking:
    the list under "What is carried, where, and what still blocks", and a parent project that
-   becomes no module. A build in a subdirectory is the instance `gradle-<dir>` (the detect rule's
-   scope is the tree, and core keeps only the outermost Gradle build), so its file is under
-   `daukle/gradle-<dir>/logic/` and its root links reach `context.root`. A derived root an earlier
+   becomes no module. `migrate` detects a Gradle build at the repository root only, never one in a
+   subdirectory. An instance with a `dir`, written by hand, runs its carried file too: it is under
+   `daukle/<instance>/logic/` and its root links reach `context.root`. A derived root an earlier
    carrying render linked is rendered carrying in the first pass too, and blocks, before any second
    render, when this migration carries nothing there. The dump skips a version catalog's accessor
    extension, found by its `org.gradle.accessors.dm.LibrariesFor` type, and lists the catalogs' names
