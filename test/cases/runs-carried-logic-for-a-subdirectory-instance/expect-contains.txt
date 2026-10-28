@@ -1,0 +1,3 @@
+build/daukle/gradle-app/build/out/root/libs/greeter-1.0.0.jar example/Generated.class
+build/daukle/gradle-app/build/out/root/libs/greeter-1.0.0.jar example/Greeter.class
+build/daukle/gradle-app/build/daukle-root-links.txt link src

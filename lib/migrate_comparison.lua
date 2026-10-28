@@ -8,6 +8,8 @@ local migrate_classpaths = daukle.require("lib/migrate_classpaths")
 local migrate_task_values = daukle.require("lib/migrate_task_values")
 local migrate_paths = daukle.require("lib/migrate_paths")
 local migrate_surface = daukle.require("lib/migrate_surface")
+local migrate_real_tree = daukle.require("lib/migrate_real_tree")
+local carried = daukle.require("lib/carried")
 local tables = daukle.require("lib/tables")
 
 local append = tables.append
@@ -68,6 +70,31 @@ local function union_unpinned(entries)
   return unpinned
 end
 
+local function module_names(built)
+  local names = {}
+  for _, module in ipairs(built.declared or {}) do names[#names + 1] = module.name end
+  return names
+end
+
+--- The main build's models as the comparison reads them: as they are, or
+--- for a carrying build relative to the real root (lib/migrate_real_tree).
+local function compared_models(model, built, generated)
+  if not carried.build_carries(built.config) then return model, generated end
+  return migrate_real_tree.old(model, model.rootDir),
+         migrate_real_tree.generated(generated, generated.rootDir, model.rootDir, module_names(built))
+end
+
+--- An included build's old and generated root project, mapped like the main
+--- build's when that included build carries.
+local function compared_included(built, record, old_root, counterpart)
+  local generated = counterpart.model.projects[1]
+  local block = (built.config.builds or {})[record.dir] or {}
+  if block.logic == nil then return record.project, generated end
+  local real_root = old_root .. "/" .. record.dir
+  return migrate_real_tree.old(record.project, real_root),
+         migrate_real_tree.generated(generated, counterpart.model.rootDir, real_root, {})
+end
+
 --- @param model            the old root build's model
 --- @param built            what `translate_build.build` returned
 --- @param generated        the generated root build's model
@@ -77,14 +104,16 @@ end
 function migrate_comparison.blockers(model, built, generated, generated_builds, settings, dir)
   local comparison = { identities = identities_of(built, generated_builds), unpinned = union_unpinned(built.projects),
                        root = dir or "." }
-  local blockers = settings_blockers(model, generated, settings)
-  local generated_projects = by_path(generated)
+  local old_root = model.rootDir
+  local old_model, generated_model = compared_models(model, built, generated)
+  local blockers = settings_blockers(old_model, generated_model, settings)
+  local old_projects, generated_projects = by_path(old_model), by_path(generated_model)
   for _, entry in ipairs(built.projects) do
     local counterpart = generated_projects[entry.project.path]
     if counterpart == nil then
       blockers[#blockers + 1] = missing(entry.project.path, entry.where)
     else
-      append(blockers, project_blockers(entry.project, counterpart, entry.where, comparison))
+      append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where, comparison))
     end
   end
   for _, record in ipairs(built.builds) do
@@ -94,7 +123,8 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
     else
       local build_comparison = { identities = comparison.identities, unpinned = record.unpinned,
                                  root = migrate_paths.within(dir, record.dir) }
-      append(blockers, project_blockers(record.project, counterpart.model.projects[1], record.where, build_comparison))
+      local old, new = compared_included(built, record, old_root, counterpart)
+      append(blockers, project_blockers(old, new, record.where, build_comparison))
     end
   end
   return blockers

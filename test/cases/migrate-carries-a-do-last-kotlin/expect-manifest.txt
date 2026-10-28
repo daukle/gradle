@@ -1,0 +1,2 @@
+[toolchains.gradle]
+logic = "daukle/gradle/logic/root/root.gradle.kts"

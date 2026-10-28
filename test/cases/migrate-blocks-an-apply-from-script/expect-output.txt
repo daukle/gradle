@@ -1,0 +1,3 @@
+notes.gradle: compiled an action of task notes and is not the build script, so its text is not carried
+notes: carries code that notes.gradle compiled (a doFirst, a doLast or a task type the script defines), which is build logic written as code
+nothing was written, because 2 thing(s) cannot be expressed yet

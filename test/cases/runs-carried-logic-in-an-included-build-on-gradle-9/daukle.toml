@@ -1,0 +1,19 @@
+schema = 1
+project = "example/composite"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# Only the included build carries logic, so it alone takes the real-tree layout:
+# its root links reach its own real directory, and the main build stays as it
+# renders today.
+[toolchains.gradle]
+version = "9.6.0"
+main = "example.App"
+requiresBuilds = ["greeting"]
+
+[toolchains.gradle.builds.greeting]
+logic = "daukle/gradle/logic/greeting/root.gradle.kts"

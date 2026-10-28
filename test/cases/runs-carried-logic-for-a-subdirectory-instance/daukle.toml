@@ -1,0 +1,17 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# migrate detects a Gradle build at the repository root only, so a build in a
+# subdirectory is an instance written by hand: its carried file sits under
+# daukle/gradle-app/, and the jar holds the class the carried task generates.
+[toolchains.gradle-app]
+toolchain = "gradle"
+version = "9.6.0"
+dir = "app"
+logic = "daukle/gradle-app/logic/root/root.gradle"

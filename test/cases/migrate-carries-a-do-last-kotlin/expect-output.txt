@@ -1,0 +1,2 @@
+:stamp: carried, configured and compared, not run by the proof
+provisioning gradle 9.6.0

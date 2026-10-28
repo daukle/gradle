@@ -1,0 +1,47 @@
+build/daukle/gradle/migrate-model.json
+"index": 2,
+"text": "plugins {\r\n  id 'java'\r\n}",
+--
+build/daukle/gradle/migrate-model.json
+"index": 3,
+"text": "description = 'statements sharing a line'",
+"startLine": 7,
+"endLine": 7,
+--
+build/daukle/gradle/migrate-model.json
+"index": 4,
+"text": "version = 'marker-probe'",
+"startLine": 7,
+--
+build/daukle/gradle/migrate-model.json
+"index": 5,
+"text": "group = 'example'",
+"startLine": 8,
+--
+build/daukle/gradle/migrate-model.json
+"index": 1,
+"text": "import java.util.concurrent.TimeUnit",
+"startLine": 1,
+"endLine": 1,
+"registers": [
+
+],
+"defines": [
+"TimeUnit"
+],
+--
+build/daukle/gradle/migrate-model.json
+"text": "configurations.create('extraConfig')",
+"startLine": 10,
+"endLine": 10,
+"registers": [
+
+],
+--
+build/daukle/gradle/migrate-model.json
+"text": "project.tasks.register('viaProject')",
+"startLine": 12,
+"endLine": 12,
+"registers": [
+"viaProject"
+],

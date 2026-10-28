@@ -265,4 +265,23 @@ function translate_build.build(model, included_models, options)
   return result
 end
 
+--- Sets the `logic` key of one project in a translated config.
+---
+--- @param place { build = <an included build's directory> } or { module = <name> } or { root = true }
+--- @return false for a project that is neither, which no key can name
+function translate_build.set_logic(config, place, path)
+  if place.build ~= nil then
+    config.builds[place.build].logic = path
+  elseif place.module ~= nil then
+    config.modules = config.modules or {}
+    config.modules[place.module] = config.modules[place.module] or {}
+    config.modules[place.module].logic = path
+  elseif place.root then
+    config.logic = path
+  else
+    return false
+  end
+  return true
+end
+
 return translate_build

@@ -1,0 +1,1 @@
+stdout.txt not run by the proof

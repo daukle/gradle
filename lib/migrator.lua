@@ -12,10 +12,12 @@ local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
+local carried = daukle.require("lib/carried")
+local migrate_carry = daukle.require("lib/migrate_carry")
 
-local INIT_SCRIPT = "migrate-model.gradle"
-local MODEL = "migrate-model.json"
-local GENERATED_MODEL = "migrate-generated-model.json"
+local INIT_SCRIPT = carried.MIGRATE_PREFIX .. "model.gradle"
+local MODEL = carried.MIGRATE_PREFIX .. "model.json"
+local GENERATED_MODEL = carried.MIGRATE_PREFIX .. "generated-model.json"
 local WRAPPER_DIRECTORY = "gradle/wrapper"
 local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
 local DUMP_JDK = "17"
@@ -127,7 +129,7 @@ end
 local function generation_context(context, built, config)
   return { instance = context.instance, dir = context.dir, root = context.root, host = context.host,
            project = built.name, version = built.version, modules = built.declared or {},
-           toolchain = { config = config, version = config.version } }
+           toolchain = { name = context.instance, config = config, version = config.version } }
 end
 
 --- The translated config without `jdk`, which picks only the JVM a task runs
@@ -170,20 +172,25 @@ local function generated_builds(context, built)
   return models
 end
 
---- The model of the build `daukle/gradle` renders from the translation,
---- dumped with the same init script, Gradle and JDK as the old build, so the
---- run reuses the first one's daemon; or nil and the blockers that stopped it.
+local function write_generated_files(generation, config)
+  for path, text in pairs(writer.generated_files(generation, config)) do daukle.write{ path = path, text = text } end
+end
+
+--- The model of the build `daukle/gradle` renders from `config`, dumped with
+--- the same init script, Gradle and JDK as the old build, so the run reuses
+--- the first one's daemon; or nil and the blockers that stopped it.
 ---
 --- @implNote the writer's refusals are asked for as reasons first, because
 --- the sandbox has no pcall and a raise would discard every blocker found.
-local function dump_generated(context, built, where)
-  local config = rendered_config(built.config)
-  local generation = generation_context(context, built, config)
-  local problems = writer.generation_problems(generation, config)
+--- @param carried_texts the carried files' text by path, which core has not written yet
+local function dump_generated(context, built, config, carried_texts, where)
+  local rendered = rendered_config(config)
+  local generation = generation_context(context, built, rendered)
+  local problems = writer.generation_problems(generation, rendered, carried_texts)
   if #problems > 0 then return nil, generation_blockers(problems, where) end
-  writer.write_build_file(generation, config)
-  daukle.write{ path = writer.SETTINGS_FILE, text = writer.settings_text(generation, config) }
-  local failure = run_dump(context, config.version, derived(context, "."), {
+  writer.write_build_file(generation, rendered, { carried_texts = carried_texts })
+  write_generated_files(generation, rendered)
+  local failure = run_dump(context, rendered.version, derived(context, "."), {
     "--project-dir", ".",
     "--offline",
     "--no-configuration-cache",
@@ -213,16 +220,63 @@ local function settings_name(context, root)
 end
 
 --- What every translated project says that no key or comparison does: code
---- a build script compiled, and a toolchain the proof cannot point at the
---- provisioned JDK.
-local function project_blockers(built)
+--- a build script compiled and the migration does not carry, and a toolchain
+--- the proof cannot point at the provisioned JDK.
+--- @param covered project -> the names of its tasks whose code is carried
+local function project_blockers(built, covered)
   local blockers = {}
   local function add(project, where)
-    append(blockers, migrate_blockers.build_logic(project, where))
+    append(blockers, migrate_blockers.build_logic(project, where, covered[project]))
     append(blockers, migrate_old_build.toolchain_blockers(project, where))
   end
   for _, entry in ipairs(built.projects) do add(entry.project, entry.where) end
   for _, record in ipairs(built.builds) do add(record.project, record.where) end
+  return blockers
+end
+
+local NOTHING_CARRIED = { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
+
+--- The generated build's model rendered from the keys alone, which is what
+--- signal 2 and the selection read; or nil and the blockers that stopped it.
+local function dump_baseline(context, built, linked, where)
+  local config, texts = migrate_carry.baseline_config(built.config, linked, context.instance)
+  return dump_generated(context, built, config, texts, where)
+end
+
+--- What the migration carries, and the generated build the comparison reads:
+--- the baseline when nothing is carried, else a second render carrying it.
+---
+--- @implNote no second render over a stale link: the writer would refuse to
+--- render the root without logic there, and its advice, `daukle clean`, is
+--- one core refuses while a migration is unfinished.
+local function carry(context, built, blockers)
+  local where = built.projects[1].where
+  local linked = migrate_carry.linked_roots(context, built)
+  local generated, refusals = dump_baseline(context, built, linked, where)
+  if generated == nil then return NOTHING_CARRIED, nil, refusals end
+  local generated_models = generated_builds(context, built)
+  local carrying = migrate_carry.select(built, generated, generated_models, context.instance)
+  append(blockers, carrying.blockers)
+  local stale = migrate_carry.stale_link_blockers(built.config, linked)
+  append(blockers, stale)
+  if #stale > 0 then return carrying, nil, refusals end
+  if #carrying.files == 0 then return carrying, generated, refusals, generated_models end
+  generated, refusals = dump_generated(context, built, built.config, carrying.texts, where)
+  if generated == nil then return carrying, nil, refusals end
+  return carrying, generated, refusals, generated_builds(context, built)
+end
+
+--- The settings-script code of the root build and of every included build,
+--- which `migrate_owned` deletes along with the file holding it.
+local function settings_code_blockers(context, model, included, settings)
+  local blockers = migrate_blockers.settings_code(model, within(context.dir, settings))
+  for _, entry in ipairs(model.includedBuilds or {}) do
+    local script = (included[entry.name] or {}).settingsScript
+    if script ~= nil then
+      append(blockers, migrate_blockers.settings_code(included[entry.name],
+                                                      within(context.dir, entry.dir .. "/" .. script.path), entry.dir))
+    end
+  end
   return blockers
 end
 
@@ -257,18 +311,18 @@ local function run(context)
   built.config.version = gradle_version
   built.version = built.version or UNVERSIONED
   local blockers = built.blockers
-  append(blockers, project_blockers(built))
+  append(blockers, settings_code_blockers(context, model, included, settings))
+  local carrying, generated, refusals, generated_models = carry(context, built, blockers)
+  append(blockers, refusals)
+  append(blockers, project_blockers(built, carrying.covered))
   append(blockers, migrate_old_build.unprovided_jdk_blockers(context, built.config.jdk, built.projects[1].where))
   append(blockers, migrate_owned.blockers(context, model, included))
-  local settings_where = within(context.dir, settings)
-  local generated, refusals = dump_generated(context, built, built.projects[1].where)
-  append(blockers, refusals)
-  local generated_models = {}
+  generated_models = generated_models or {}
   if generated ~= nil then
-    generated_models = generated_builds(context, built)
-    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models, settings_where,
-                                                       context.dir))
+    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models,
+                                                 within(context.dir, settings), context.dir))
   end
+  daukle.write{ path = migrate_carry.REPORT_SCRIPT, text = migrate_carry.report_script(carrying.tasks) }
   local proof = proof_of(context, built, generated, generated_models, blockers)
   return {
     manifest = { project = built.name, version = built.version, modules = built.modules,
@@ -276,6 +330,7 @@ local function run(context)
     foreign = {},
     blockers = blockers,
     owned = migrate_owned.paths(context, model, included),
+    files = carrying.files,
     proof = proof,
   }
 end

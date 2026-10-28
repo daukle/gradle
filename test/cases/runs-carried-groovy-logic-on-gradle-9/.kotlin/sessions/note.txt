@@ -1,0 +1,1 @@
+a session file the Kotlin Gradle Plugin would write

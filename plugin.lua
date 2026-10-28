@@ -11,10 +11,15 @@
 --- resolves nothing.
 
 daukle.plugin{
-  api = 3,
+  --[[ 4, which daukle 0.12.0 is the first to provide, for the `files` a
+       migration carrying build logic returns: an older daukle refuses this
+       plugin by name, with its own version, instead of dropping the files and
+       proving a build whose logic file is missing. ]]
+  api = 4,
   uses = { "provision", "artifact", "exec", "write", "read", "parse", "list", "json_parse",
            "pin", "fetch", "cache" },
-  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules" },
+  exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules", "lib/migrate_logic",
+              "lib/translation" },
   --[[ Core scrubs every credential it knows from a child it starts unless the
        plugin declares it, so an undeclared GITHUB_TOKEN would reach Gradle as
        unset and a generated `System.getenv(...) ?: ''` would hand the build an
@@ -51,11 +56,13 @@ local migrator = daukle.require("lib/migrator")
 local tool_defaults = daukle.require("lib/tool_defaults")
 local configurations = daukle.require("lib/configurations")
 local module_graph = daukle.require("lib/modules")
+local carried = daukle.require("lib/carried")
+local migrate_carry = daukle.require("lib/migrate_carry")
 local resolve = daukle.require("maven:lib/resolve")
 local output = daukle.require("maven:lib/output")
 local pom = daukle.require("maven:lib/pom")
 
-local REPORT_FILE = "discovered.txt"
+local REPORT_FILE = carried.DISCOVERY_REPORT
 
 --[[ settings.gradle is generated and build.gradle is NOT, and the split is
      forced rather than chosen. A dependency line is an absolute path to a
@@ -69,7 +76,7 @@ daukle.toolchain{
   generate = function(context)
     local config = validation.config_of(context)
     validation.validated(context, config)
-    return { [writer.SETTINGS_FILE] = writer.settings_text(context, config) }
+    return writer.generated_files(context, config)
   end,
 }
 
@@ -90,6 +97,10 @@ local function run_gradle(context, config, arguments, options)
          than quietly downloading. ]]
     "--offline",
   }
+  if carried.build_carries(config) then
+    argv[#argv + 1] = "--project-cache-dir"
+    argv[#argv + 1] = ".gradle"
+  end
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
   return launcher.run(context, validation.gradle_version_of(context), validation.jdk_version_of(config),
                       argv, options)
@@ -124,7 +135,7 @@ daukle.task{
   end,
 }
 
-local JARS_SCRIPT = "jars.gradle"
+local JARS_SCRIPT = carried.JARS_SCRIPT
 local JARS_TASK = "daukleJars"
 
 --- @implNote an init script rather than a line of the build file, so the
@@ -134,6 +145,20 @@ local JARS_SCRIPT_TEXT = "gradle.allprojects { project ->\n"
   .. "    dependsOn(project.tasks.withType(org.gradle.api.tasks.bundling.Jar))\n"
   .. "  }\n"
   .. "}\n"
+
+--- Whether a migration left the proof a report of its carried tasks.
+---
+--- @implNote read and listed from the project, where a write lands in the
+--- derived directory; the read raises for a missing file, so it is listed first.
+local function pending_carried_report(context)
+  local directory = carried.derived_of(context.toolchain.name)
+  for _, entry in ipairs(daukle.list(directory) or {}) do
+    if entry.kind == "file" and entry.name == migrate_carry.REPORT_SCRIPT then
+      return daukle.read(directory .. "/" .. migrate_carry.REPORT_SCRIPT) ~= ""
+    end
+  end
+  return false
+end
 
 --- Every jar the manifest makes: every task of the `Jar` type in each
 --- project, the sources jar and a plugin's own jar tasks included, and each
@@ -146,10 +171,16 @@ daukle.task{
     writer.write_build_file(context, config)
     daukle.write{ path = JARS_SCRIPT, text = JARS_SCRIPT_TEXT }
     local arguments = { "--init-script", JARS_SCRIPT, JARS_TASK }
+    local reports_carried = pending_carried_report(context)
+    if reports_carried then
+      table.insert(arguments, 1, migrate_carry.REPORT_SCRIPT)
+      table.insert(arguments, 1, "--init-script")
+    end
     for _, build in ipairs(validation.composite_of(context, config).builds) do
       arguments[#arguments + 1] = ":" .. composite.build_name_of(build.name) .. ":" .. JARS_TASK
     end
     run_gradle(context, config, arguments)
+    if reports_carried then daukle.write{ path = migrate_carry.REPORT_SCRIPT, text = "" } end
   end,
 }
 

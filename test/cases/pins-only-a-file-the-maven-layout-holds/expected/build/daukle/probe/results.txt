@@ -1,0 +1,5 @@
+ok a jar named after its module and version is pinned
+ok a classified jar is pinned
+ok a jar a plugin unpacked from its component is not pinned
+ok it blocks naming the component and the transform
+ok a component with many such files blocks once

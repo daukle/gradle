@@ -96,6 +96,16 @@ local function maven_path(row)
   return (string.gsub(row.group, "%.", "/")) .. "/" .. row.module .. "/" .. row.version .. "/" .. row.fileName
 end
 
+--- @implNote an artifact transform hands the classpath a file it made, still
+--- under the component's identifier: the IntelliJ Platform plugin unpacks a
+--- Marketplace plugin's zip into its inner jars. Pinned at the component's
+--- Maven path, such a file is a 404 that raises inside the render and loses
+--- every blocker the migration found.
+local function is_in_maven_layout(row)
+  local prefix = row.module .. "-" .. row.version
+  return string.sub(row.fileName, 1, #prefix) == prefix
+end
+
 --- Why a resolved row cannot be pinned, or nil when it can.
 local function unpinnable(row, repository)
   if row.kind == "project" then
@@ -116,6 +126,10 @@ local function unpinnable(row, repository)
   end
   if string.sub(repository.url, 1, 5) == "file:" then
     return "resolved from " .. repository.name .. ", a file: repository that exists on this machine only"
+  end
+  if not is_in_maven_layout(row) then
+    return "resolved to files its Maven layout does not hold, made by an artifact transform, so no pinned url"
+           .. " can name them"
   end
   return nil
 end

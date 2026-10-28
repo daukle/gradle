@@ -1,0 +1,3 @@
+provisioning gradle 9.6.0
+hello from an included library
+included carried reads from the included build's real directory

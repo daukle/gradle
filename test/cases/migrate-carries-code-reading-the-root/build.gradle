@@ -1,0 +1,12 @@
+plugins {
+  id 'java'
+}
+
+tasks.named('jar') {
+  def title = rootProject.file('config/title.txt').text.trim()
+  def vendor = new File(rootDir, 'config/vendor.txt').text.trim()
+  manifest.attributes('Implementation-Title': title, 'Implementation-Vendor': vendor)
+  doLast {
+    println 'packed ' + title
+  }
+}

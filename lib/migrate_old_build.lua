@@ -10,10 +10,11 @@ local migrate_jars = daukle.require("lib/migrate_jars")
 local migrate_paths = daukle.require("lib/migrate_paths")
 
 local migrate_surface = daukle.require("lib/migrate_surface")
+local carried = daukle.require("lib/carried")
 
 local derived_from_instance = migrate_paths.derived_from_instance
 
-local INIT_SCRIPT = "migrate-old-build.gradle"
+local INIT_SCRIPT = carried.MIGRATE_PREFIX .. "old-build.gradle"
 local PLAN_PROPERTY = "daukle.migrate.jars"
 local JDK_PROPERTY = "daukle.migrate.jdk"
 local JAVA_ROW = migrate_surface.LAYOUT_ROW

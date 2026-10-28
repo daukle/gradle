@@ -1,0 +1,20 @@
+plugins {
+  id 'java'
+}
+
+// a closing brace in a comment: }
+description = /a\/b}/
+
+def helper() {
+  tasks.register('fromHelper') {
+    doLast { println 'helper ran' }
+  }
+}
+
+helper()
+
+tasks.register("gen") {
+  doLast {
+    println "gen ran ${description}"
+  }
+}
