@@ -228,22 +228,21 @@ local function append_all(target, items)
   for _, item in ipairs(items) do target[#target + 1] = item end
 end
 
---- Carried statements that read a version catalog: the generated build links
---- the real `gradle/` directory but declares no catalog of its own, so a
---- catalog accessor in carried code would depend on that link and not on a key.
-local function catalog_blockers(carried, catalogs, where)
-  local blockers = {}
-  for _, catalog in ipairs(catalogs or {}) do
-    for _, statement in ipairs(carried) do
-      if includes(statement.uses, catalog) then
-        blockers[#blockers + 1] = boundary_blocker(catalog, where, "is a version catalog that carried code reads"
-          .. " (first at line " .. string.format("%d", statement.startLine) .. "), and a version catalog is not"
-          .. " carried: no key declares it")
-        break
-      end
-    end
+local function is_read_by(carried, catalog)
+  for _, statement in ipairs(carried) do
+    if includes(statement.uses, catalog) then return true end
   end
-  return blockers
+  return false
+end
+
+--- The version catalogs a carried statement reads, which the migration writes
+--- and declares by a key, since the generated build declares none of its own.
+local function catalogs_read(carried, catalogs)
+  local read = {}
+  for _, catalog in ipairs(catalogs or {}) do
+    if is_read_by(carried, catalog) then read[#read + 1] = catalog end
+  end
+  return read
 end
 
 local function needs_carrying(project, missing_task_names)
@@ -263,7 +262,7 @@ end
 --- @param missing_task_names the tasks signal 2 found the generated build lacks
 --- @return table { carried = statements in source order, blockers = blockers,
 ---         covered = set of the task names the carried statements account for,
----         reads_catalog = whether a carried statement reads a version catalog }
+---         catalogs = the names of the version catalogs a carried statement reads }
 function migrate_logic.select(project, missing_task_names, where)
   local script = project.script or { path = "", statements = {} }
   if script.unparsed ~= nil then return unparsed_result(project, missing_task_names, where) end
@@ -279,10 +278,8 @@ function migrate_logic.select(project, missing_task_names, where)
   until not changed
   local registered = registered_by(statements, carried)
   local selected = in_source_order(statements, carried)
-  local catalog = catalog_blockers(selected, project.catalogs, where)
-  append_all(blockers, catalog)
   return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions, missing_task_names),
-           reads_catalog = #catalog > 0 }
+           catalogs = catalogs_read(selected, project.catalogs) }
 end
 
 local function is_import(statement)

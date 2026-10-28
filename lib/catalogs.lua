@@ -6,6 +6,7 @@ local module_graph = daukle.require("lib/modules")
 local groovy = daukle.require("lib/groovy")
 
 local CONVENTION_CATALOG_NAME = "daukleConventionCatalog"
+local STAND_IN_DIRECTORY = "build/"
 
 --- The directory an instance's catalogs live in, below its committed `daukle/<instance>/`.
 function catalogs.directory_of(instance)
@@ -68,6 +69,24 @@ function catalogs.checked(value, label, instance, carries_logic)
   return entries
 end
 
+--- Where a derived root holds a catalog the migrator renders before core has written it.
+---
+--- @implNote under the derived root's `build/`, which no root link takes, so
+--- the write never reaches the user's own files.
+function catalogs.stand_in_of(path)
+  return STAND_IN_DIRECTORY .. path
+end
+
+--- Each catalog `carried_texts` stands in for, as { path below the derived root, text }.
+function catalogs.stand_ins(entries, carried_texts)
+  local files = {}
+  for _, entry in ipairs(entries) do
+    local text = carried_texts ~= nil and carried_texts[entry.path] or nil
+    if text ~= nil then files[#files + 1] = { path = catalogs.stand_in_of(entry.path), text = text } end
+  end
+  return files
+end
+
 --- @implNote `defaultLibrariesExtensionName` keeps Gradle from registering the
 --- conventional `gradle/libs.versions.toml` as `libs` a second time while the
 --- real file is still linked into the derived root, which fails on both majors
@@ -75,7 +94,8 @@ end
 --- and 9.6.0, D-190). The file then reads as a catalog of this reserved name.
 --- @param entries the list `checked` returns
 --- @param climb what turns a path under the instance's real root into one from the derived root
-function catalogs.settings_lines(entries, climb)
+--- @param carried_texts path -> text standing in for catalogs core has not written yet, or nil
+function catalogs.settings_lines(entries, climb, carried_texts)
   if #entries == 0 then return {} end
   local lines = {
     "dependencyResolutionManagement {",
@@ -83,7 +103,9 @@ function catalogs.settings_lines(entries, climb)
     "  versionCatalogs {",
   }
   for _, entry in ipairs(entries) do
-    lines[#lines + 1] = "    " .. entry.name .. " { from(files(" .. groovy.quoted(climb .. entry.path) .. ")) }"
+    local location = climb .. entry.path
+    if carried_texts ~= nil and carried_texts[entry.path] ~= nil then location = catalogs.stand_in_of(entry.path) end
+    lines[#lines + 1] = "    " .. entry.name .. " { from(files(" .. groovy.quoted(location) .. ")) }"
   end
   lines[#lines + 1] = "  }"
   lines[#lines + 1] = "}"

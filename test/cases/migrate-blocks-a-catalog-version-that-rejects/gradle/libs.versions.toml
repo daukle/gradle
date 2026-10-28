@@ -1,0 +1,5 @@
+[versions]
+gson = { require = "2.10.1", reject = ["2.10.0"] }
+
+[libraries]
+guava = { module = "com.google.guava:guava", version = { require = "33.0.0-jre", rejectAll = true } }

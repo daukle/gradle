@@ -1,0 +1,14 @@
+[versions]
+gson = "2.10.1"
+junit = { strictly = "[5.9,6.0[", prefer = "5.10.0" }
+
+[libraries]
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+junit-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
+commons_lang = { module = "org.apache.commons:commons-lang3", version = "3.14.0" }
+
+[bundles]
+test-all = ["junit-api", "gson"]
+
+[plugins]
+taskinfo = { id = "org.barfuin.gradle.taskinfo", version = "2.2.0" }
