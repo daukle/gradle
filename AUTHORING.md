@@ -835,8 +835,7 @@ old build or the dump failed.
    scope is the tree, and core keeps only the outermost Gradle build), so its file is under
    `daukle/gradle-<dir>/logic/` and its root links reach `context.root`. A derived root an earlier
    carrying render linked is rendered carrying in the first pass too, and blocks, before any second
-   render, when this migration carries nothing there. `buildSrc/` blocks
-   whenever it exists. The dump skips a version catalog's accessor extension, found by its
+   render, when this migration carries nothing there. The dump skips a version catalog's accessor extension, found by its
    `org.gradle.accessors.dm.LibrariesFor` type, and lists the catalogs' names per project so carried
    code reading one blocks.
 5. **The environment gate.** A model string that holds an environment variable's value (8 or more
@@ -871,11 +870,13 @@ compared, not executed beyond what `gradle:jars` schedules.
 **Still blocks**, each naming the construct:
 
 - an `apply from:` script: an action it compiled is not in the build script, so its text is not carried;
-- code in a settings script (`gradle.beforeProject {}` and the like), named as `settings.gradle:<line>`;
+- code in a settings script, the root's or an included build's (`gradle.beforeProject {}` and the like), named
+  as `[<build dir>/]settings.gradle:<line>`;
   declarations the translation reads (`include`, `includeBuild`, `pluginManagement`, `plugins`,
-  `dependencyResolutionManagement`, `buildCache`, `toolchainManagement`, a registered extension's block)
+  `dependencyResolutionManagement`, `buildCache`, `toolchainManagement`, a registered extension's block,
+  `project(":x").projectDir` and `.buildFileName`, `rootProject.buildFileName`)
   are not code. An unparsed settings script blocks as well;
-- `buildSrc` and convention plugins: a plugin class a script compiles, and `buildSrc/`;
+- a plugin class a build script compiles, and `buildSrc/` whenever it exists (an included plugin build migrates);
 - a version catalog read by carried code (`libs.versions.gson.get()` in a carried statement), named by
   the catalog; a catalog the keys use (`implementation libs.gson`) is pinned and needs nothing;
 - a build script that did not parse (the unit case `selects-carried-statements` asserts it; an invalid
@@ -894,9 +895,7 @@ non-carrying build is rendered, because the derived root still holds links into 
 build, and core compares every jar task BOTH builds have as an archive (a zip's headers carry
 timestamps, its entries do not). A fat jar from a carried plugin is therefore proved. Test counts
 are not compared. The old build writes only each project's own `build/` (and `buildSrc/build` on
-Gradle 8, which blocks anyway). The proof prints `<task>: carried, configured and compared, not run
-by the proof` for each carried task its task graph does not hold, from an init script the migrator
-leaves and `gradle:jars` empties after its first run.
+Gradle 8, which blocks anyway). The init script that reports carried tasks the proof does not run is left by the migrator and emptied by `gradle:jars` after its first run (see "What the proof does not run" above).
 
 ### What blocks, by `GRADLE-SURFACE.md` row
 

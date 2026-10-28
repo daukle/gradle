@@ -237,12 +237,13 @@ end
 --- catalog accessor in carried code would depend on that link and not on a key.
 local function catalog_blockers(carried, catalogs, where)
   local blockers = {}
-  for _, statement in ipairs(carried) do
-    for _, catalog in ipairs(catalogs or {}) do
+  for _, catalog in ipairs(catalogs or {}) do
+    for _, statement in ipairs(carried) do
       if includes(statement.uses, catalog) then
         blockers[#blockers + 1] = boundary_blocker(catalog, where, "is a version catalog that carried code reads"
-          .. " (line " .. string.format("%d", statement.startLine) .. "), and a version catalog is not carried:"
-          .. " no key declares it")
+          .. " (first at line " .. string.format("%d", statement.startLine) .. "), and a version catalog is not"
+          .. " carried: no key declares it")
+        break
       end
     end
   end

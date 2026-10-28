@@ -1,0 +1,5 @@
+rootProject.name = 'relocated'
+include 'app'
+project(':app').projectDir = file('app')
+project(':app').buildFileName = 'app.gradle'
+rootProject.buildFileName = 'root.gradle'

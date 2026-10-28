@@ -101,7 +101,11 @@ local SETTINGS_DECLARATIONS = {
 }
 
 local function settings_head(text)
-  if string.match(text, "^rootProject%.name%s*=") then return "rootProject" end
+  if string.match(text, "^rootProject%.name%s*=") or string.match(text, "^rootProject%.buildFileName%s*=") then
+    return "rootProject"
+  end
+  local receiver = string.match(text, "^project%s*%(%s*[\"'][^\"']*[\"']%s*%)%s*%.(%a+)%s*=")
+  if receiver == "projectDir" or receiver == "buildFileName" then return "rootProject" end
   return string.match(text, "^[%a_][%w_]*")
 end
 
@@ -112,19 +116,20 @@ end
 
 --- Settings script statements that are code: a hook, a call, a computation.
 --- @implNote an unparsed settings script blocks too, because nothing in it can be told from code.
-function migrate_blockers.settings_code(model, where)
+function migrate_blockers.settings_code(model, where, directory)
   local script = model.settingsScript
+  local function named(path) return directory == nil and path or directory .. "/" .. path end
   if script == nil then return {} end
   if script.unparsed ~= nil then
-    return { blocker(script.path, where, "is a settings script that cannot be read (" .. script.unparsed
+    return { blocker(named(script.path), where, "is a settings script that cannot be read (" .. script.unparsed
                      .. "), so it cannot be told from code", BOUNDARY_ROW) }
   end
   local blockers = {}
   for _, statement in ipairs(script.statements or {}) do
     if not is_declaration(statement, model.settingsExtensions) then
-      local construct = string.format("%s:%d", script.path, statement.startLine)
+      local construct = string.format("%s:%d", named(script.path), statement.startLine)
       blockers[#blockers + 1] = blocker(construct, where, "is code in the settings"
-                                        .. " script " .. script.path .. ", which a migration does not carry"
+                                        .. " script " .. named(script.path) .. ", which a migration does not carry"
                                         .. " (only build scripts are), so it would silently stop running",
                                         BOUNDARY_ROW)
     end
