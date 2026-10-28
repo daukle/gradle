@@ -81,7 +81,16 @@ local function duplicate_blocker(target, path)
 end
 
 local function new_result()
-  return { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {} }
+  return { files = {}, texts = {}, covered = {}, tasks = {}, blockers = {}, withheld = {} }
+end
+
+--- @implNote a project whose carried code reads a version catalog carries
+--- none of it: the render carrying it would fail on the unresolved accessor
+--- and take every other build's comparison with it (D-194). Its tasks count
+--- as covered, because the catalog blocker already names why they are absent.
+local function withhold(target, selection, result)
+  result.covered[target.project] = selection.covered
+  result.withheld[target.project] = true
 end
 
 local function carry_target(target, config, instance, result, taken)
@@ -90,6 +99,7 @@ local function carry_target(target, config, instance, result, taken)
   local selection = migrate_logic.select(target.project, missing, target.where)
   append(result.blockers, selection.blockers)
   if #selection.carried == 0 then return end
+  if selection.reads_catalog then return withhold(target, selection, result) end
   local dsl = dsl_of(target.project)
   local path = migrate_logic.file_path(target.build, target.project.path, dsl, instance)
   if taken[path] then
@@ -115,7 +125,7 @@ end
 --- @param generated_models the generated included builds' models, by directory
 --- @param instance         the toolchain instance migrated to
 --- @return { files = { { path, text } }, texts = path -> text, covered = project -> set of task names,
----           tasks = { { build, path, shown } }, blockers }
+---           tasks = { { build, path, shown } }, blockers, withheld = set of projects carrying nothing }
 function migrate_carry.select(built, generated, generated_models, instance)
   local result, taken = new_result(), {}
   for _, target in ipairs(targets(built, generated, generated_models)) do

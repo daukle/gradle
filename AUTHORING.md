@@ -420,6 +420,11 @@ body = { exclude = { call = ["a.text.**"] } }
 A call's `body` is the closure it is given, checked and rendered like any block; a call holds
 `call` and `body` and nothing else.
 
+**An empty array is an empty list**: `jvmArgs = []` renders `jvmArgs = []`, while a header with no
+keys, such as `[toolchains.gradle.settingsConfigure.toolchainManagement.jvm.javaRepositories]`,
+stays an empty block. Lua alone cannot tell the two apart; core marks every TOML array, which is why
+this plugin needs daukle 0.13.0 (api 5).
+
 An argument is a string, number, boolean or one of the four markers above, and nothing that
 evaluates Groovy. A key holding an ARRAY of call tables calls the method once per entry
 (`from = [{ call = ["a"] }, { call = ["b"] }]`). Calls render after the assignments and before the

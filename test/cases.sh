@@ -345,7 +345,7 @@ run_case() {
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
          "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve" \
-         "$sandbox/expect-absent.txt" "$sandbox/task-after" "$sandbox/daukle.after.toml"
+         "$sandbox/expect-absent.txt" "$sandbox/task-after" "$sandbox/daukle.after.toml"          "$sandbox/remove-after.txt"
   if [ -f "$case_dir/migrate" ]; then
     rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
     run_migrate_case
@@ -361,14 +361,20 @@ run_case() {
   [ -f "$case_dir/resolve" ] && command="$command --resolve"
 
   # A case about what one run leaves for the next: `task` runs first and must
-  # succeed, then daukle.after.toml replaces the manifest and `task-after` is
-  # the run every expectation below is about.
+  # succeed, then every path in remove-after.txt is deleted, daukle.after.toml
+  # replaces the manifest and `task-after` is the run every expectation below is
+  # about.
   if [ -f "$case_dir/task-after" ]; then
     if ! (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
       echo "--- stderr ---" >&2
       tail -40 "$sandbox/stderr.txt" >&2
       fail "$name" "the first run, $command, failed"
       return
+    fi
+    if [ -f "$case_dir/remove-after.txt" ]; then
+      while IFS= read -r removed || [ -n "$removed" ]; do
+        [ -n "$removed" ] && rm -rf "${sandbox:?}/$removed"
+      done < "$case_dir/remove-after.txt"
     fi
     cp "$case_dir/daukle.after.toml" "$sandbox/daukle.toml"
     command=$(cat "$case_dir/task-after")

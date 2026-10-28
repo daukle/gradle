@@ -49,6 +49,13 @@ local function is_list(value)
   return #value > 0
 end
 
+--- `jvmArgs = []`, which Lua alone cannot tell from a header-only table such
+--- as `[toolchainManagement.jvm.javaRepositories]` that must stay a block.
+--- Core marks every TOML array, api 5 (D-176).
+local function is_empty_array(value)
+  return next(value) == nil and getmetatable(value) == "daukle.array"
+end
+
 --[[ Core carries the manifest through JSON and pushes every number as a Lua
      float, so a plugin cannot tell the TOML `7` from the TOML `7.0`: both
      arrive as 7.0, and `tostring` would write a Groovy BigDecimal where a
@@ -105,6 +112,7 @@ local function value_kind(value)
   if is_call(value) then return "call" end
   if read_marker(value, "") ~= nil then return "assignment" end
   if is_list(value) then return entry_kind(value[1]) end
+  if is_empty_array(value) then return "values" end
   return "block"
 end
 
@@ -186,6 +194,7 @@ local ENTRY_PROBLEM = {
 }
 
 local function list_problem(value, path)
+  if next(value) == nil then return nil end
   local problem = list_mix_problem(value, path)
   if problem ~= nil then return problem end
   local check = ENTRY_PROBLEM[entry_kind(value[1])]

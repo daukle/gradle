@@ -1,0 +1,17 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# An empty TOML array arrives as an empty Lua table, the same as a header-only
+# block; core's array mark is what tells the two apart (D-176).
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+
+[toolchains.gradle.configure.test]
+jvmArgs = []

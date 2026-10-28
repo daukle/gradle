@@ -101,7 +101,11 @@ end
 --- @param generated_builds the generated included builds' models, by directory, each { identity, model }
 --- @param settings         the path blockers about the settings name
 --- @param dir              the directory of the build, relative to the one migrate runs in
-function migrate_comparison.blockers(model, built, generated, generated_builds, settings, dir)
+--- @param withheld         the projects whose code was withheld, which are not compared: their
+---                         catalog blocker already stops the migration, and every task that code
+---                         registers would be reported again as missing
+function migrate_comparison.blockers(model, built, generated, generated_builds, settings, dir, withheld)
+  withheld = withheld or {}
   local comparison = { identities = identities_of(built, generated_builds), unpinned = union_unpinned(built.projects),
                        root = dir or "." }
   local old_root = model.rootDir
@@ -110,21 +114,25 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
   local old_projects, generated_projects = by_path(old_model), by_path(generated_model)
   for _, entry in ipairs(built.projects) do
     local counterpart = generated_projects[entry.project.path]
-    if counterpart == nil then
-      blockers[#blockers + 1] = missing(entry.project.path, entry.where)
-    else
-      append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where, comparison))
+    if withheld[entry.project] == nil then
+      if counterpart == nil then
+        blockers[#blockers + 1] = missing(entry.project.path, entry.where)
+      else
+        append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where, comparison))
+      end
     end
   end
   for _, record in ipairs(built.builds) do
     local counterpart = generated_builds[record.dir]
-    if counterpart == nil then
-      blockers[#blockers + 1] = missing(record.dir, record.where)
-    else
-      local build_comparison = { identities = comparison.identities, unpinned = record.unpinned,
-                                 root = migrate_paths.within(dir, record.dir) }
-      local old, new = compared_included(built, record, old_root, counterpart)
-      append(blockers, project_blockers(old, new, record.where, build_comparison))
+    if withheld[record.project] == nil then
+      if counterpart == nil then
+        blockers[#blockers + 1] = missing(record.dir, record.where)
+      else
+        local build_comparison = { identities = comparison.identities, unpinned = record.unpinned,
+                                   root = migrate_paths.within(dir, record.dir) }
+        local old, new = compared_included(built, record, old_root, counterpart)
+        append(blockers, project_blockers(old, new, record.where, build_comparison))
+      end
     end
   end
   return blockers
