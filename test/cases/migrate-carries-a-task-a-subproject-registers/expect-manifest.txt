@@ -1,0 +1,2 @@
+[toolchains.gradle.modules.core]
+logic = "daukle/gradle/logic/root/core.gradle"

@@ -6,6 +6,7 @@ local builds = daukle.require("lib/builds")
 local jdks = daukle.require("java:lib/jdks")
 local source_sets = daukle.require("lib/source_sets")
 local extensions = daukle.require("lib/extensions")
+local carried = daukle.require("lib/carried")
 
 local DEFAULT_JDK = "17"
 
@@ -34,6 +35,28 @@ local function manifest_declares_modules(document)
 end
 
 local MANIFEST_DECLARES_MODULES = manifest_declares_modules(MANIFEST)
+
+local TOOLCHAIN = "gradle"
+
+local function instance_in_manifest(dir)
+  local toolchains = MANIFEST ~= nil and MANIFEST.toolchains or nil
+  if type(toolchains) ~= "table" then return nil end
+  for name, block in pairs(toolchains) do
+    if type(block) == "table" and (block.toolchain or name) == TOOLCHAIN and block.dir == dir then return name end
+  end
+  return nil
+end
+
+--- The toolchain instance a context belongs to, which names its `daukle/<instance>/`
+--- and `build/daukle/<instance>/`.
+---
+--- @implNote a task's context names it and the migrator's names it; generate's
+--- does not, so it is the manifest's gradle instance at the context's `dir`.
+local function instance_of(context)
+  if context.toolchain ~= nil and context.toolchain.name ~= nil then return context.toolchain.name end
+  if context.instance ~= nil then return context.instance end
+  return instance_in_manifest(carried.dir_of_root(context.root)) or TOOLCHAIN
+end
 
 local function config_of(context)
   return context.toolchain ~= nil and context.toolchain.config or context.config
@@ -74,7 +97,7 @@ local entries_of_configurations = configurations.entries_of
 --- classpath is refused by `daukle sync` and not only by the task that would
 --- have written its file. One function rather than a second loop beside the
 --- writer's: two loops over the same blocks would drift.
-local function checked_modules(config, declared, read)
+local function checked_modules(config, declared, read, instance)
   local blocks = module_graph.blocks_of(config, declared)
   local project_wide = configurations.named(config, "")
   local checked = {}
@@ -93,6 +116,7 @@ local function checked_modules(config, declared, read)
       named = configurations.overridden(project_wide, configurations.named(block, scope)),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
+      logic = carried.checked(block.logic, scope .. "logic", instance),
     }
   end
   module_graph.refuse_two_mains(checked)
@@ -119,7 +143,8 @@ local function checked_builds(context, config)
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
       entries = entries_of_configurations(build.block, scope),
-      named = configurations.named(build.block, scope) }
+      named = configurations.named(build.block, scope),
+      logic = carried.checked(build.block.logic, scope .. "logic", instance_of(context)) }
   end
   return checked, read
 end
@@ -324,10 +349,12 @@ local function validated(context, config)
   distributions.for_version(gradle_version_of(context))
   jdk_for(context, config)
   layout_of(config)
+  carried.checked(config.logic, "logic", instance_of(context))
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
   local record = composite_of(context, config)
-  source_sets.refuse_task_collisions(config, checked_modules(config, declared, record.read))
+  source_sets.refuse_task_collisions(config,
+                                     checked_modules(config, declared, record.read, instance_of(context)))
   entries_of_configurations(config, "")
   configurations.named(config, "")
   module_graph.project_options(config)
@@ -364,6 +391,7 @@ return {
   checked_classpath = checked_classpath,
   entries_of_configurations = entries_of_configurations,
   checked_modules = checked_modules,
+  instance_of = instance_of,
   checked_builds = checked_builds,
   composite_of = composite_of,
   project_name = project_name,

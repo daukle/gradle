@@ -8,12 +8,13 @@ local migrate_surface = daukle.require("lib/migrate_surface")
 local composite = daukle.require("lib/composite")
 local model_dump = daukle.require("lib/model_dump")
 local tables = daukle.require("lib/tables")
+local carried = daukle.require("lib/carried")
 
 local within = migrate_paths.within
 local derived = migrate_paths.derived
 
-local OLD_JARS = "migrate-old"
-local PLAN = "migrate-old-jars.tsv"
+local OLD_JARS = carried.MIGRATE_PREFIX .. "old"
+local PLAN = carried.MIGRATE_PREFIX .. "old-jars.tsv"
 local COPY_TASK_PREFIX = "daukleMigrateOld"
 local JAR_READER = "jar"
 local JAR_ROW = "jar"

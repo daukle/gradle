@@ -1,0 +1,8 @@
+tasks.register('readTheRoot') {
+    doLast {
+        println 'rootProject.file reads ' + rootProject.file('config/greeting.txt').text.trim()
+        println 'rootDir reads ' + new File(rootDir, 'config/greeting.txt').text.trim()
+        println 'root file() reads ' + file('config/greeting.txt').text.trim()
+        rootProject.file('config/written.txt').text = 'written through the link'
+    }
+}

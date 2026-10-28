@@ -1,0 +1,2 @@
+config/written.txt
+build/daukle/gradle/build/out/modules/app/classes/java/main/app/App.class

@@ -1,0 +1,5 @@
+rootProject.name = 'greeting'
+
+gradle.beforeProject { project ->
+  project.ext.stamped = true
+}

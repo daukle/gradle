@@ -97,6 +97,48 @@ files_carry_literals() {
   return 0
 }
 
+# expect-blocks.txt holds blocks separated by a "--" line: a path, then lines
+# the file must carry CONSECUTIVELY, each compared with its surrounding
+# whitespace removed, so a blank line stands for a whitespace-only one. It is
+# how a case asserts a value that a pretty-printed JSON file spreads over lines
+# (an array's elements, or the key that says which statement a value is in),
+# which one grep literal cannot tie together.
+BLOCK_CHECK='
+import sys
+blocks, current = [], []
+for line in open(sys.argv[1], encoding="utf-8").read().splitlines():
+    if line.strip() == "--":
+        blocks.append(current)
+        current = []
+    else:
+        current.append(line)
+blocks.append(current)
+for block in [block for block in blocks if block]:
+    target, wanted = block[0].strip(), [line.strip() for line in block[1:]]
+    try:
+        lines = [line.strip() for line in open(sys.argv[2] + "/" + target, encoding="utf-8").read().splitlines()]
+    except OSError:
+        print("expected " + target + ", which the run did not produce")
+        sys.exit(1)
+    if not any(lines[at:at + len(wanted)] == wanted for at in range(len(lines))):
+        print(target + " does not carry, as consecutive lines: " + " / ".join(wanted))
+        sys.exit(1)
+'
+
+files_carry_blocks() {
+  [ -f "$case_dir/expect-blocks.txt" ] || return 0
+  if ! grep -q '[^-[:space:]]' "$case_dir/expect-blocks.txt"; then
+    fail "$name" "expect-blocks.txt is empty, so this case asserts nothing"
+    return 1
+  fi
+  python=$(working_python) || { fail "$name" "no python3 or python that runs"; return 1; }
+  if ! missing=$("$python" -c "$BLOCK_CHECK" "$case_dir/expect-blocks.txt" "$sandbox"); then
+    fail "$name" "$missing"
+    return 1
+  fi
+  return 0
+}
+
 # The negation of expect-contains.txt, same "<path> <literal>" lines: an entry
 # a configuration must keep OUT of an archive cannot be proved by presence.
 files_lack_literals() {
@@ -261,9 +303,9 @@ tree_has_paths() {
 }
 
 # A migrate case asserts its exit code (expect-exit.txt), then what the output
-# and the files it names carry, with the same expect-output.txt and
-# expect-contains.txt every other case uses, then expect-manifest.txt, then
-# the paths it expects present and absent.
+# and the files it names carry and lack, with the same expect-output.txt,
+# expect-contains.txt, expect-blocks.txt and expect-lacks.txt every other case
+# uses, then expect-manifest.txt, then the paths it expects present and absent.
 run_migrate_case() {
   serve_plugin || return 0
   status=0
@@ -279,6 +321,8 @@ run_migrate_case() {
   fi
   output_carries_clauses || return 0
   files_carry_literals || return 0
+  files_carry_blocks || return 0
+  files_lack_literals || return 0
   manifest_carries_clauses || return 0
   tree_has_paths || return 0
   passed=$((passed + 1))
@@ -300,10 +344,10 @@ run_case() {
   cp -R "$case_dir" "$sandbox"
   rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
-         "$sandbox/expect-lacks.txt" "$sandbox/resolve"
+         "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve" \
+         "$sandbox/expect-absent.txt" "$sandbox/task-after" "$sandbox/daukle.after.toml"
   if [ -f "$case_dir/migrate" ]; then
-    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt" \
-          "$sandbox/expect-absent.txt"
+    rm -f "$sandbox/migrate" "$sandbox/expect-exit.txt" "$sandbox/expect-manifest.txt"
     run_migrate_case
     return
   fi
@@ -315,6 +359,20 @@ run_case() {
   [ -f "$case_dir/task" ] && command=$(cat "$case_dir/task")
   # A run that may pin an unpinned url or write a committed file, which core allows only then.
   [ -f "$case_dir/resolve" ] && command="$command --resolve"
+
+  # A case about what one run leaves for the next: `task` runs first and must
+  # succeed, then daukle.after.toml replaces the manifest and `task-after` is
+  # the run every expectation below is about.
+  if [ -f "$case_dir/task-after" ]; then
+    if ! (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
+      echo "--- stderr ---" >&2
+      tail -40 "$sandbox/stderr.txt" >&2
+      fail "$name" "the first run, $command, failed"
+      return
+    fi
+    cp "$case_dir/daukle.after.toml" "$sandbox/daukle.toml"
+    command=$(cat "$case_dir/task-after")
+  fi
 
   if [ -f "$case_dir/expect-error.txt" ]; then
     if (cd "$sandbox" && "$daukle" $command >stdout.txt 2>stderr.txt); then
@@ -329,6 +387,8 @@ run_case() {
       return
     fi
     output_carries_clauses || return 0
+    files_carry_literals || return 0
+    tree_has_paths || return 0
     passed=$((passed + 1))
     return
   fi
@@ -361,7 +421,9 @@ run_case() {
   fi
 
   files_carry_literals || return 0
+  files_carry_blocks || return 0
   files_lack_literals || return 0
+  tree_has_paths || return 0
 
   # A case that ran a task asserts on what the TOOL produced, never on the text
   # of the generated build file. The source-set redirect in that file fails

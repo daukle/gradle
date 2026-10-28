@@ -1,0 +1,5 @@
+rootProject.name = 'settingscode'
+
+gradle.beforeProject { project ->
+  project.ext.stamped = true
+}

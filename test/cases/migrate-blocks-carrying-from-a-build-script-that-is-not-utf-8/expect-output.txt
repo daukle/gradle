@@ -1,0 +1,1 @@
+build.gradle is not UTF-8, so its text cannot be carried byte for byte: is why the build script build.gradle cannot be read, so no statement of it is carried

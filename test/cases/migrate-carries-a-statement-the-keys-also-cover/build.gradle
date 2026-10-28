@@ -1,0 +1,12 @@
+plugins {
+  id 'java'
+}
+
+tasks.named('jar') {
+  manifest {
+    attributes('Implementation-Title': 'covered')
+  }
+  doLast {
+    println 'packed'
+  }
+}

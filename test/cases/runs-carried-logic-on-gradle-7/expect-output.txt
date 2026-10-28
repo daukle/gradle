@@ -1,0 +1,3 @@
+provisioning gradle 7.6.4
+app generateConfig ran in app
+lib jar carried doLast from :lib

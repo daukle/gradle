@@ -3,7 +3,9 @@
 
 local tool_defaults = {}
 
-tool_defaults.SCRIPT = "tools.gradle"
+local carried = daukle.require("lib/carried")
+
+tool_defaults.SCRIPT = carried.TOOL_DEFAULTS_SCRIPT
 
 local MARKER = "daukle-tool "
 

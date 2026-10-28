@@ -79,13 +79,59 @@ local function known_scripts(scripts)
 end
 
 --- Signal 1: a task whose type or action a build script compiled.
-function migrate_blockers.build_logic(project, where)
+--- @param carried the names of the tasks whose code is carried, which do not block
+function migrate_blockers.build_logic(project, where, carried)
   local blockers = {}
   for _, task in ipairs(project.tasks or {}) do
-    if task.buildLogic == true then
+    if task.buildLogic == true and not (carried or {})[task.name] then
       blockers[#blockers + 1] = blocker(task.name, where, "carries code that " .. known_scripts(task.scripts)
                                         .. " compiled (a doFirst, a doLast or a task type the script"
                                         .. " defines), which is build logic written as code", BOUNDARY_ROW)
+    end
+  end
+  return blockers
+end
+
+--- The declarations of a settings script the translation reads from the model
+--- or the keys carry; anything else in it is code, which has nowhere to go.
+local SETTINGS_DECLARATIONS = {
+  include = true, includeFlat = true, includeBuild = true, pluginManagement = true, plugins = true,
+  dependencyResolutionManagement = true, buildCache = true, toolchainManagement = true,
+  enableFeaturePreview = true, buildscript = true, import = true,
+}
+
+local function settings_head(text)
+  if string.match(text, "^rootProject%.name%s*=") or string.match(text, "^rootProject%.buildFileName%s*=") then
+    return "rootProject"
+  end
+  local receiver = string.match(text, "^project%s*%(%s*[\"'][^\"']*[\"']%s*%)%s*%.(%a+)%s*=")
+  if receiver == "projectDir" or receiver == "buildFileName" then return "rootProject" end
+  return string.match(text, "^[%a_][%w_]*")
+end
+
+local function is_declaration(statement, extensions)
+  local head = settings_head(statement.text)
+  return head == "rootProject" or SETTINGS_DECLARATIONS[head] == true or (extensions or {})[head] ~= nil
+end
+
+--- Settings script statements that are code: a hook, a call, a computation.
+--- @implNote an unparsed settings script blocks too, because nothing in it can be told from code.
+function migrate_blockers.settings_code(model, where, directory)
+  local script = model.settingsScript
+  local function named(path) return directory == nil and path or directory .. "/" .. path end
+  if script == nil then return {} end
+  if script.unparsed ~= nil then
+    return { blocker(named(script.path), where, "is a settings script that cannot be read (" .. script.unparsed
+                     .. "), so it cannot be told from code", BOUNDARY_ROW) }
+  end
+  local blockers = {}
+  for _, statement in ipairs(script.statements or {}) do
+    if not is_declaration(statement, model.settingsExtensions) then
+      local construct = string.format("%s:%d", named(script.path), statement.startLine)
+      blockers[#blockers + 1] = blocker(construct, where, "is code in the settings"
+                                        .. " script " .. named(script.path) .. ", which a migration does not carry"
+                                        .. " (only build scripts are), so it would silently stop running",
+                                        BOUNDARY_ROW)
     end
   end
   return blockers
@@ -117,6 +163,20 @@ end
 --- which blocks by itself.
 local function is_explained(project, task)
   return task.buildLogic == true or KOTLIN_SCRIPT_TASK_TYPES[task.type] or is_publishing_task(project, task)
+end
+
+--- The tasks the old project has and the generated build lacks, signal 1's
+--- included: what the build script may have registered.
+function migrate_blockers.missing_task_names(project, generated)
+  local generated_names = task_names(generated)
+  local names = {}
+  for _, task in ipairs(project.tasks or {}) do
+    if not generated_names[task.name] and not KOTLIN_SCRIPT_TASK_TYPES[task.type]
+       and not is_publishing_task(project, task) then
+      names[#names + 1] = task.name
+    end
+  end
+  return names
 end
 
 --- Signal 2: a task the old project has and the build `daukle/gradle`

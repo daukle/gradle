@@ -1,3 +1,6 @@
+local model_dump_parse = daukle.require("lib/model_dump_parse")
+local model_dump_environment = daukle.require("lib/model_dump_environment")
+
 --- The init script that writes a Gradle build's evaluated model as JSON.
 ---
 --- @implNote the dump runs at `gradle.taskGraph.whenReady`, because a value a
@@ -22,10 +25,6 @@ local PROPERTY = "daukle.migrate.model"
 
 --- The configuration name the dump gives the launcher rows it resolves itself.
 local IMPLIED_LAUNCHER = "daukleImpliedLauncher"
-
---- What stands in a model string for an environment variable's value: the
---- marker, the variable's name, and a closing brace.
-local ENVIRONMENT_MARKER = "${env:"
 
 local SCRIPT = [==[
 import groovy.json.JsonOutput
@@ -111,12 +110,15 @@ def isAssignable = { MetaProperty property, Object raw ->
  * from a string, and an object names the properties no script can assign in `$readOnly`.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
+ * An enum arrives as its constant's name, the one string Groovy assigns back to it: `JavaVersion`
+ * prints as `17`, which a rendered `version = '17'` cannot be converted from.
  */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   def value
   try { value = unwrap(raw) } catch (Throwable failure) { return unrendered('unreadable: ' + failure.class.simpleName) }
   if (value == null) return null
+  if (value instanceof Enum) return value.name()
   if (value instanceof File) return ['$file': pathFrom(base, value)]
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -560,16 +562,7 @@ def deciding = { element, extension ->
   held ?: type
 }
 
-/**
- * Whether an extension is a version catalog's generated accessor, which the model needs nothing of:
- * every library and plugin it names is already in the resolved rows and the applied plugins.
- *
- * @implNote by type, because a build names its catalogs freely: Gradle generates one class per
- * catalog, `org.gradle.accessors.dm.LibrariesFor<Name>`, measured as the extension's public type for
- * `libs` and a second catalog `tools` on 7.6.4, 8.13 and 9.6.0.
- */
-def CATALOG_ACCESSOR_PREFIX = 'org.gradle.accessors.dm.LibrariesFor'
-def isCatalogAccessor = { element -> element.publicType.concreteClass.name.startsWith(CATALOG_ACCESSOR_PREFIX) }
+]==] .. model_dump_parse.SCRIPT .. [==[
 
 def extensionsOf = { File base, owner ->
   def container = owner.extensions
@@ -686,7 +679,8 @@ def actionsOf = { File base, task ->
     def closure = null
     try { closure = inner.closure } catch (Throwable ignored) { }
     def type = closure != null ? closure.getClass() : inner.getClass()
-    [type: type.name, script: scriptOf(base, type)]
+    def entry = [type: type.name, script: scriptOf(base, type)]
+    entry.script == null ? entry : entry + actionLinesOf(base, type)
   }
 }
 
@@ -714,7 +708,9 @@ def projectOf = { File base, project ->
    parent: project.parent?.path, children: project.childProjects.values().collect { it.path },
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
-   dependencies: dependenciesOf(project), tasks: tasksOf(base, project)]
+   dependencies: dependenciesOf(project), tasks: tasksOf(base, project),
+   catalogs: catalogNamesOf(project),
+   script: scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile, true)]
 }
 
 def repositoriesByName = { Iterable repositories ->
@@ -750,9 +746,15 @@ def settingsCoreOf = { settings ->
    }]
 }
 
+def settingsFileOf = { settings ->
+  ['settings.gradle', 'settings.gradle.kts'].collect { new File(settings.settingsDir, it) }.find { it.isFile() }
+}
+
 def settingsFacts = [:]
 gradle.settingsEvaluated { settings ->
   def base = settings.rootDir
+  def settingsFile = settingsFileOf(settings)
+  settingsFacts.settingsScript = settingsFile == null ? null : scriptInventoryOf(base, gradle.gradleHomeDir, settingsFile, false)
   settingsFacts.pluginManagementRepositories = repositoriesOf(settings.pluginManagement.repositories)
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
   settingsFacts.settingsExtensions = extensionsOf(base, settings)
@@ -773,48 +775,7 @@ def outputFor = { invocation ->
   new File(file.parentFile, (file.name - ~/\.json$/) + '-' + suffix + '.json')
 }
 
-def ENVIRONMENT_FLOOR = 8
-def ENVIRONMENT_MARKER = ']==] .. ENVIRONMENT_MARKER .. [==['
-
-/**
- * A model string with every environment variable value it holds, whole or inside it (a token in a
- * repository url), replaced by `${env:<name>}`, the longest value first; a string that held one is
- * remembered in `matches` with the names of the variables it held.
- */
-def redactedString = { String text, Map environment, Map matches ->
-  def held = environment.findAll { name, value -> text.contains(value) }
-  if (held.isEmpty()) return text
-  def redacted = text
-  held.sort { -it.value.length() }.each { name, value -> redacted = redacted.replace(value, ENVIRONMENT_MARKER + name + '}') }
-  matches[redacted] = held.keySet().sort()
-  redacted
-}
-
-def redacted
-redacted = { Object value, Map environment, Map matches ->
-  if (value instanceof CharSequence) return redactedString(value.toString(), environment, matches)
-  if (value instanceof Map) return value.collectEntries { key, item -> [key, redacted(item, environment, matches)] }
-  if (value instanceof Iterable) return value.collect { redacted(it, environment, matches) }
-  value
-}
-
-/**
- * The model with no environment variable's value in it, and `environmentMatches` naming each string
- * that held one, which the migrator then blocks wherever it would write it.
- *
- * @implNote compared here rather than hashed for the migrator, because the plugin has no digest
- * verb, and redacted because the model file lies in `build/`, where a secret has no place either. A
- * value shorter than ENVIRONMENT_FLOOR is skipped, so a `17` or a `true` in the environment cannot
- * block a jdk or a flag that merely holds it. Map keys are not redacted: they are the model's own
- * structure and Gradle's names.
- */
-def withoutEnvironment = { Map model ->
-  def environment = System.getenv().findAll { name, value -> value != null && value.length() >= ENVIRONMENT_FLOOR }
-  def matches = [:]
-  def safe = redacted(model, environment, matches)
-  safe.environmentMatches = matches.keySet().sort().collect { [value: it, names: matches[it]] }
-  safe
-}
+]==] .. model_dump_environment.SCRIPT .. [==[
 
 gradle.projectsEvaluated {
   def help = gradle.rootProject.tasks.findByName('help')
@@ -835,32 +796,16 @@ gradle.taskGraph.whenReady {
                settingsExtensions: settingsFacts.settingsExtensions ?: [:],
                settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
                settingsCore: settingsFacts.settingsCore ?: [:],
-               projects: gradle.rootProject.allprojects.collect { projectOf(base, it) }]
+               settingsScript: settingsFacts.settingsScript,
+               projects: []]
+  try { model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it) } }
+  finally { closeKotlinParsers() }
   def file = outputFor(gradle)
   file.parentFile.mkdirs()
-  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(withoutEnvironment(model))), 'UTF-8')
+  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(writableModel(model))), 'UTF-8')
 }
 ]==]
 
---- Whether a model string held an environment variable's value.
-local function holds_environment(text)
-  return type(text) == "string" and string.find(text, ENVIRONMENT_MARKER, 1, true) ~= nil
-end
-
---- The names of the environment variables whose values a string held, or nil.
-local function environment_names(text)
-  if not holds_environment(text) then return nil end
-  local names, from = {}, 1
-  while true do
-    local first, last = string.find(text, ENVIRONMENT_MARKER, from, true)
-    if first == nil then break end
-    local close = string.find(text, "}", last + 1, true)
-    if close == nil then break end
-    names[#names + 1] = string.sub(text, last + 1, close - 1)
-    from = close + 1
-  end
-  return names
-end
-
 return { SCRIPT = SCRIPT, PROPERTY = PROPERTY, IMPLIED_LAUNCHER = IMPLIED_LAUNCHER,
-         holds_environment = holds_environment, environment_names = environment_names }
+         holds_environment = model_dump_environment.holds_environment,
+         environment_names = model_dump_environment.environment_names }

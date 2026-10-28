@@ -1,0 +1,6 @@
+provisioning gradle 9.6.0
+rootProject.file reads hello from the real root
+rootDir reads hello from the real root
+root file() reads hello from the real root
+module file() reads hello from the real app
+module rootProject.file reads hello from the real root

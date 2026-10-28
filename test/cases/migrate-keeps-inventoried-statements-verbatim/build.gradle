@@ -1,0 +1,12 @@
+import java.util.concurrent.TimeUnit
+
+plugins {
+  id 'java'
+}
+
+description = 'statements sharing a line'; version = 'marker-probe'
+group = 'example'
+
+configurations.create('extraConfig')
+
+project.tasks.register('viaProject')

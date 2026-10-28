@@ -1,0 +1,19 @@
+schema = 1
+project = "example/rooted"
+version = "1.0.0"
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+# The root project's directory cannot leave build/daukle/gradle, so every
+# root-relative form the carried code uses must still reach the REAL file
+# through the links there, and a write through one must land in the real tree
+# as it did in the old build. A module reads its own real directory.
+[toolchains.gradle]
+version = "9.6.0"
+logic = "daukle/gradle/logic/root/root.gradle"
+
+[toolchains.gradle.modules.app]
+logic = "daukle/gradle/logic/root/app.gradle"
