@@ -252,7 +252,7 @@ def offsetOf = { List starts, int line, int column -> starts[line - 1] + column 
 
 def groovyStatementsOf = { ScriptSource source ->
   def starts = lineStartsOf(source.parsed)
-  def located = groovyTopLevelOf(groovyModuleOf(source.parsed)).collect { node ->
+  def located = groovyTopLevelOf(groovyModuleOf(source.parsed)).findAll { it.lineNumber >= 1 }.collect { node ->
     [node: node, start: offsetOf(starts, node.lineNumber, node.columnNumber), end: offsetOf(starts, node.lastLineNumber, node.lastColumnNumber)]
   }
   located.sort { it.start }.withIndex().collect { entry, position ->
