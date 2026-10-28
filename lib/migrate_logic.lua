@@ -141,24 +141,20 @@ local function registered_by(statements, carried)
   return registered
 end
 
-local function unregistered_blockers(missing_task_names, registered, where)
-  local blockers = {}
-  for _, name in ipairs(missing_task_names) do
-    if not registered[name] then
-      blockers[#blockers + 1] = boundary_blocker(name, where, "is a task the old build has and no statement of"
-        .. " its build script registers, so nothing can be carried to create it")
-    end
-  end
-  return blockers
-end
-
 --- The tasks the carried statements account for: each one they register or
---- hold an action of, unless another of its actions was not found.
-local function covered_tasks(registered, actions)
+--- hold an action of, unless another of its actions was not found or it is
+--- missing and they do not register it.
+---
+--- @implNote a missing task left uncovered blocks through signal 1 or 2 by
+--- name, in the words a build that carries nothing has always been given.
+local function covered_tasks(registered, actions, missing_task_names)
   local covered = {}
   for name in pairs(registered) do covered[name] = true end
   for name in pairs(actions.located) do covered[name] = true end
   for name in pairs(actions.unlocated) do covered[name] = nil end
+  for _, name in ipairs(missing_task_names) do
+    if not registered[name] then covered[name] = nil end
+  end
   return covered
 end
 
@@ -250,7 +246,13 @@ local function catalog_blockers(carried, catalogs, where)
   return blockers
 end
 
-local function unparsed_result(script, where)
+local function needs_carrying(project, missing_task_names)
+  return #missing_task_names > 0 or #script_actions(project) > 0
+end
+
+local function unparsed_result(project, missing_task_names, where)
+  local script = project.script
+  if not needs_carrying(project, missing_task_names) then return { carried = {}, covered = {}, blockers = {} } end
   return { carried = {}, covered = {}, blockers = {
     boundary_blocker(script.unparsed, where, "is why the build script " .. script.path
       .. " cannot be read, so no statement of it is carried"),
@@ -263,7 +265,7 @@ end
 ---         covered = set of the task names the carried statements account for }
 function migrate_logic.select(project, missing_task_names, where)
   local script = project.script or { path = "", statements = {} }
-  if script.unparsed ~= nil then return unparsed_result(script, where) end
+  if script.unparsed ~= nil then return unparsed_result(project, missing_task_names, where) end
   local statements = script.statements
   local seeds, blockers, actions = statements_with_actions(script, project.tasks, where)
   append_all(seeds, statements_registering(statements, missing_task_names))
@@ -275,10 +277,9 @@ function migrate_logic.select(project, missing_task_names, where)
     changed = carry_callers(statements, active, carried) or changed
   until not changed
   local registered = registered_by(statements, carried)
-  append_all(blockers, unregistered_blockers(missing_task_names, registered, where))
   local selected = in_source_order(statements, carried)
   append_all(blockers, catalog_blockers(selected, project.catalogs, where))
-  return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions) }
+  return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions, missing_task_names) }
 end
 
 local function is_import(statement)

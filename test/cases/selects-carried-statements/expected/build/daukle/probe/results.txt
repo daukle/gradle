@@ -1,6 +1,6 @@
 ok an action line carries its statement and, transitively, the definitions it uses (rules 1 and 3)
 ok a registered missing task carries its helper and the statement calling it (rules 2 and 4)
-ok a missing task no statement registers blocks by name
+ok a missing task no statement registers is left to the signal that found it
 ok an action compiled from another file blocks naming that file
 ok a bare source file name matches the script's last segment whatever its case
 ok an action whose line no statement holds blocks by its task
@@ -8,7 +8,9 @@ ok two unheld actions of one task block once
 ok rule 4 follows a chain of helpers
 ok a definition carried only by rule 3 does not pull its other callers
 ok rule 3 extends what rule 4 carried
-ok a script that did not parse blocks with the reason
+ok a script that did not parse blocks with the reason when an action needs carrying
+ok a script that did not parse blocks with the reason when a missing task needs carrying
+ok a script that did not parse and has nothing to carry does not block
 ok an action whose class file could not be read blocks by its task
 ok a task action with no compiled script is ignored
 ok daukle/gradle/logic/brazier/tools/idea.gradle.kts
@@ -18,6 +20,7 @@ ok daukle/gradle-app/logic/root/root.gradle
 ok a task whose action is carried is covered
 ok a task with an action that was not found is not covered
 ok a missing task a carried statement registers is covered
+ok a missing task whose action is carried but that no carried statement registers is not covered
 ok a Kotlin file takes its imports first, one blank line between statements
 ok a Groovy file keeps source order
 ok a CRLF script takes CRLF between single-line statements

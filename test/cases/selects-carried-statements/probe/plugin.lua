@@ -79,9 +79,9 @@ local CASES = {
   { "a registered missing task carries its helper and the statement calling it (rules 2 and 4)",
     function() return migrate_logic.select(project_with({ GREET_ACTION }), { "made" }, "root") end,
     "carried=1,2,3,4,6,7 blocked=" },
-  { "a missing task no statement registers blocks by name",
+  { "a missing task no statement registers is left to the signal that found it",
     function() return migrate_logic.select(project_with({}), { "ghost" }, "root") end,
-    "carried= blocked=ghost" },
+    "carried= blocked=" },
   { "an action compiled from another file blocks naming that file",
     function() return migrate_logic.select(project_with({ { sourceFile = "gradle/deps.gradle", lastLine = 3 } }), {}, "root") end,
     "carried= blocked=gradle/deps.gradle" },
@@ -108,9 +108,17 @@ local CASES = {
   { "rule 3 extends what rule 4 carried",
     function() return migrate_logic.select(project_of_statements(CALLER_EXTENDED_BY_RULE_THREE), { "made" }, "root") end,
     "carried=1,2,3 blocked=" },
-  { "a script that did not parse blocks with the reason",
-    function() return migrate_logic.select(project_with({}, { unparsed = "unexpected token", statements = false }), {}, "root") end,
+  { "a script that did not parse blocks with the reason when an action needs carrying",
+    function()
+      return migrate_logic.select(project_with({ GREET_ACTION }, { unparsed = "unexpected token", statements = false }), {}, "root")
+    end,
     "carried= blocked=unexpected token" },
+  { "a script that did not parse blocks with the reason when a missing task needs carrying",
+    function() return migrate_logic.select(project_with({}, { unparsed = "unexpected token", statements = false }), { "ghost" }, "root") end,
+    "carried= blocked=unexpected token" },
+  { "a script that did not parse and has nothing to carry does not block",
+    function() return migrate_logic.select(project_with({}, { unparsed = "unexpected token", statements = false }), {}, "root") end,
+    "carried= blocked=" },
   { "an action whose class file could not be read blocks by its task",
     function() return migrate_logic.select(project_with({ { script = "build.gradle" } }), {}, "root") end,
     "carried= blocked=greet" },
@@ -142,6 +150,10 @@ local COVERED = {
     end, "" },
   { "a missing task a carried statement registers is covered",
     function() return migrate_logic.select(project_with({}), { "made" }, "root") end, "made" },
+  { "a missing task whose action is carried but that no carried statement registers is not covered",
+    function()
+      return migrate_logic.select(project_with({ GREET_ACTION }, { statements = { statement(1, 8, {}) } }), { "greet" }, "root")
+    end, "" },
 }
 
 local TEXTS = {
