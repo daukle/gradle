@@ -906,7 +906,7 @@ spells it.
 | --- | --- |
 | The boundary: what "100% of Gradle" does not include | the list under "What is carried, where, and what still blocks" above |
 | 1. The settings file, a settings-level `plugins {}` block | a settings plugin whose configuration cannot be carried |
-| 2. Dependency configurations | an artifact with no repository (`files()`, `gradleApi()`), a non-Maven (Ivy) repository, a `mavenLocal()` or `file:` repository; a configuration the old build could not resolve; a classpath that differs; a project consumed with `api` transitives |
+| 2. Dependency configurations | an artifact with no repository (`files()`, `gradleApi()`), a non-Maven (Ivy) repository, a `mavenLocal()` or `file:` repository; a file an artifact transform made (the IntelliJ Platform plugin unpacking a Marketplace plugin), which the component's Maven layout does not hold; a configuration the old build could not resolve; a classpath that differs; a project consumed with `api` transitives |
 | 3. The `java` extension and source layout | a source root outside the project; a source set wired to something no key says; source and target levels that differ; a non-UTF-8 encoding (effective encoding not UTF-8 AND a source file holding a byte of 0x80 or above); a toolchain `vendor` or `implementation` that is set |
 | 4. Packaging and publishing | `maven-publish` (and `publishing`), `war`, `ear`, `signing` |
 | 5. Testing | `java-test-fixtures` |

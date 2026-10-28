@@ -1,0 +1,10 @@
+schema = 1
+project = "daukle/gradle-pin-test"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+probe = { path = "./probe", requires = { gradle = { path = "./plugins" } } }
+
+[toolchains.probe]
