@@ -1,0 +1,2 @@
+provisioning gradle 7.6.4
+libs.bundles.json: holds com.google.code.gson:gson, which more than one library of the catalog names

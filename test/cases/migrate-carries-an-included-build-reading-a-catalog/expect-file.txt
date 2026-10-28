@@ -1,0 +1,2 @@
+daukle/gradle/catalogs/greeting/libs.versions.toml
+daukle/gradle/logic/greeting/root.gradle.kts
