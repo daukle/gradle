@@ -1,0 +1,1 @@
+"declaredConfigurations.tool.extendsFrom[1]" must be a configuration name: letters, digits and underscores only

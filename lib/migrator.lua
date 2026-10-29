@@ -14,6 +14,7 @@ local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
 local carried = daukle.require("lib/carried")
 local migrate_carry = daukle.require("lib/migrate_carry")
+local migrate_declared_configurations = daukle.require("lib/migrate_declared_configurations")
 
 local INIT_SCRIPT = carried.MIGRATE_PREFIX .. "model.gradle"
 local MODEL = carried.MIGRATE_PREFIX .. "model.json"
@@ -247,6 +248,17 @@ end
 --- @implNote no second render over a stale link: the writer would refuse to
 --- render the root without logic there, and its advice, `daukle clean`, is
 --- one core refuses while a migration is unfinished.
+local function module_of_path(built)
+  local modules = {}
+  for _, entry in ipairs(built.projects) do
+    if entry.module ~= nil then modules[entry.project.path] = entry.module end
+  end
+  return modules
+end
+
+--- @implNote declared configurations are translated from the baseline before
+--- the second render, which is forced when any exist so the comparison reads
+--- a build that has them (spec D-203).
 local function carry(context, built, blockers)
   local where = built.projects[1].where
   local linked = migrate_carry.linked_roots(context, built)
@@ -255,13 +267,22 @@ local function carry(context, built, blockers)
   local generated_models = generated_builds(context, built)
   local carrying = migrate_carry.select(built, generated, generated_models)
   append(blockers, carrying.blockers)
+  local declared, declared_blockers = migrate_declared_configurations.translate(
+    migrate_carry.targets(built, generated, generated_models), module_of_path(built),
+    function(place) return translate_build.block_at(built.config, place) end)
+  append(blockers, declared_blockers)
   local stale = migrate_carry.stale_link_blockers(built.config, linked)
   append(blockers, stale)
   if #stale > 0 then return carrying, nil, refusals end
-  if #carrying.statements == 0 then return carrying, generated, refusals, generated_models end
+  if #carrying.statements == 0 and next(declared) == nil then
+    return carrying, generated, refusals, generated_models
+  end
   generated, refusals = dump_generated(context, built, built.config, where, false)
   if generated == nil then return carrying, nil, refusals end
-  return carrying, generated, refusals, generated_builds(context, built)
+  generated_models = generated_builds(context, built)
+  append(blockers, migrate_declared_configurations.differences(
+    migrate_carry.targets(built, generated, generated_models), declared))
+  return carrying, generated, refusals, generated_models
 end
 
 --- The settings-script code of the root build and of every included build,

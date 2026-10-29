@@ -1,0 +1,1 @@
+"declaredConfigurations.tool.requires[1]" names no module this project declares: ghost

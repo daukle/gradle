@@ -1,0 +1,13 @@
+schema = 1
+project = "example/declared"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+
+[toolchains.gradle.declaredConfigurations.tool]
+requires = ['ghost']

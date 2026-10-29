@@ -1,0 +1,40 @@
+schema = 1
+project = "example/consumed"
+version = "1.0.0"
+
+[modules.p]
+
+[modules.c]
+
+[plugins]
+gradle = "./plugins"
+
+# p publishes its jar on a configuration it declares, c consumes that one by
+# name, and a third configuration extends c's compile classpath.
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.modules.p.declaredConfigurations.js]
+canBeResolved = false
+artifacts = ["jar"]
+
+[toolchains.gradle.modules.c.declaredConfigurations.js]
+requires = [{ module = "p", configuration = "js" }]
+
+[toolchains.gradle.modules.c.declaredConfigurations.teavm]
+extendsFrom = ["compileClasspath"]
+
+[toolchains.gradle.modules.c.verbatim]
+groovy = '''
+def show = tasks.register('show') {
+    def js = configurations['js']
+    def teavm = configurations['teavm']
+    inputs.files(js)
+    doLast {
+        println 'JS=' + js.files*.name
+        println 'TEAVM extends ' + teavm.extendsFrom*.name
+    }
+}
+
+tasks.named('jar') { dependsOn(show) }
+'''

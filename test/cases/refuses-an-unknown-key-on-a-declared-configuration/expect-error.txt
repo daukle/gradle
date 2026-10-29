@@ -1,0 +1,1 @@
+"declaredConfigurations.tool.attributes" is not a key a declared configuration takes

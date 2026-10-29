@@ -1,0 +1,1 @@
+"declaredConfigurations.tool.transitive" must be true or false, not a string

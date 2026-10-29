@@ -289,6 +289,7 @@ end
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
   main = true, requiresBuilds = true, sourceSets = true, configurations = true, verbatim = true,
+  declaredConfigurations = true,
 }
 
 --- Module keys that stay legal beside declared modules: one pinned closure

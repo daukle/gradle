@@ -1,0 +1,1 @@
+"declaredConfigurations.implementation" is a configuration Gradle or this toolchain already provides, so it cannot be declared again

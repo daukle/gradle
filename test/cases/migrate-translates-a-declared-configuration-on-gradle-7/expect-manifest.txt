@@ -1,0 +1,3 @@
+[toolchains.gradle.modules.app.declaredConfigurations.toolCompile]
+requires = ["lib"]
+extendedBy = ["compileClasspath"]

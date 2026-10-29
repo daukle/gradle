@@ -50,6 +50,8 @@ local function targets(built, generated, generated_models)
   return list
 end
 
+migrate_carry.targets = targets
+
 local function dsl_of(project)
   return (project.script or {}).dsl or GROOVY
 end
