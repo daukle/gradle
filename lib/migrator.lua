@@ -387,7 +387,7 @@ local function run(context)
   append(blockers, compared)
   generated_models = generated_models or {}
   daukle.write{ path = migrate_carry.REPORT_SCRIPT,
-                text = migrate_carry.report_script(carrying.tasks, carrying.statements) }
+                text = migrate_carry.report_script(carrying.tasks, carrying.statements, carrying.translated) }
   local proof = proof_of(context, built, generated, generated_models, blockers)
   return {
     manifest = { project = built.name, version = built.version, modules = built.modules,
