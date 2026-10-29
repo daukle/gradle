@@ -1,0 +1,7 @@
+rootProject.name = 'stamping'
+
+gradle.allprojects {
+  tasks.withType(Jar).configureEach {
+    manifest.attributes('X-Stamp': 'from the settings')
+  }
+}

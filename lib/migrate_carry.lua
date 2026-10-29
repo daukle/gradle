@@ -82,7 +82,7 @@ local function duplicate_blocker(target, label)
 end
 
 local function new_result()
-  return { covered = {}, tasks = {}, statements = {}, translated = {}, blockers = {}, missing = {} }
+  return { covered = {}, tasks = {}, statements = {}, translated = {}, fallbacks = {}, blockers = {}, missing = {} }
 end
 
 local function is_placed(place)
@@ -285,13 +285,51 @@ local function carry_settings(build, built, result)
   local selection = migrate_logic.select_settings(settings.script, code, tasks,
                                                   sorted_set(result.missing[build.name]), build.where)
   append(result.blockers, selection.blockers)
-  record_translated(result, build, settings.script, code, selection.carried)
-  if #selection.carried == 0 then return end
   local dsl = settings.script.dsl or GROOVY
+  local translated_before = #result.translated
+  record_translated(result, build, settings.script, code, selection.carried)
+  if #result.translated > translated_before then
+    result.fallbacks[#result.fallbacks + 1] = {
+      place = build.place, dsl = dsl, build = build.name, statements = code, carried = selection.carried,
+      tasks = tasks, text = migrate_logic.text(code, dsl, settings.script.lineEnding),
+      label = settings_label(build.place) .. "." .. dsl,
+    }
+  end
+  if #selection.carried == 0 then return end
   translate_build.set_settings_verbatim(built.config, build.place, dsl,
                                         migrate_logic.text(selection.carried, dsl, settings.script.lineEnding))
   record_statements(result, selection.carried, settings_label(build.place) .. "." .. dsl, { tasks = tasks })
   cover_in_every_project(result, build.projects, selection.covered)
+end
+
+local function newly_carried(fallback)
+  local before = {}
+  for _, statement in ipairs(fallback.carried) do before[statement.index] = true end
+  local added = {}
+  for _, statement in ipairs(fallback.statements) do
+    if not before[statement.index] then added[#added + 1] = statement end
+  end
+  return added
+end
+
+--- The second render of spec D-187 4.1a: every code statement of each
+--- settings script that translated any is carried, for when the keys did not
+--- reproduce the old build. Mutates `built.config`.
+--- @return { statements = <their report records>, restore = function() } where
+--- `restore` puts every `settingsVerbatim` back as the selection set it
+function migrate_carry.carry_translated(built, carrying)
+  local previous, statements = {}, {}
+  for _, fallback in ipairs(carrying.fallbacks) do
+    local block = fallback.place.build ~= nil and built.config.builds[fallback.place.build] or built.config
+    previous[#previous + 1] = { block = block, value = block.settingsVerbatim }
+    translate_build.set_settings_verbatim(built.config, fallback.place, fallback.dsl, fallback.text)
+    local records = { statements = {} }
+    record_statements(records, newly_carried(fallback), fallback.label, { tasks = fallback.tasks })
+    append(statements, records.statements)
+  end
+  return { statements = statements, restore = function()
+    for _, entry in ipairs(previous) do entry.block.settingsVerbatim = entry.value end
+  end }
 end
 
 --- Selects what every project and every settings script carries, setting the

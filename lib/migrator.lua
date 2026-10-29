@@ -233,7 +233,7 @@ local function project_blockers(built, covered)
   return blockers
 end
 
-local NOTHING_CARRIED = { covered = {}, tasks = {}, statements = {}, translated = {}, blockers = {} }
+local NOTHING_CARRIED = { covered = {}, tasks = {}, statements = {}, translated = {}, fallbacks = {}, blockers = {} }
 
 --- The generated build's model rendered from the keys alone, which is what
 --- signal 2 and the selection read; or nil and the blockers that stopped it.
@@ -318,6 +318,48 @@ local function proof_of(context, built, generated, generated_models, blockers)
   return migrate_jars.proof(context, rows)
 end
 
+local function comparison_of(context, model, built, generated, generated_models, settings)
+  if generated == nil then return nil end
+  return migrate_comparison.blockers(model, built, generated, generated_models or {}, within(context.dir, settings),
+                                     context.dir)
+end
+
+--- The translated settings statements, named beside a comparison that failed
+--- with them translated and again with them carried.
+local function translated_blockers(carrying, where)
+  local blockers = {}
+  for _, statement in ipairs(carrying.translated) do
+    blockers[#blockers + 1] = migrate_surface.blocker(statement.label .. ":" .. string.format("%d", statement.line),
+      where, "is settings code translated into keys, which reaches every project of its build: the comparison"
+      .. " differs with it translated, and again with it carried verbatim", migrate_surface.BOUNDARY_ROW)
+  end
+  return blockers
+end
+
+--- The comparison's blockers, and the generated build they were read from.
+---
+--- @implNote when the build with its settings code translated does not compare
+--- equal, it is rendered once more with that code carried, and the second
+--- result stands only if it compares equal (spec D-187, 4.1a); otherwise the
+--- first comparison's blockers stand, with the translated statements named.
+local function compared_with_fallback(context, model, built, carrying, generated, generated_models, settings)
+  local compared = comparison_of(context, model, built, generated, generated_models, settings)
+  if compared == nil then return {}, generated, generated_models end
+  if #compared == 0 or #carrying.fallbacks == 0 then return compared, generated, generated_models end
+  local fallback = migrate_carry.carry_translated(built, carrying)
+  local retried = dump_generated(context, built, built.config, built.projects[1].where, false)
+  local retried_models = retried ~= nil and generated_builds(context, built) or nil
+  local second = comparison_of(context, model, built, retried, retried_models, settings)
+  if second == nil or #second > 0 then
+    fallback.restore()
+    append(compared, translated_blockers(carrying, built.projects[1].where))
+    return compared, generated, generated_models
+  end
+  append(carrying.statements, fallback.statements)
+  carrying.translated = {}
+  return {}, retried, retried_models
+end
+
 local function run(context)
   local distribution = wrapper_distribution(context)
   local refusal = gradle_refusal(context, distribution)
@@ -339,11 +381,11 @@ local function run(context)
   append(blockers, project_blockers(built, carrying.covered))
   append(blockers, migrate_old_build.unprovided_jdk_blockers(context, built.config.jdk, built.projects[1].where))
   append(blockers, migrate_owned.blockers(context, model, included))
+  local compared
+  compared, generated, generated_models = compared_with_fallback(context, model, built, carrying, generated,
+                                                                 generated_models, settings)
+  append(blockers, compared)
   generated_models = generated_models or {}
-  if generated ~= nil then
-    append(blockers, migrate_comparison.blockers(model, built, generated, generated_models,
-                                                 within(context.dir, settings), context.dir))
-  end
   daukle.write{ path = migrate_carry.REPORT_SCRIPT,
                 text = migrate_carry.report_script(carrying.tasks, carrying.statements) }
   local proof = proof_of(context, built, generated, generated_models, blockers)
