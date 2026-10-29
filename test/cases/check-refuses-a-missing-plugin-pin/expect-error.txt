@@ -1,0 +1,1 @@
+"plugins" names 1 plugin(s) and "pluginClasspath" is empty

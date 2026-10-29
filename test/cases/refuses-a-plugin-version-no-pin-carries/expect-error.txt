@@ -1,1 +1,1 @@
-remove this entry, resolve the marker at that version, then put it back
+with the marker at that version, which this check lets through

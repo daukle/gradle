@@ -1,1 +1,1 @@
-resolve the marker with no "plugins" block in the manifest, then add the block
+to pin it; a resolve run is the one command this check lets through
