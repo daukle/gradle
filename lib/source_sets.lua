@@ -104,11 +104,11 @@ local function read_one(name, block, where, prefix, main_entries)
     name = name,
     label = where,
     test = module_graph.boolean_key(block, "test", false, where .. ".test"),
-    java = module_graph.string_list_key(block, "sourceRoot", prefix .. "src/" .. name .. "/java",
-                                        where .. ".sourceRoot"),
-    resources = module_graph.string_list_key(block, "resourceRoot",
-                                             prefix .. "src/" .. name .. "/resources",
-                                             where .. ".resourceRoot"),
+    java = module_graph.root_list_key(block, "sourceRoot", prefix .. "src/" .. name .. "/java",
+                                      where .. ".sourceRoot"),
+    resources = module_graph.root_list_key(block, "resourceRoot",
+                                           prefix .. "src/" .. name .. "/resources",
+                                           where .. ".resourceRoot"),
     entries = {},
   }
   for _, row in ipairs(source_sets.CONFIGURATIONS) do

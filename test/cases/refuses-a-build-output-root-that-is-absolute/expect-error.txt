@@ -1,0 +1,1 @@
+"resourceRoot.buildOutput" must stay inside the build directory, not "/generated"

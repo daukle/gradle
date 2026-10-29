@@ -33,7 +33,7 @@ release = "8"
 | `sourcesJar` | `true` adds Gradle's sources jar, which `gradle:sources-jar` builds |
 | `sourceSets` | extra source sets, keyed by name, each with its own roots and dependency keys. `test = true` makes one a test set that sees main and runs as its own task. Gradle's `testing { suites {} }` is not used, because every suite but the built-in one adds a JUnit dependency a build with no repository cannot resolve |
 | `main` | the class `gradle:run` runs. It also applies Gradle's `application` plugin, which is where a packaging plugin reads `Main-Class` from |
-| `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults. Each takes one directory or a list of them, so generated sources can sit beside written ones |
+| `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot` | the usual defaults. Each takes one directory or a list of them, so generated sources can sit beside written ones; `{ buildOutput = "generated/x" }` names a directory under the build directory, wherever daukle put it |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`, rendering `implementation` and `testImplementation` |
 | `compileOnly`, `runtimeOnly`, `testCompileOnly`, `testRuntimeOnly` | the Gradle configurations of the same names. **`compileOnly` is not on the runtime classpath and `runtimeOnly` is not on the compile classpath**, which is why they are separate keys rather than one |
 | `annotationProcessor`, `testAnnotationProcessor` | javac's `-processorpath`, which is not the compile classpath. A processor usually wants its annotations on `compileOnly` too, and naming the same jar in both is correct |

@@ -1,1 +1,1 @@
-"sourceRoot" must be a string or a list of strings, not a table of keys
+"sourceRoot" must be a path or a { buildOutput = "<path>" } marker or a list of them, not a table of keys

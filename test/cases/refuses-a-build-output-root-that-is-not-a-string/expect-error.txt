@@ -1,0 +1,1 @@
+"sourceRoot[1].buildOutput" must be a string, not a number
