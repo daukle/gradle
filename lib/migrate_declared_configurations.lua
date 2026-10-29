@@ -23,12 +23,37 @@ local function blocker(construct, where, why)
   return migrate_surface.blocker(construct, where, why, CONFIGURATIONS_ROW)
 end
 
+local SPELLABLE = "^[%a_][%w_]*$"
+local CREATING_CALLS = { "configurations%.create", "configurations%.register", "configurations%.maybeCreate",
+                         "configurations%.creating", "configurations%.registering" }
+
+local function is_configurations_statement(text)
+  if string.match(text, "^%s*configurations[%s{]") ~= nil then return true end
+  for _, call in ipairs(CREATING_CALLS) do
+    if string.find(text, call) ~= nil then return true end
+  end
+  return false
+end
+
+--- Whether the project's own build script names `name` where it declares
+--- configurations, so a plugin's configuration the keys-only build lacks
+--- because the plugin is not applied there is never taken for the build's.
+local function script_declares(project, name)
+  local word = "%f[%w_]" .. string.gsub(name, "(%W)", "%%%1") .. "%f[^%w_]"
+  for _, statement in ipairs(((project.script or {}).statements) or {}) do
+    local text = statement.text or ""
+    if is_configurations_statement(text) and string.find(text, word) ~= nil then return true end
+  end
+  return false
+end
+
 local function declared_names(old, generated)
   local present = by_name(generated)
   local names = {}
   for _, configuration in ipairs(old.configurations or {}) do
-    if present[configuration.name] == nil and not declared_configurations.is_provided(configuration.name) then
-      names[#names + 1] = configuration.name
+    local name = configuration.name
+    if present[name] == nil and not declared_configurations.is_provided(name) and script_declares(old, name) then
+      names[#names + 1] = name
     end
   end
   table.sort(names)
@@ -121,7 +146,15 @@ function migrate_declared_configurations.translate(targets, module_of_path, bloc
   local declared_by_label, blockers = {}, {}
   for _, target in ipairs(targets) do
     if target.counterpart ~= nil and is_placed(target.place) then
-      local names = declared_names(target.project, target.counterpart)
+      local names = {}
+      for _, name in ipairs(declared_names(target.project, target.counterpart)) do
+        if string.match(name, SPELLABLE) ~= nil then
+          names[#names + 1] = name
+        else
+          blockers[#blockers + 1] = blocker("configurations." .. name, target.where, "is declared by the build"
+            .. " under a name declaredConfigurations cannot spell: letters, digits and underscores only")
+        end
+      end
       if #names > 0 then
         local declared = tables.as_set(names)
         local old = by_name(target.project)
