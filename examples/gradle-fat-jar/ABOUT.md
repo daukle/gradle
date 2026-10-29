@@ -50,13 +50,13 @@ includes the file, which is how generated data stays out of the manifest you wro
 
 A manifest declaring `[[toolchains.gradle.plugins]]` while `pluginClasspath` is empty is refused,
 and **every command generates**, so even `maven:resolve` is refused. The message is right and
-cannot be obeyed in that order. Starting from nothing, it is three steps:
+cannot be obeyed in that order. Starting from nothing, it is two steps:
 
 1. declare the `[[toolchains.maven.resolve]]` block with **no** `[[toolchains.gradle.plugins]]`
-   block, and run `daukle maven:resolve --resolve`;
-2. add `daukle.include("daukle/maven/classpath.lua")` to `daukle.lua`, which has to be second
-   because `include` raises on a file that is not there;
-3. add the `plugins` block.
+   block, and run `daukle maven:resolve --resolve`, which writes `daukle/maven/classpath.lua`;
+2. add the `plugins` block.
+
+daukle loads the committed `classpath.lua` by itself, so there is no `daukle.lua`.
 
 This example is committed at the end of that sequence, so copying it and changing a coordinate only
 needs step 1 again.

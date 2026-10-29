@@ -31,12 +31,6 @@ for = "gradle"
 release = "8"
 ```
 
-```lua
--- daukle.lua, added AFTER the first resolve: daukle.include raises on a file
--- that is not there, and the first resolve is the run that creates it.
-daukle.include("daukle/maven/classpath.lua")
-```
-
 ```sh
 daukle maven:resolve --resolve   # once, and commit daukle/maven/classpath.lua
 daukle gradle:classes
@@ -195,7 +189,7 @@ the Gradle API the distribution carries, so nothing is pinned.
 A plugin that downloads a tool when Gradle resolves one of its configurations needs that
 configuration pinned, because the generated build declares no repository. `configurations.<name>`
 is that pin, and `daukle gradle:resolve-tools --resolve` writes the ones a plugin's defaults need
-into the committed `daukle/gradle/tools.lua`, which `daukle.lua` includes. See the next section.
+into the committed `daukle/gradle/tools.lua`, which daukle loads by itself. See the next section.
 
 ## The tools a core plugin downloads by default
 
@@ -206,10 +200,8 @@ configuration, and the generated build declares no repository. One command pins 
 daukle gradle:resolve-tools --resolve   # writes and commits daukle/gradle/tools.lua
 ```
 
-```lua
--- daukle.lua, added AFTER the first run, for the reason given for classpath.lua above
-daukle.include("daukle/gradle/tools.lua")
-```
+Nothing is added to `daukle.lua`: daukle `0.15.0` and later load every committed
+`daukle/<toolchain>/*.lua` by themselves, after `daukle.toml` and `daukle.lua` (`D-201`).
 
 **It asks Gradle and knows no plugin.** It renders the build with every `configurations.<name>`
 pin left out, runs Gradle once with an init script, and records each configuration whose declared
@@ -296,13 +288,12 @@ A manifest `daukle check` refuses still LISTS its tasks: a `plugins` entry with 
 carries lists nine tasks happily. That reads like a validation hole and is not one. `tasks` is a
 listing; the check belongs to generate, and `check` and `sync` both refuse with the right message.
 
-## Three phases to a first build, and the refusal cannot be followed in order
+## Two phases to a first build
 
 A manifest that declares a versioned `[[toolchains.gradle.plugins]]` entry while `pluginClasspath` is empty is refused
 at generate time, and **every command generates**, so even `maven:resolve` is refused. The working
-sequence is: resolve with no `plugins` block; add the `daukle.include`, which must be second because
-`include` raises on a file that is not there; then add the `plugins` block. Nothing is
-unrecoverable. Recorded in `D-114`.
+sequence is: resolve with no `plugins` block, then add the `plugins` block; the pinned classpath
+is loaded by daukle itself in between. Nothing is unrecoverable. Recorded in `D-114`.
 
 **Both refusals now NAME that order**, which is `D-118` and the reason this section no longer says
 the advice cannot be followed. They also say why: *"this check runs on every command, so
