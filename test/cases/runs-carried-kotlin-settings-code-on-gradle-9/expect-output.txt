@@ -1,0 +1,3 @@
+provisioning gradle 9.6.0
+daukle/gradle: settingsVerbatim.kotlin is plain Gradle code no daukle key covers yet
+the kotlin settings code ran

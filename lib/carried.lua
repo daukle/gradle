@@ -16,6 +16,15 @@ carried.DISCOVERY_REPORT = "discovered.txt"
 carried.TOOL_DEFAULTS_SCRIPT = "tools.gradle"
 carried.MIGRATE_PREFIX = "migrate-"
 
+--- The files a build whose settings carry Kotlin is set up with (spec D-187,
+--- 4.3): the init script every Gradle run of it passes, the Groovy settings
+--- render the `settings.gradle.kts` wrapper applies, and the local plugin
+--- repository that wrapper's `plugins {}` resolves settings plugins from.
+carried.KOTLIN_SETTINGS_INIT = "kotlin-settings.gradle"
+carried.SETTINGS_RENDERED = "settings.rendered.gradle"
+carried.SETTINGS_REPOSITORY = "build/settings-plugins"
+carried.SETTINGS_REPOSITORY_JARS = "build/settings-plugins.txt"
+
 --- What the root links script placed, inside a derived root's `build/`, which
 --- is never linked.
 carried.LINK_RECORD = "build/daukle-root-links.txt"
@@ -37,7 +46,7 @@ carried.UNLINKED = {
   "build", "daukle", ".gradle", ".kotlin", "settings.gradle", "settings.gradle.kts", ".daukle-generated",
   "buildSrc", carried.ROOT_LINKS, carried.PLUGIN_CLASSPATH, carried.SETTINGS_PLUGINS,
   carried.JARS_SCRIPT, carried.DISCOVERY_REPORT, carried.TOOL_DEFAULTS_SCRIPT,
-  composite.INCLUDED_DIR,
+  carried.KOTLIN_SETTINGS_INIT, carried.SETTINGS_RENDERED, composite.INCLUDED_DIR,
 }
 
 --- @param checked what `verbatim.checked` returned, nil for no carried code
@@ -100,6 +109,11 @@ end
 --- The main build's carried settings code, checked, or nil.
 function carried.settings_of(config)
   return verbatim.checked(config.settingsVerbatim, "settingsVerbatim")
+end
+
+--- Whether the main build's settings script is the Kotlin wrapper.
+function carried.settings_is_kotlin(config)
+  return carried.is_kotlin(carried.settings_of(config))
 end
 
 local function build_carries_kotlin(config)

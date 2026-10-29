@@ -192,15 +192,12 @@ local function dump_generated(context, built, config, where, blank)
   if #problems > 0 then return nil, generation_blockers(problems, where) end
   writer.write_build_file(generation, rendered, { blank_verbatim = blank })
   write_generated_files(generation, rendered)
-  local failure = run_dump(context, rendered.version, derived(context, "."), {
-    "--project-dir", ".",
-    "--offline",
-    "--no-configuration-cache",
-    "--init-script", INIT_SCRIPT,
-    "-D" .. model_dump.PROPERTY .. "=" .. GENERATED_MODEL,
-    "--quiet",
-    "help",
-  })
+  local arguments = { "--project-dir", ".", "--offline", "--no-configuration-cache", "--init-script", INIT_SCRIPT }
+  if carried.settings_is_kotlin(rendered) then
+    tables.append(arguments, { "--init-script", carried.KOTLIN_SETTINGS_INIT })
+  end
+  tables.append(arguments, { "-D" .. model_dump.PROPERTY .. "=" .. GENERATED_MODEL, "--quiet", "help" })
+  local failure = run_dump(context, rendered.version, derived(context, "."), arguments)
   if failure ~= nil then
     return nil, { migrate_surface.blocker(GENERATED, where, "does not configure:\n" .. failure,
                                           migrate_surface.UNCOVERED_ROW) }
