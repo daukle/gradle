@@ -1,0 +1,23 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# Carried settings code alone: a hook that reaches every project. The line it
+# prints proves the hook ran, and the jar under build/out proves a build that
+# carries only settings code takes the real-tree layout.
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.settingsVerbatim]
+groovy = '''
+gradle.allprojects {
+    tasks.matching { it.name == 'jar' }.configureEach {
+        doLast { println 'the settings hook reached ' + project.name }
+    }
+}
+'''

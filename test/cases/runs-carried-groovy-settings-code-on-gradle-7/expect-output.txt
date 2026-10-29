@@ -1,0 +1,3 @@
+provisioning gradle 7.6.4
+daukle/gradle: settingsVerbatim.groovy is plain Gradle code no daukle key covers yet
+the settings hook reached greeter

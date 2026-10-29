@@ -6,7 +6,8 @@ local module_graph = daukle.require("lib/modules")
 local configurations = daukle.require("lib/configurations")
 
 local KEYS = {
-  gradlePlugins = true, release = true, configurations = true, verbatim = true, catalogs = true,
+  gradlePlugins = true, release = true, configurations = true, verbatim = true, settingsVerbatim = true,
+  catalogs = true,
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
 }
 for index = 1, #configurations.all do KEYS[configurations.all[index].key] = true end

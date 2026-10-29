@@ -14,6 +14,7 @@ local verbatim = daukle.require("lib/verbatim")
 
 local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
+local KOTLIN_SETTINGS_FILE = "settings.gradle.kts"
 
 --- A copy of `base` carrying `extra` as well, so one table of project-wide
 --- options can serve a root file and every module file without being spelled
@@ -70,14 +71,21 @@ end
 --- render included: settings.gradle applies this file whenever the manifest
 --- declares settings plugins or settings configure blocks, so every run that
 --- starts Gradle needs it.
+--- @implNote with the Kotlin settings wrapper the plugins are resolved by its
+--- `plugins {}` from the local repository, so the script keeps only the
+--- configure blocks: applying them again would apply each plugin twice.
 local function write_settings_plugins(config, owners)
   local declared = validation.settings_plugins_of(config, owners)
   if declared == nil then return end
-  daukle.write{
-    path = settings_file.SCRIPT,
-    text = settings_file.settings_plugins(paths_of(declared.entries), declared.plugins,
-                                          declared.configure),
-  }
+  local jars = paths_of(declared.entries)
+  if not carried.settings_is_kotlin(config) then
+    return daukle.write{ path = settings_file.SCRIPT,
+                         text = settings_file.settings_plugins(jars, declared.plugins, declared.configure) }
+  end
+  local repository = settings_file.settings_repository(jars)
+  for _, file in ipairs(repository.files) do daukle.write{ path = file.path, text = file.text } end
+  daukle.write{ path = carried.SETTINGS_REPOSITORY_JARS, text = repository.copies }
+  daukle.write{ path = settings_file.SCRIPT, text = settings_file.settings_plugins({}, {}, declared.configure) }
 end
 
 --- The Groovy render of one project of a carrying build, plain or for a wrapper.
@@ -120,7 +128,7 @@ local function write_carrying_included_build(build, at, jars, options, place)
   daukle.write{ path = at .. "/settings.gradle",
                 text = settings_file.included_real_tree_settings(build.gradle_name,
                                                                  carried.script_of(nil, build.verbatim),
-                                                                 build.catalogs) }
+                                                                 build.catalogs, build.settings_verbatim) }
   for _, file in ipairs(catalogs.files_of(build.catalogs)) do
     daukle.write{ path = at .. "/" .. file.path, text = file.text }
   end
@@ -141,7 +149,7 @@ local function write_included_builds(checked, named_of, place)
     local jars = jars_of(build.entries, {}, named_of(build.named))
     local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
                       group = (not build.plugin_build) and composite.GROUP or nil }
-    if build.verbatim ~= nil then
+    if build.verbatim ~= nil or build.settings_verbatim ~= nil then
       write_carrying_included_build(build, at, jars, options, place)
     else
       carried.refuse_a_linked_root(carried.derived_of(place.instance) .. "/" .. at)
@@ -259,6 +267,7 @@ local function real_tree_settings(context, config, declared)
   end
   local instance = validation.instance_of(context)
   return { root_script = carried.script_of(nil, carried.root_of(config)), real_root = context.root,
+           settings_verbatim = carried.settings_of(config),
            derived = carried.derived_from_real_root(context.root, instance),
            catalogs = validation.checked_catalogs(context, config),
            classpath_file = carried.classpath_in_settings(config) and carried.PLUGIN_CLASSPATH or nil,
@@ -294,6 +303,9 @@ local function write_build_file(context, config, options)
   end
   local blank = bare or (options ~= nil and options.blank_verbatim) or false
   local place = { root = context.root, instance = validation.instance_of(context), blank = blank }
+  if carried.settings_is_kotlin(config) then
+    daukle.write{ path = carried.KOTLIN_SETTINGS_INIT, text = settings_file.KOTLIN_SETTINGS_INIT }
+  end
   write_settings_plugins(config, composite_record.owners)
   write_included_builds(composite_record.builds, named_of, place)
   --[[ Not `bare and nil or config.configure`: in Lua that is config.configure
@@ -354,8 +366,21 @@ local function settings_text(context, config)
                                 real_tree_settings(context, config, declared))
 end
 
+--- The settings files for a build whose settings carry Kotlin: the wrapper,
+--- and the Groovy render it applies.
+local function kotlin_settings_files(context, config)
+  local record = validation.composite_of(context, config)
+  local declared = validation.settings_plugins_of(config, record.owners)
+  local real_tree = real_tree_settings(context, config, module_graph.declared(context))
+  return {
+    [KOTLIN_SETTINGS_FILE] = settings_file.kotlin_wrapper(record, real_tree, declared ~= nil and declared.plugins or {}),
+    [carried.SETTINGS_RENDERED] = settings_text(context, config),
+  }
+end
+
 local function generated_files(context, config)
-  local files = { [SETTINGS_FILE] = settings_text(context, config) }
+  local files = carried.settings_is_kotlin(config) and kotlin_settings_files(context, config)
+                or { [SETTINGS_FILE] = settings_text(context, config) }
   if carried.build_carries(config) then
     files[carried.ROOT_LINKS] = settings_file.root_links(context.root)
     for _, file in ipairs(catalogs.files_of(validation.checked_catalogs(context, config))) do
@@ -401,10 +426,15 @@ local function append_verbatim_problems(config, problems)
     if problem ~= nil then problems[#problems + 1] = problem end
   end
   add((verbatim.problem_of(config.verbatim, "verbatim")))
+  add((verbatim.problem_of(config.settingsVerbatim, "settingsVerbatim")))
   for _, family in ipairs({ "modules", "builds" }) do
     for _, name in ipairs(sorted_names(config[family])) do
       add((verbatim.problem_of(config[family][name].verbatim, family .. "." .. name .. ".verbatim")))
     end
+  end
+  for _, name in ipairs(sorted_names(config.builds)) do
+    add(verbatim.included_settings_problem_of(config.builds[name].settingsVerbatim,
+                                              "builds." .. name .. ".settingsVerbatim"))
   end
 end
 

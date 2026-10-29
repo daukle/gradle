@@ -102,6 +102,10 @@ local function run_gradle(context, config, arguments, options)
     argv[#argv + 1] = "--project-cache-dir"
     argv[#argv + 1] = ".gradle"
   end
+  if carried.settings_is_kotlin(config) then
+    argv[#argv + 1] = "--init-script"
+    argv[#argv + 1] = carried.KOTLIN_SETTINGS_INIT
+  end
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
   return launcher.run(context, validation.gradle_version_of(context), validation.jdk_version_of(config),
                       argv, options)

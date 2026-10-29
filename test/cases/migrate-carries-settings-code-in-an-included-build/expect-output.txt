@@ -1,0 +1,2 @@
+builds.greeting.settingsVerbatim.groovy: line 3 carried verbatim, coverage owed
+stamped by the included settings

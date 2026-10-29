@@ -90,7 +90,7 @@ end
 local function compared_included(built, record, old_root, counterpart)
   local generated = counterpart.model.projects[1]
   local block = (built.config.builds or {})[record.dir] or {}
-  if block.verbatim == nil then return record.project, generated end
+  if not carried.included_build_carries(block) then return record.project, generated end
   local real_root = old_root .. "/" .. record.dir
   return migrate_real_tree.old(record.project, real_root),
          migrate_real_tree.generated(generated, counterpart.model.rootDir, real_root, {})

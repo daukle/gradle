@@ -1,1 +1,0 @@
-greeting/settings.gradle:3: is code in the settings script greeting/settings.gradle

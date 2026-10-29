@@ -130,6 +130,12 @@ local function project_name(context)
   return (name:match("([^/]+)$") or name)
 end
 
+local function checked_included_settings(value, label)
+  local problem = verbatim.included_settings_problem_of(value, label)
+  if problem ~= nil then error(problem, 0) end
+  return verbatim.checked(value, label)
+end
+
 --- @implNote an included build takes only its own `configurations`, never the project-wide ones:
 --- the plugin that adds a configuration is applied to the project, not inside an included build.
 local function checked_builds(context, config)
@@ -147,7 +153,9 @@ local function checked_builds(context, config)
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
       verbatim = verbatim.checked(build.block.verbatim, scope .. "verbatim"),
-      catalogs = catalogs.checked(build.block.catalogs, scope .. "catalogs", build.block.verbatim ~= nil) }
+      settings_verbatim = checked_included_settings(build.block.settingsVerbatim, scope .. "settingsVerbatim"),
+      catalogs = catalogs.checked(build.block.catalogs, scope .. "catalogs",
+                                  carried.included_build_carries(build.block)) }
   end
   return checked, read
 end
@@ -359,6 +367,7 @@ local function validated(context, config)
   jdk_for(context, config)
   layout_of(config)
   verbatim.checked(config.verbatim, "verbatim")
+  verbatim.checked(config.settingsVerbatim, "settingsVerbatim")
   checked_catalogs(context, config)
   local declared = module_graph.declared(context)
   module_graph.refuse_a_module_key_project_wide(config, declared)
