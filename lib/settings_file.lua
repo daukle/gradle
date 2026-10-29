@@ -7,8 +7,18 @@ local composite = daukle.require("lib/composite")
 local groovy = daukle.require("lib/groovy")
 local carried = daukle.require("lib/carried")
 local catalogs = daukle.require("lib/catalogs")
+local verbatim = daukle.require("lib/verbatim")
 
 settings_file.SCRIPT = carried.SETTINGS_PLUGINS
+
+--- The carried settings code, after everything the settings render declares,
+--- so a hook it registers is in place before any project evaluates (spec
+--- D-187, 4.3); empty for none.
+--- @param checked what `verbatim.checked` returned, or nil
+local function carried_settings_text(checked)
+  if checked == nil then return "" end
+  return "\n" .. verbatim.warn_line(checked) .. "\n" .. checked.text
+end
 
 --[[ Resolves an id the way Gradle does, through the jar's own descriptor, but
      against THIS script's classloader: `apply plugin: '<id>'` from an applied
@@ -175,20 +185,21 @@ function settings_file.settings(name, modules, applies_settings_plugins, composi
     end
   end
   if real_tree ~= nil then append_real_tree_projects(lines, real_tree) end
-  return table.concat(lines, "\n") .. "\n"
+  return table.concat(lines, "\n") .. "\n" .. carried_settings_text(real_tree and real_tree.settings_verbatim)
 end
 
 --- An included build's settings when its root carries logic: its links, and
 --- the root's build file in that build's `build/scripts/`, and the catalogs it declares.
 --- @param catalog_entries the list `catalogs.checked` returns
-function settings_file.included_real_tree_settings(gradle_name, root_script, catalog_entries)
+--- @param settings_verbatim what `verbatim.checked` returned for its `settingsVerbatim`, or nil
+function settings_file.included_real_tree_settings(gradle_name, root_script, catalog_entries, settings_verbatim)
   local text = settings_file.included_settings(gradle_name)
                .. "apply from: " .. groovy.quoted(carried.ROOT_LINKS) .. "\n"
                .. "rootProject.buildFileName = " .. groovy.quoted(root_script) .. "\n"
   for _, line in ipairs(catalogs.settings_lines(catalog_entries)) do
     text = text .. line .. "\n"
   end
-  return text
+  return text .. carried_settings_text(settings_verbatim)
 end
 
 local function quoted_list(names)

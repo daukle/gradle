@@ -120,7 +120,7 @@ local function write_carrying_included_build(build, at, jars, options, place)
   daukle.write{ path = at .. "/settings.gradle",
                 text = settings_file.included_real_tree_settings(build.gradle_name,
                                                                  carried.script_of(nil, build.verbatim),
-                                                                 build.catalogs) }
+                                                                 build.catalogs, build.settings_verbatim) }
   for _, file in ipairs(catalogs.files_of(build.catalogs)) do
     daukle.write{ path = at .. "/" .. file.path, text = file.text }
   end
@@ -141,7 +141,7 @@ local function write_included_builds(checked, named_of, place)
     local jars = jars_of(build.entries, {}, named_of(build.named))
     local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
                       group = (not build.plugin_build) and composite.GROUP or nil }
-    if build.verbatim ~= nil then
+    if build.verbatim ~= nil or build.settings_verbatim ~= nil then
       write_carrying_included_build(build, at, jars, options, place)
     else
       carried.refuse_a_linked_root(carried.derived_of(place.instance) .. "/" .. at)
@@ -259,6 +259,7 @@ local function real_tree_settings(context, config, declared)
   end
   local instance = validation.instance_of(context)
   return { root_script = carried.script_of(nil, carried.root_of(config)), real_root = context.root,
+           settings_verbatim = carried.settings_of(config),
            derived = carried.derived_from_real_root(context.root, instance),
            catalogs = validation.checked_catalogs(context, config),
            classpath_file = carried.classpath_in_settings(config) and carried.PLUGIN_CLASSPATH or nil,
@@ -401,10 +402,14 @@ local function append_verbatim_problems(config, problems)
     if problem ~= nil then problems[#problems + 1] = problem end
   end
   add((verbatim.problem_of(config.verbatim, "verbatim")))
+  add((verbatim.problem_of(config.settingsVerbatim, "settingsVerbatim")))
   for _, family in ipairs({ "modules", "builds" }) do
     for _, name in ipairs(sorted_names(config[family])) do
       add((verbatim.problem_of(config[family][name].verbatim, family .. "." .. name .. ".verbatim")))
     end
+  end
+  for _, name in ipairs(sorted_names(config.builds)) do
+    add((verbatim.problem_of(config.builds[name].settingsVerbatim, "builds." .. name .. ".settingsVerbatim")))
   end
 end
 

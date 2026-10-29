@@ -249,7 +249,7 @@ function migrate_carry.baseline_config(config, linked)
 end
 
 local function carries_at(config, place)
-  if place.build ~= nil then return ((config.builds or {})[place.build] or {}).verbatim ~= nil end
+  if place.build ~= nil then return carried.included_build_carries((config.builds or {})[place.build] or {}) end
   return carried.build_carries(config)
 end
 

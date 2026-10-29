@@ -89,7 +89,17 @@ end
 --- projects in the real-tree layout: a generated module directory would
 --- collide with the root link of the real one (spec 7.1).
 function carried.build_carries(config)
-  return config.verbatim ~= nil or next(module_verbatims(config)) ~= nil
+  return config.verbatim ~= nil or config.settingsVerbatim ~= nil or next(module_verbatims(config)) ~= nil
+end
+
+--- Whether an included build carries code, in its root or its settings.
+function carried.included_build_carries(block)
+  return block.verbatim ~= nil or block.settingsVerbatim ~= nil
+end
+
+--- The main build's carried settings code, checked, or nil.
+function carried.settings_of(config)
+  return verbatim.checked(config.settingsVerbatim, "settingsVerbatim")
 end
 
 local function build_carries_kotlin(config)

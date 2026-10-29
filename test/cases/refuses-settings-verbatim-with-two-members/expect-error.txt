@@ -1,0 +1,1 @@
+"settingsVerbatim" holds both groovy and kotlin, and a project's code is in one of them
