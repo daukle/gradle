@@ -16,7 +16,7 @@ daukle.plugin{
        migration carrying build logic returns. An older daukle refuses this
        plugin by name, with its own version, instead of rendering an empty
        list as a block. ]]
-  api = 5,
+  api = 6,
   uses = { "provision", "artifact", "exec", "write", "read", "parse", "list", "json_parse",
            "pin", "fetch", "cache" },
   exports = { "lib/distributions", "lib/build_file", "lib/junit", "lib/discovery", "lib/modules", "lib/migrate_logic",
@@ -40,8 +40,8 @@ daukle.plugin{
       sha256 = "94cecf60ad502541ce8fd1e087e335bf5eff65c67b651b94e21a9979e62b9b88",
     },
     maven = {
-      url = "https://github.com/daukle/maven/releases/download/1.5.1/plugin.lua",
-      sha256 = "39dba98f6a5b9d009bd296d823e2d6b2836edcd9d5486e2c4561ffb5832a9377",
+      url = "https://github.com/daukle/maven/releases/download/1.7.0/plugin.lua",
+      sha256 = "d3a2342b6c116be914647b9b8ce8d2a757d30b4d34cf21cc1f1403056ccc4501",
     },
   },
 }
@@ -259,7 +259,7 @@ end
 --- write core allows only under `--resolve` is the question, and core's refusal names the flag.
 local function refuse_outside_a_resolve_run()
   local current = tools_file_exists() and daukle.read(TOOLS_PATH)
-                  or output.render({}, TOOLS_HEADER, TOOLS_PATH)
+                  or output.render({}, TOOLS_HEADER)
   daukle.write{ path = TOOLS_FILE, text = current, committed = true }
   return current
 end
@@ -326,7 +326,7 @@ daukle.task{
     tool_defaults.refuse_skipped(resolutions, skipped_dependencies_of)
     daukle.write{ path = TOOLS_FILE, committed = true,
                   text = output.render(resolve.pinned_groups(resolutions, RESOLVER_VERBS),
-                                       TOOLS_HEADER, TOOLS_PATH) }
+                                       TOOLS_HEADER) }
     writer.write_build_file(context, config, { without_named = true })
   end,
 }

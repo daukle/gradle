@@ -13,7 +13,7 @@ maven  = { resolver = "github", coordinate = "daukle/maven@^1.1.0" }
 gradle = { resolver = "github", coordinate = "daukle/gradle@^1.3.0" }
 
 # This block is what produced `daukle/maven/classpath.lua`, which is committed
-# beside this file and included from `daukle.lua`. `daukle maven:resolve
+# and which daukle loads by itself. `daukle maven:resolve
 # --resolve` fetches both closures, hashes every jar and writes them as pinned
 # entries. The result is committed on purpose: a pinned closure belongs in the
 # project's history, and a plugin is applied FROM a jar, so there is nothing to
