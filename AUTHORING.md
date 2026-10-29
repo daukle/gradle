@@ -288,25 +288,19 @@ A manifest `daukle check` refuses still LISTS its tasks: a `plugins` entry with 
 carries lists nine tasks happily. That reads like a validation hole and is not one. `tasks` is a
 listing; the check belongs to generate, and `check` and `sync` both refuse with the right message.
 
-## Two phases to a first build
+## A plugin's pin is recreated by a resolve run
 
-A manifest that declares a versioned `[[toolchains.gradle.plugins]]` entry while `pluginClasspath` is empty is refused
-at generate time, and **every command generates**, so even `maven:resolve` is refused. The working
-sequence is: resolve with no `plugins` block, then add the `plugins` block; the pinned classpath
-is loaded by daukle itself in between. Nothing is unrecoverable. Recorded in `D-114`.
-
-**Both refusals now NAME that order**, which is `D-118` and the reason this section no longer says
-the advice cannot be followed. They also say why: *"this check runs on every command, so
-`maven:resolve` cannot fix it in place"*. **There are two of them and they differ**, because the
-recovery does: an empty `pluginClasspath` means resolve with no `plugins` block at all, while a
-version no pinned entry carries, the shape a SECOND plugin hits, means remove that one entry,
-resolve, and put it back. A case asserts each ordering clause, and neither clause appears in the
-other's message.
-
-**The structural fix was NOT taken**, and `D-118` records why: moving the check out of `generate`
-and into the task that writes the apply line would let `maven:resolve` run untouched, at the cost of
-`daukle check` no longer catching an unpinned plugin, which is the thing `generate`-time rendering
-exists for.
+A manifest that declares a versioned `[[toolchains.gradle.plugins]]` entry (or `settingsPlugins`)
+while its classpath is empty, or at a version no pinned entry carries, is refused on every
+ordinary command, `daukle check` included. **A `--resolve` run is let through** (`D-202`, daukle
+`0.16.0` or newer, which publishes `context.resolving`): there `generate` renders as if that plugin
+list were absent, so `daukle maven:resolve --resolve` writes the pin, a first one or one that was
+deleted, with no edit to `daukle.toml`. Every Gradle task still refuses, and generate prints
+nothing, because it has no output channel: the next ordinary command refuses if the resolve left the
+pins missing. A malformed plugin list is refused in a resolve run too. On an older daukle the field
+is absent and the refusal holds, so a first plugin needs the old order: resolve with no `plugins`
+block, then add it. Cases: `resolve-recreates-a-deleted-plugin-pin`,
+`check-refuses-a-missing-plugin-pin`.
 
 ## Third-party Gradle plugins
 
