@@ -384,6 +384,42 @@ function migrate_carry.linked_roots(context, built)
   return linked
 end
 
+local ROOT_KEYS = { "sourceRoot", "resourceRoot", "testSourceRoot", "testResourceRoot" }
+local OLD_BUILD_DIRECTORY = "build"
+
+local function old_build_root(root, owner)
+  if type(root) ~= "table" then return root end
+  if root.buildOutput == "." then return owner .. OLD_BUILD_DIRECTORY end
+  return owner .. OLD_BUILD_DIRECTORY .. "/" .. root.buildOutput
+end
+
+local function old_build_roots(value, owner)
+  if type(value) ~= "table" then return value end
+  if value.buildOutput ~= nil then return old_build_root(value, owner) end
+  local roots = {}
+  for index, root in ipairs(value) do roots[index] = old_build_root(root, owner) end
+  return roots
+end
+
+local function with_old_build_roots(block, owner)
+  local copy = {}
+  for key, value in pairs(block) do copy[key] = value end
+  for _, key in ipairs(ROOT_KEYS) do copy[key] = old_build_roots(block[key], owner) end
+  if type(block.sourceSets) == "table" then
+    copy.sourceSets = {}
+    for name, set in pairs(block.sourceSets) do copy.sourceSets[name] = with_old_build_roots(set, owner) end
+  end
+  for _, nested in ipairs({ "modules", "builds" }) do
+    if type(block[nested]) == "table" then
+      copy[nested] = {}
+      for name, inner in pairs(block[nested]) do
+        copy[nested][name] = with_old_build_roots(inner, owner .. name .. "/")
+      end
+    end
+  end
+  return copy
+end
+
 --- What a baseline `verbatim` holds: `verbatim.checked` refuses an empty
 --- text, and the baseline renders it blank anyway.
 migrate_carry.BASELINE_TEXT = "// the keys-only baseline\n"
@@ -391,16 +427,13 @@ migrate_carry.BASELINE_TEXT = "// the keys-only baseline\n"
 --- The config the first render reads: the translation's, with a `verbatim`
 --- wherever a derived root is linked, rendered blank, so nothing is written
 --- through a link and the task set is the one the keys alone give.
+---
+--- @implNote a `buildOutput` root is read where the OLD build left it, its
+--- owner's default `build/`: the baseline carries no generator, and an
+--- included build feeding the main build's configuration must still compile
+--- for signal 2 to be computed at all (D-191).
 function migrate_carry.baseline_config(config, linked)
-  local copy = {}
-  for key, value in pairs(config) do copy[key] = value end
-  if config.builds ~= nil then
-    copy.builds = {}
-    for name, block in pairs(config.builds) do
-      copy.builds[name] = {}
-      for key, value in pairs(block) do copy.builds[name][key] = value end
-    end
-  end
+  local copy = with_old_build_roots(config, "")
   for _, entry in ipairs(linked) do
     translate_build.set_verbatim(copy, entry.place, GROOVY, migrate_carry.BASELINE_TEXT)
   end
