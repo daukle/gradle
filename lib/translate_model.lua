@@ -150,7 +150,29 @@ local function one_or_list(paths)
   return paths
 end
 
-local function translate_roots(translation, set_name, kind, sources)
+--- A model path inside the project's build directory as the `buildOutput`
+--- marker that names it relative to that directory, or nil when it lies
+--- elsewhere.
+---
+--- @implNote a carrying render redirects the build directory, so a generated
+--- root kept as a project path would name a directory nothing writes (D-191).
+local function build_output(project, path)
+  local build_dir = project.buildDir
+  if type(build_dir) ~= "string" then return nil end
+  if path == build_dir then return { buildOutput = "." } end
+  if string.sub(path, 1, #build_dir + 1) ~= build_dir .. "/" then return nil end
+  return { buildOutput = string.sub(path, #build_dir + 2) }
+end
+
+local function translate_root(translation, project, path, construct)
+  local marker = build_output(project, path)
+  if marker ~= nil then return marker end
+  local relative = within_project(translation, path)
+  if relative == nil then return nil, true end
+  return carried(translation, relative, construct), false
+end
+
+local function translate_roots(translation, project, set_name, kind, sources)
   local construct = "sourceSets." .. set_name .. "." .. kind
   if sources == nil or is_unrendered(sources) then
     block(translation, construct, "could not be read from the model", LAYOUT_ROW)
@@ -163,13 +185,13 @@ local function translate_roots(translation, set_name, kind, sources)
   end
   local roots = {}
   for _, path in ipairs(sources.srcDirs or {}) do
-    local relative = within_project(translation, path)
-    if relative == nil then
+    local root, outside = translate_root(translation, project, path, construct)
+    if outside then
       block(translation, construct, "names the root " .. path .. ", which lies outside the project",
             LAYOUT_ROW)
       return nil
     end
-    roots[#roots + 1] = carried(translation, relative, construct)
+    roots[#roots + 1] = root
   end
   if same_list(roots, { default_root(translation, set_name, kind) }) then return nil end
   return one_or_list(roots)
@@ -263,10 +285,10 @@ local function check_encoding(translation, project, set_name, set)
   end
 end
 
-local function translate_set_layout(translation, set_name, set, keys)
+local function translate_set_layout(translation, project, set_name, set, keys)
   local layout = {}
-  layout[keys.java] = translate_roots(translation, set_name, "java", set.java)
-  layout[keys.resources] = translate_roots(translation, set_name, "resources", set.resources)
+  layout[keys.java] = translate_roots(translation, project, set_name, "java", set.java)
+  layout[keys.resources] = translate_roots(translation, project, set_name, "resources", set.resources)
   return layout
 end
 
@@ -313,7 +335,7 @@ local function translate_custom_set(translation, project, rows, name, set, main_
   local seen = test and main_output or {}
   check_classpath_wiring(translation, name, set, seen, union(seen, as_set(set.output)))
   check_encoding(translation, project, name, set)
-  local block_of = translate_set_layout(translation, name, set, { java = "sourceRoot", resources = "resourceRoot" })
+  local block_of = translate_set_layout(translation, project, name, set, { java = "sourceRoot", resources = "resourceRoot" })
   copy_into(block_of, translate_dependencies.custom(translation, project, rows, name, set))
   if test then block_of.test = true end
   return block_of
@@ -331,14 +353,14 @@ local function translate_source_sets(translation, project, config)
   local main_output = as_set(main.output)
   check_classpath_wiring(translation, MAIN, main, {}, main_output)
   check_encoding(translation, project, MAIN, main)
-  copy_into(config, translate_set_layout(translation, MAIN, main, ROOT_KEYS.main))
+  copy_into(config, translate_set_layout(translation, project, MAIN, main, ROOT_KEYS.main))
   local main_buckets, main_split = translate_dependencies.main(translation, project, rows, main)
   copy_into(config, main_buckets)
   local test = sets[TEST]
   if test ~= nil then
     check_classpath_wiring(translation, TEST, test, main_output, union(main_output, as_set(test.output)))
     check_encoding(translation, project, TEST, test)
-    copy_into(config, translate_set_layout(translation, TEST, test, ROOT_KEYS.test))
+    copy_into(config, translate_set_layout(translation, project, TEST, test, ROOT_KEYS.test))
     copy_into(config, translate_dependencies.test(translation, project, rows, test, main_split))
   end
   for _, name in ipairs(sorted_set_names(sets)) do

@@ -704,6 +704,7 @@ def tasksOf = { File base, project ->
 def projectOf = { File base, project ->
   [path: project.path, name: project.name, dir: pathFrom(base, project.projectDir),
    buildFile: (project.buildFile.isFile() ? pathFrom(base, project.buildFile) : null),
+   buildDir: pathFrom(base, project.layout.buildDirectory.get().asFile),
    version: project.version.toString(), group: project.group.toString(),
    parent: project.parent?.path, children: project.childProjects.values().collect { it.path },
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),

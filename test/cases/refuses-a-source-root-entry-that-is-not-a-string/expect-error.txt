@@ -1,1 +1,1 @@
-"modules.alpha.testSourceRoot[2]" must be a string, not a number
+"modules.alpha.testSourceRoot[2]" must be a path or a { buildOutput = "<path>" } marker, not a number

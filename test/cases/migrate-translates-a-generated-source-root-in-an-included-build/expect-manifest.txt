@@ -1,0 +1,2 @@
+[toolchains.gradle.builds.greeting]
+sourceRoot = ["greeting/src/main/java", { buildOutput = "generated/config" }]

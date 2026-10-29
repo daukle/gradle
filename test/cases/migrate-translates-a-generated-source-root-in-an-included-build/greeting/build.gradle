@@ -1,0 +1,23 @@
+plugins {
+  id 'java-library'
+}
+
+group = 'example'
+version = '1.0'
+
+def generatedDir = layout.buildDirectory.dir('generated/config')
+
+def generateConfig = tasks.register('generateConfig') {
+  def out = generatedDir.get().file('example/Config.java').asFile
+  outputs.file(out)
+  doLast {
+    out.parentFile.mkdirs()
+    out.text = 'package example; public class Config { public static final String VALUE = "1"; }'
+  }
+}
+
+tasks.named('compileJava') {
+  dependsOn(generateConfig)
+}
+
+sourceSets.main.java.srcDir(generatedDir)
