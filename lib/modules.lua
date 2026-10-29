@@ -212,22 +212,57 @@ function modules.project_options(config)
            sources_jar = modules.boolean_key(config, "sourcesJar", false) }
 end
 
---- One string or a list of them, always returned as a list: Gradle's `srcDirs`
---- takes several roots, and an empty list is its way of declaring none.
-function modules.string_list_key(block, key, fallback, label)
-  local value = block[key]
-  if type(value) ~= "table" then return { modules.string_key(block, key, fallback, label) } end
-  local name = label or key
+local BUILD_OUTPUT = "buildOutput"
+local ROOT_SHAPE = 'a path or a { buildOutput = "<path>" } marker'
+
+local function climbs_out(path)
+  if string.match(path, "^[/\\]") or string.match(path, "^%a:") then return true end
+  for part in string.gmatch(path, "[^/\\]+") do
+    if part == ".." then return true end
+  end
+  return false
+end
+
+local function table_size(value)
   local keys = 0
   for _ in pairs(value) do keys = keys + 1 end
-  if keys ~= #value then
-    error('"' .. name .. '" must be a string or a list of strings, not a table of keys', 0)
+  return keys
+end
+
+local function checked_build_output(entry, name)
+  if entry[BUILD_OUTPUT] == nil or table_size(entry) ~= 1 then
+    error('"' .. name .. '" must be ' .. ROOT_SHAPE .. ', not a table of other keys', 0)
   end
-  for index, entry in ipairs(value) do
-    if type(entry) ~= "string" then
-      error('"' .. name .. '[' .. index .. ']" must be a string, not a ' .. type(entry), 0)
-    end
+  local path = entry[BUILD_OUTPUT]
+  if type(path) ~= "string" then
+    error('"' .. name .. '.' .. BUILD_OUTPUT .. '" must be a string, not a ' .. type(path), 0)
   end
+  if climbs_out(path) then
+    error('"' .. name .. '.' .. BUILD_OUTPUT .. '" must stay inside the build directory, not "'
+          .. path .. '"', 0)
+  end
+  return entry
+end
+
+local function checked_root(entry, name)
+  if type(entry) == "string" then return entry end
+  if type(entry) == "table" then return checked_build_output(entry, name) end
+  error('"' .. name .. '" must be ' .. ROOT_SHAPE .. ', not a ' .. type(entry), 0)
+end
+
+--- One root or a list of them, always returned as a list: Gradle's `srcDirs`
+--- takes several roots, and an empty list is its way of declaring none. A root
+--- is a path relative to the project, or a `buildOutput` marker relative to its
+--- build directory, wherever daukle put that (D-191).
+function modules.root_list_key(block, key, fallback, label)
+  local value = block[key]
+  local name = label or key
+  if value == nil then return { fallback } end
+  if type(value) ~= "table" or value[BUILD_OUTPUT] ~= nil then return { checked_root(value, name) } end
+  if table_size(value) ~= #value then
+    error('"' .. name .. '" must be ' .. ROOT_SHAPE .. ' or a list of them, not a table of keys', 0)
+  end
+  for index, entry in ipairs(value) do checked_root(entry, name .. '[' .. index .. ']') end
   return value
 end
 
@@ -243,7 +278,7 @@ function modules.layout_of(name, block, kind)
   local prefix = name ~= nil and (name .. "/") or ""
   local scope = name ~= nil and (kind .. "." .. name .. ".") or ""
   local function dirs_for(key)
-    return modules.string_list_key(block, key, prefix .. DEFAULT_SUFFIX[key], scope .. key)
+    return modules.root_list_key(block, key, prefix .. DEFAULT_SUFFIX[key], scope .. key)
   end
   return {
     main = { java = dirs_for("sourceRoot"), resources = dirs_for("resourceRoot") },

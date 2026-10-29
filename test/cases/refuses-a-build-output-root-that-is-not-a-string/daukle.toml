@@ -1,0 +1,11 @@
+schema = 1
+project = "example/roots"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+sourceRoot = [{ buildOutput = 3 }]

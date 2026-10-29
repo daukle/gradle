@@ -1,0 +1,1 @@
+build/daukle/gradle/migrate-generated-model.json "name": "hello"

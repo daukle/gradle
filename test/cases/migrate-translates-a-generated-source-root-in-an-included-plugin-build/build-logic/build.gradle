@@ -1,0 +1,29 @@
+plugins {
+  id 'java-gradle-plugin'
+}
+
+def generatedDir = layout.buildDirectory.dir('generated/config')
+
+def generateConfig = tasks.register('generateConfig') {
+  def out = generatedDir.get().file('com/example/logic/Config.java').asFile
+  outputs.file(out)
+  doLast {
+    out.parentFile.mkdirs()
+    out.text = 'package com.example.logic; final class Config { static final String GREETING = "hello from build-logic"; }'
+  }
+}
+
+tasks.named('compileJava') {
+  dependsOn(generateConfig)
+}
+
+sourceSets.main.java.srcDir(generatedDir)
+
+gradlePlugin {
+  plugins {
+    hello {
+      id = 'example.hello'
+      implementationClass = 'com.example.logic.HelloPlugin'
+    }
+  }
+}

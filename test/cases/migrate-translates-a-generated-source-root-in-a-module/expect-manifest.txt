@@ -1,0 +1,1 @@
+sourceRoot = ["alpha/src/main/java", { buildOutput = "generated/config" }]

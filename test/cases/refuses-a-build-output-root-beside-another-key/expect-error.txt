@@ -1,0 +1,1 @@
+"sourceRoot[2]" must be a path or a { buildOutput = "<path>" } marker, not a table of other keys

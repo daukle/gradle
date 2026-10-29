@@ -1,0 +1,32 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+# The marker in a module resolves through that module's own build directory.
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.modules.alpha]
+sourceRoot = ["alpha/src/main/java", { buildOutput = "generated/config" }]
+
+[toolchains.gradle.modules.alpha.verbatim]
+groovy = '''
+tasks.register('generateGreeting') {
+    def target = layout.buildDirectory.file('generated/config/example/Generated.java')
+    outputs.file(target)
+    doLast {
+        def file = target.get().asFile
+        file.parentFile.mkdirs()
+        file.text = 'package example; public class Generated { public static String text() { return "generated"; } }'
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn('generateGreeting')
+}
+'''

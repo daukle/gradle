@@ -1,0 +1,2 @@
+[toolchains.gradle.builds.build-logic]
+sourceRoot = ["build-logic/src/main/java", { buildOutput = "generated/config" }]

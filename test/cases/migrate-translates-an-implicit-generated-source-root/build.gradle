@@ -1,0 +1,15 @@
+plugins {
+  id 'java'
+}
+
+def generateConfig = tasks.register('generateConfig') {
+  def out = layout.buildDirectory.dir('generated/config')
+  outputs.dir(out)
+  doLast {
+    def file = out.get().file('example/Config.java').asFile
+    file.parentFile.mkdirs()
+    file.text = 'package example; class Config { static final String VALUE = "1"; }'
+  }
+}
+
+sourceSets.main.java.srcDir(generateConfig)
