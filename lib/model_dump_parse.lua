@@ -89,8 +89,8 @@ def strictUtf8TextOf = { File file ->
   }
 }
 
-def scriptSourceOf = { File file ->
-  def original = strictUtf8TextOf(file)
+def scriptSourceOf = { String text ->
+  def original = text
   if (!original.isEmpty() && original.charAt(0) == BYTE_ORDER_MARK) original = original.substring(1)
   def parsed = new StringBuilder(original.length())
   def originalOffsets = new int[original.length() + 1]
@@ -549,15 +549,32 @@ def kotlinStatementsOf = { KotlinParser parser, ScriptSource source ->
 }
 
 /**
- * A build script's top-level statements with the facts the migrator selects by (D-165, section 4.1),
- * or `unparsed` with the reason its DSL's parser gave; null for a project with no build file.
+ * A script that is not UTF-8, decoded leniently so its declarations can still be told from its code,
+ * with `notUtf8` saying why none of it may be carried; any other script decoded strictly.
  */
-def scriptInventoryOf = { File base, File gradleHome, File file ->
+def settingsSourceOf = { File file, Map inventory ->
+  try {
+    scriptSourceOf(strictUtf8TextOf(file))
+  } catch (IllegalArgumentException notUtf8) {
+    inventory.notUtf8 = notUtf8.message
+    scriptSourceOf(file.getText('UTF-8'))
+  }
+}
+
+/**
+ * A build or settings script's top-level statements with the facts the migrator selects by (D-165,
+ * section 4.1), or `unparsed` with the reason its DSL's parser gave; null for a project with no build
+ * file.
+ *
+ * @implNote a settings script that is not UTF-8 is still classified, as it was before its statements
+ * could be carried (D-187): one holding only declarations migrates, and carrying from it blocks.
+ */
+def scriptInventoryOf = { File base, File gradleHome, File file, boolean settings ->
   if (!file.isFile()) return null
   def kotlin = file.name.endsWith('.kts')
   def inventory = [path: pathFrom(base, file), dsl: kotlin ? 'kotlin' : 'groovy']
   try {
-    def source = scriptSourceOf(file)
+    def source = settings ? settingsSourceOf(file, inventory) : scriptSourceOf(strictUtf8TextOf(file))
     inventory.lineEnding = source.original.contains('\r\n') ? 'crlf' : 'lf'
     inventory + (kotlin ? kotlinStatementsOf(kotlinParserFor(gradleHome), source) : [statements: groovyStatementsOf(source)])
   } catch (Throwable failure) {

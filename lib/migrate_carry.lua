@@ -288,6 +288,13 @@ local function carry_settings(build, built, result)
   local dsl = settings.script.dsl or GROOVY
   local translated_before = #result.translated
   record_translated(result, build, settings.script, code, selection.carried)
+  if settings.script.notUtf8 ~= nil then
+    if #selection.carried > 0 then
+      result.blockers[#result.blockers + 1] = boundary_blocker(shown_settings_path(build, settings.script),
+        build.where, "holds settings code to carry and " .. settings.script.notUtf8)
+    end
+    return
+  end
   if #result.translated > translated_before then
     result.fallbacks[#result.fallbacks + 1] = {
       place = build.place, dsl = dsl, build = build.name, statements = code, carried = selection.carried,

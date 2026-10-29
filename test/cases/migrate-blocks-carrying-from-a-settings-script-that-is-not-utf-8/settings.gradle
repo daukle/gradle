@@ -1,0 +1,8 @@
+// café, written in Latin-1
+rootProject.name = 'latin'
+
+gradle.allprojects {
+  tasks.matching { it.name == 'jar' }.configureEach {
+    doLast { println 'stamped' }
+  }
+}

@@ -347,12 +347,13 @@ local function compared_with_fallback(context, model, built, carrying, generated
   if compared == nil then return {}, generated, generated_models end
   if #compared == 0 or #carrying.fallbacks == 0 then return compared, generated, generated_models end
   local fallback = migrate_carry.carry_translated(built, carrying)
-  local retried = dump_generated(context, built, built.config, built.projects[1].where, false)
+  local retried, refusals = dump_generated(context, built, built.config, built.projects[1].where, false)
   local retried_models = retried ~= nil and generated_builds(context, built) or nil
   local second = comparison_of(context, model, built, retried, retried_models, settings)
   if second == nil or #second > 0 then
     fallback.restore()
     append(compared, translated_blockers(carrying, built.projects[1].where))
+    append(compared, refusals)
     return compared, generated, generated_models
   end
   append(carrying.statements, fallback.statements)
