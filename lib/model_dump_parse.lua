@@ -89,8 +89,8 @@ def strictUtf8TextOf = { File file ->
   }
 }
 
-def scriptSourceOf = { File file, boolean carriedVerbatim ->
-  def original = carriedVerbatim ? strictUtf8TextOf(file) : file.getText('UTF-8')
+def scriptSourceOf = { File file ->
+  def original = strictUtf8TextOf(file)
   if (!original.isEmpty() && original.charAt(0) == BYTE_ORDER_MARK) original = original.substring(1)
   def parsed = new StringBuilder(original.length())
   def originalOffsets = new int[original.length() + 1]
@@ -551,16 +551,13 @@ def kotlinStatementsOf = { KotlinParser parser, ScriptSource source ->
 /**
  * A build script's top-level statements with the facts the migrator selects by (D-165, section 4.1),
  * or `unparsed` with the reason its DSL's parser gave; null for a project with no build file.
- *
- * @implNote only a script whose statements may be `carriedVerbatim` is decoded strictly: a settings
- * script's statements are classified and never carried, so a byte that is not UTF-8 costs it nothing.
  */
-def scriptInventoryOf = { File base, File gradleHome, File file, boolean carriedVerbatim ->
+def scriptInventoryOf = { File base, File gradleHome, File file ->
   if (!file.isFile()) return null
   def kotlin = file.name.endsWith('.kts')
   def inventory = [path: pathFrom(base, file), dsl: kotlin ? 'kotlin' : 'groovy']
   try {
-    def source = scriptSourceOf(file, carriedVerbatim)
+    def source = scriptSourceOf(file)
     inventory.lineEnding = source.original.contains('\r\n') ? 'crlf' : 'lf'
     inventory + (kotlin ? kotlinStatementsOf(kotlinParserFor(gradleHome), source) : [statements: groovyStatementsOf(source)])
   } catch (Throwable failure) {
