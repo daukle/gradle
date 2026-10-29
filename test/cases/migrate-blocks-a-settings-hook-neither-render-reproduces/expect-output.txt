@@ -1,0 +1,2 @@
+:jar.manifestAttributes.X-Settings-Directory: differs in the build daukle/gradle generates from the translated keys
+settings.gradle:3: is settings code translated into keys, which reaches every project of its build

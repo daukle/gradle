@@ -42,7 +42,7 @@ end
 --- compiled already has its imports first, after only blank lines, comments
 --- and `@file:` annotations, which is why a split on those lines finds them
 --- without parsing anything.
-local function split_imports(text)
+function build_file_kotlin.split_imports(text)
   local offset = 1
   while offset <= #text do
     local line = string.sub(text, offset, line_end_at(text, offset))
@@ -73,7 +73,7 @@ end
 --- measured on 7.6.4 and 9.6.0 in a root and a module.
 --- @param warn_line the line reporting the carried code, nil for none
 function build_file_kotlin.wrapper(ids, rendered, carried_text, warn_line)
-  local imports, rest = split_imports(carried_text)
+  local imports, rest = build_file_kotlin.split_imports(carried_text)
   if imports ~= "" and string.sub(imports, -1) ~= "\n" then imports = imports .. "\n" end
   local warning = warn_line ~= nil and warn_line .. "\n" or ""
   return HEADER .. imports .. plugins_block(ids)

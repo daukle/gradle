@@ -1,0 +1,3 @@
+[toolchains.gradle.settingsVerbatim]
+groovy = '''
+gradle.allprojects {

@@ -1,0 +1,36 @@
+schema = 1
+project = "example/settings"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+# Kotlin settings code naming a settings plugin's extension: `jvm` has a
+# Kotlin accessor only in the settings script whose own plugins {} resolved
+# foojay-resolver, so this compiles only through the settings.gradle.kts
+# wrapper. The settings.gradle seeded under build/ throws, so a run that read
+# it instead fails.
+[toolchains.gradle]
+version = "8.13"
+settingsPlugins = [{ id = "org.gradle.toolchains.foojay-resolver", version = "1.0.0" }]
+
+[[toolchains.gradle.settingsPluginClasspath]]
+url = "https://plugins.gradle.org/m2/org/gradle/toolchains/foojay-resolver/1.0.0/foojay-resolver-1.0.0.jar"
+sha256 = "78b86a47dfdf7697c9bd15da78983fd80da7247d6e02fc106bdf07e0388b60a8"
+
+[toolchains.gradle.settingsVerbatim]
+kotlin = '''
+toolchainManagement {
+    jvm {
+        javaRepositories {
+            repository("foojay") {
+                resolverClass.set(org.gradle.toolchains.foojay.FoojayToolchainResolver::class.java)
+            }
+        }
+    }
+}
+
+println("the kotlin settings code ran")
+'''

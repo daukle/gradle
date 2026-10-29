@@ -864,6 +864,21 @@ comparison checks each alias of it per build. The migration's proof prints one l
 statement, `<key>: line <n> carried verbatim, coverage owed (<GRADLE-SURFACE.md row>)`, `<n>` being
 the statement's first line in the OLD build script, not a line of the value.
 
+**Settings-script code** (`D-187`). A settings statement that is not a declaration (see "Still
+blocks" for the list) is TRANSLATED by default: dropped, its effect coming from the keys the
+translation already derives from every project's evaluated model, and the comparison proving it.
+The same four rules run once over the settings script with every project's tasks, since a hook
+reaches them all, and what they select is carried into `settingsVerbatim` (`builds.<dir>.settingsVerbatim`
+for an included build): a hook holding a `doLast`, a hook registering a task the keys do not give, and
+the definitions those use. **When the build with its settings code translated does not compare equal**,
+the migration renders once more with every code statement of that settings script carried, and
+migrates if that compares equal; otherwise it blocks on the first comparison, naming each translated
+statement. The proof prints `<settings path>: line <n> translated into keys, compared only through what
+the dump reads` per translated statement, because a value no dump reader records (an `ext` property,
+`notCompatibleWithConfigurationCache`) translates to nothing; a carried statement that reads such a
+value fails to configure, which is what sends the build to the second render. An action a settings
+hook compiled belongs to the settings selection, not the build script's.
+
 **Translated instead of carried.** A source set's own `Test` task, registered under the set's name
 on JUnit Platform with no `doFirst` or `doLast`, becomes `sourceSets.<name>.test = true`, whose render
 is that task; the set's classpaths may then hold `main`'s output, as a test set's do. **Its blind
@@ -889,6 +904,21 @@ daukle/gradle: modules.app.verbatim.groovy is plain Gradle code no daukle key co
 (`logger.warn`, measured on 7.6.4 and 9.6.0 in Groovy and in the Kotlin wrapper; `gradle:discover`
 runs Gradle `--quiet` and does not show it.) A Kotlin text keeps its imports first, because the
 wrapper lifts them above its own `plugins {}` block.
+
+`settingsVerbatim` is the same escape hatch for the settings script, at the top level and in
+`builds.<dir>`, and puts the build in the real-tree layout. Groovy is appended to the generated
+`settings.gradle` after every declaration, so a hook is registered before any project evaluates.
+Kotlin turns the generated settings into a `settings.gradle.kts` wrapper, because a settings
+plugin's extension (`toolchainManagement { jvm {} }` from foojay-resolver) has a Kotlin accessor only
+in the settings script whose own `plugins {}` resolved that plugin, measured on 8.13 and 9.6.0 (7.6.4
+and 8.4 have none in any shape). The wrapper resolves each pinned settings plugin from a local Maven
+repository under the derived root's `build/settings-plugins/`, maps every id to one module holding
+the pinned classpath (`useModule`, since a plugin marker's path passes Windows' 260-character limit),
+and applies the rest of the settings as `settings.rendered.gradle`. Every Gradle run of such a build
+passes the init script `kotlin-settings.gradle`, which copies the pinned jars into that repository
+and removes a `settings.gradle` an earlier render left: with both present Gradle reads
+`settings.gradle` and says nothing. Kotlin in an included build's `settingsVerbatim` is refused by
+name.
 
 A version catalog that carried code reads is a `catalogs.<name>` key of the build, in Gradle's own
 catalog shape, accepted only in a build that sets `verbatim`:
@@ -926,8 +956,8 @@ where the link is refused), symlinks on POSIX. Carried code reading `rootProject
 `settings.gradle(.kts)`, `build/`, `daukle/`, `.gradle`, `.kotlin` (a Kotlin Gradle Plugin 2.x
 writes its session files there), `buildSrc`, `.daukle-generated`, `included/`, the files daukle/gradle
 generates into the derived root (`root-links.gradle`, `plugin-classpath.txt`,
-`settings-plugins.gradle`, `jars.gradle`, `discovered.txt`, `tools.gradle`), and every name starting
-with `migrate-`.
+`settings-plugins.gradle`, `jars.gradle`, `discovered.txt`, `tools.gradle`, `kotlin-settings.gradle`,
+`settings.rendered.gradle`), and every name starting with `migrate-`.
 
 **What the proof does not run.** A carried task the proof's task graph does not hold is reported as
 `<task>: carried, configured and compared, not run by the proof`. Carried code is configured and
@@ -936,12 +966,14 @@ compared, not executed beyond what `gradle:jars` schedules.
 **Still blocks**, each naming the construct:
 
 - an `apply from:` script: an action it compiled is not in the build script, so its text is not carried;
-- code in a settings script, the root's or an included build's (`gradle.beforeProject {}` and the like), named
-  as `[<build dir>/]settings.gradle:<line>`;
-  declarations the translation reads (`include`, `includeBuild`, `pluginManagement`, `plugins`,
-  `dependencyResolutionManagement`, `buildCache`, `toolchainManagement`, a registered extension's block,
-  `project(":x").projectDir` and `.buildFileName`, `rootProject.buildFileName`)
-  are not code. An unparsed settings script blocks as well;
+- a settings script that did not parse, the root's or an included build's. Its declarations, which
+  the translation reads and the render writes, are never carried: `include`, `includeFlat`,
+  `includeBuild`, `pluginManagement`, `plugins`, `dependencyResolutionManagement`, `buildCache`,
+  `toolchainManagement`, `enableFeaturePreview`, `buildscript`, a registered extension's block,
+  `rootProject.name`, `project(":x").projectDir` and `.buildFileName`, `rootProject.buildFileName`.
+  An `import` is code, carried when carried code needs it;
+- settings code the keys miss and carrying does not reproduce either, each statement named as
+  `[<build dir>/]settings.gradle:<line>`;
 - a plugin class a build script compiles, and `buildSrc/` whenever it exists (an included plugin build migrates);
 - in a catalog carried code reads, a constraint holding a rejected version and a bundle member more
   than one library names, each by its alias; a catalog the keys use (`implementation libs.gson`) is

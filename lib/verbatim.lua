@@ -49,6 +49,20 @@ function verbatim.problem_of(value, label)
   return text_problem(value[dsl], label .. "." .. dsl), dsl
 end
 
+--- Why an included build's `settingsVerbatim` is refused, or nil.
+---
+--- @implNote Kotlin needs a `settings.gradle.kts` wrapper, which only the main
+--- build renders so far (spec D-187, 4.3).
+function verbatim.included_settings_problem_of(value, label)
+  local problem, dsl = verbatim.problem_of(value, label)
+  if problem ~= nil then return problem end
+  if dsl == "kotlin" then
+    return '"' .. label .. '.kotlin" is Kotlin settings code in an included build, which daukle/gradle'
+           .. " carries only in Groovy so far"
+  end
+  return nil
+end
+
 --- @return nil for no value, else { dsl, text, label }, `label` naming the member
 function verbatim.checked(value, label)
   local problem, dsl = verbatim.problem_of(value, label)

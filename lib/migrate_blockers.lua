@@ -97,7 +97,7 @@ end
 local SETTINGS_DECLARATIONS = {
   include = true, includeFlat = true, includeBuild = true, pluginManagement = true, plugins = true,
   dependencyResolutionManagement = true, buildCache = true, toolchainManagement = true,
-  enableFeaturePreview = true, buildscript = true, import = true,
+  enableFeaturePreview = true, buildscript = true,
 }
 
 local function settings_head(text)
@@ -109,32 +109,21 @@ local function settings_head(text)
   return string.match(text, "^[%a_][%w_]*")
 end
 
-local function is_declaration(statement, extensions)
+--- Whether a settings statement is one the translation reads from the model
+--- or a key renders, rather than code; an `import` is code, which carried code may need.
+function migrate_blockers.is_settings_declaration(statement, extensions)
   local head = settings_head(statement.text)
   return head == "rootProject" or SETTINGS_DECLARATIONS[head] == true or (extensions or {})[head] ~= nil
 end
 
---- Settings script statements that are code: a hook, a call, a computation.
---- @implNote an unparsed settings script blocks too, because nothing in it can be told from code.
+--- A settings script that cannot be read, which blocks because nothing in it
+--- can be told from code; every other statement is translated or carried.
 function migrate_blockers.settings_code(model, where, directory)
   local script = model.settingsScript
-  local function named(path) return directory == nil and path or directory .. "/" .. path end
-  if script == nil then return {} end
-  if script.unparsed ~= nil then
-    return { blocker(named(script.path), where, "is a settings script that cannot be read (" .. script.unparsed
-                     .. "), so it cannot be told from code", BOUNDARY_ROW) }
-  end
-  local blockers = {}
-  for _, statement in ipairs(script.statements or {}) do
-    if not is_declaration(statement, model.settingsExtensions) then
-      local construct = string.format("%s:%d", named(script.path), statement.startLine)
-      blockers[#blockers + 1] = blocker(construct, where, "is code in the settings"
-                                        .. " script " .. named(script.path) .. ", which a migration does not carry"
-                                        .. " (only build scripts are), so it would silently stop running",
-                                        BOUNDARY_ROW)
-    end
-  end
-  return blockers
+  if script == nil or script.unparsed == nil then return {} end
+  local path = directory == nil and script.path or directory .. "/" .. script.path
+  return { blocker(path, where, "is a settings script that cannot be read (" .. script.unparsed
+                   .. "), so it cannot be told from code", BOUNDARY_ROW) }
 end
 
 local function task_names(project)
