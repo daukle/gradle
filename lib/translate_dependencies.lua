@@ -85,6 +85,48 @@ local function is_carried_by_projects(row)
   return true
 end
 
+local LIBRARY_CONFIGURATIONS = { "api", "compileOnlyApi" }
+local SET_CONFIGURATION_FIELDS = { "implementation", "compileOnly", "runtimeOnly", "annotationProcessor" }
+
+--- The configurations a source set declares its dependencies in, as the dump names them.
+local function source_set_configurations(project)
+  local names = {}
+  for _, name in ipairs(LIBRARY_CONFIGURATIONS) do names[name] = true end
+  local sets = ((project.extensions or {}).sourceSets or {}).value
+  if type(sets) ~= "table" then return names end
+  for _, set in pairs(sets) do
+    for _, field in ipairs(SET_CONFIGURATION_FIELDS) do
+      if type(set[field]) == "string" then names[set[field]] = true end
+    end
+  end
+  return names
+end
+
+--- The project edges declared only in a configuration no source set owns,
+--- which a `declaredConfigurations` key carries instead (spec D-203).
+local function edges_left_to_declared(project)
+  local owned = source_set_configurations(project)
+  local in_owned, elsewhere = {}, {}
+  for _, row in ipairs((project.dependencies or {}).declared or {}) do
+    if row.kind == "project" then
+      local edge = PROJECT_EDGE .. ":" .. " " .. row.project
+      if owned[row.configuration] then in_owned[edge] = true else elsewhere[edge] = true end
+    end
+  end
+  for edge in pairs(in_owned) do elsewhere[edge] = nil end
+  return elsewhere
+end
+
+local function is_left_to_declared(project, row)
+  local via = row.via or {}
+  if #via == 0 then return false end
+  local left = edges_left_to_declared(project)
+  for _, edge in ipairs(via) do
+    if not left[edge] then return false end
+  end
+  return true
+end
+
 local function applies_gradle_plugin_plugin(project)
   for _, plugin in ipairs(project.plugins or {}) do
     for _, id in ipairs(plugin.ids or {}) do
@@ -130,6 +172,7 @@ end
 --- Pins one row into `key`, or leaves it to the project that carries it.
 --- @param place how a refusal names where an edge sits, or nil where an edge becomes a key
 local function place_row(translation, project, buckets, key, row, place)
+  if is_left_to_declared(project, row) then return end
   if row.kind == "project" then
     if place == nil then
       record_edge(translation, row)

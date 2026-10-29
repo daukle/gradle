@@ -1,0 +1,21 @@
+plugins {
+  id 'java-library'
+}
+
+configurations {
+  toolCompile
+  compileClasspath.extendsFrom(toolCompile)
+}
+
+version = '1.0.0'
+
+dependencies {
+  toolCompile project(':lib')
+}
+
+tasks.register('runTool', JavaExec) {
+  dependsOn(tasks.named('classes'))
+  classpath += configurations.toolCompile
+  classpath += sourceSets.main.output.classesDirs
+  mainClass = 'example.app.App'
+}

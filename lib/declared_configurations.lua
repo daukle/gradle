@@ -28,7 +28,8 @@ local function size(map)
   return count
 end
 
-local function is_modelled(name)
+--- Whether Gradle or this toolchain provides `name`, so no project declares it.
+function declared_configurations.is_provided(name)
   if GRADLE_OWN[name] then return true end
   for _, row in ipairs(configurations.all) do
     if row.render == name then return true end
@@ -98,7 +99,7 @@ local function checked_one(name, block, label, modules)
   if type(name) ~= "string" or string.match(name, NAME_PATTERN) == nil then
     error('"' .. label .. '" is not a configuration name: letters, digits and underscores only', 0)
   end
-  if is_modelled(name) then
+  if declared_configurations.is_provided(name) then
     error('"' .. label .. '" is a configuration Gradle or this toolchain already provides, so it'
           .. ' cannot be declared again', 0)
   end

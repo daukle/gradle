@@ -1,0 +1,7 @@
+[[toolchains.gradle.modules.c.declaredConfigurations.js.requires]]
+module = "p"
+configuration = "js"
+
+[toolchains.gradle.modules.c.declaredConfigurations.teavm]
+extendsFrom = ["compileClasspath"]
+requires = ["impl"]

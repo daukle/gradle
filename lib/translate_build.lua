@@ -265,6 +265,19 @@ function translate_build.build(model, included_models, options)
   return result
 end
 
+--- The config block a place names, a module's created when it has none yet.
+---
+--- @param place { build = <an included build's directory> } or { module = <name> } or { root = true }
+function translate_build.block_at(config, place)
+  if place.build ~= nil then return config.builds[place.build] end
+  if place.module ~= nil then
+    config.modules = config.modules or {}
+    config.modules[place.module] = config.modules[place.module] or {}
+    return config.modules[place.module]
+  end
+  return config
+end
+
 --- Sets the `verbatim` key of one project in a translated config.
 ---
 --- @param place { build = <an included build's directory> } or { module = <name> } or { root = true }
