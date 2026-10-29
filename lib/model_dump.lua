@@ -421,6 +421,7 @@ def declaredRows = { configurations ->
       if (dependency instanceof org.gradle.api.artifacts.ProjectDependency) {
         row.kind = 'project'
         row.project = dependency.hasProperty('path') ? dependency.path : dependency.dependencyProject.path
+        row.targetConfiguration = dependency.targetConfiguration
       } else if (dependency instanceof org.gradle.api.artifacts.ExternalModuleDependency) {
         row.kind = 'module'
         row.group = dependency.group
@@ -466,6 +467,25 @@ def impliedLauncherInto = { project, List resolved, List errors ->
   launcher.transitive = false
   try { resolved.addAll(resolvedRows(launcher).collect { row -> row.configuration = IMPLIED_LAUNCHER; row }) }
   catch (Throwable failure) { errors << [configuration: IMPLIED_LAUNCHER, error: failure.toString()] }
+}
+
+/**
+ * Each configuration's name and shape, which is how the migrator tells one a build declares from one a
+ * plugin creates: the generated build lacks it (spec D-203).
+ */
+def artifactTasksOf = { configuration ->
+  configuration.artifacts.collectMany { artifact ->
+    try { artifact.buildDependencies.getDependencies(null)*.name } catch (Throwable ignored) { ['$unknown'] }
+  }.unique().sort()
+}
+
+def configurationsOf = { project ->
+  project.configurations.collect { configuration ->
+    [name: configuration.name, extendsFrom: configuration.extendsFrom*.name.sort(),
+     canBeResolved: configuration.canBeResolved, canBeConsumed: configuration.canBeConsumed,
+     transitive: configuration.transitive, artifactTasks: safely { artifactTasksOf(configuration) },
+     attributes: configuration.attributes.keySet()*.name.sort()]
+  }
 }
 
 def dependenciesOf = { project ->
@@ -710,7 +730,7 @@ def projectOf = { File base, project ->
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
    dependencies: dependenciesOf(project), tasks: tasksOf(base, project),
-   catalogs: catalogNamesOf(project),
+   catalogs: catalogNamesOf(project), configurations: configurationsOf(project),
    script: scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile, false)]
 }
 

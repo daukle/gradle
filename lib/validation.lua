@@ -10,6 +10,7 @@ local carried = daukle.require("lib/carried")
 local catalogs = daukle.require("lib/catalogs")
 local verbatim = daukle.require("lib/verbatim")
 local tables = daukle.require("lib/tables")
+local declared_configurations = daukle.require("lib/declared_configurations")
 
 local DEFAULT_JDK = "17"
 
@@ -103,6 +104,8 @@ local entries_of_configurations = configurations.entries_of
 local function checked_modules(config, declared, read)
   local blocks = module_graph.blocks_of(config, declared)
   local project_wide = configurations.named(config, "")
+  local names = {}
+  for index = 1, #declared do names[index] = declared[index].name end
   local checked = {}
   for index = 1, #declared do
     local name = declared[index].name
@@ -119,6 +122,7 @@ local function checked_modules(config, declared, read)
       named = configurations.overridden(project_wide, configurations.named(block, scope)),
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
+      declared_configurations = declared_configurations.read(block, scope, names),
       verbatim = verbatim.checked(block.verbatim, scope .. "verbatim"),
     }
   end
@@ -153,6 +157,7 @@ local function checked_builds(context, config)
       release = string_key(build.block, "release", release, scope .. "release"),
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
+      declared_configurations = declared_configurations.read(build.block, scope, {}),
       verbatim = verbatim.checked(build.block.verbatim, scope .. "verbatim"),
       settings_verbatim = checked_included_settings(build.block.settingsVerbatim, scope .. "settingsVerbatim"),
       catalogs = catalogs.checked(build.block.catalogs, scope .. "catalogs",
@@ -406,6 +411,7 @@ local function validated(context, config)
                                      checked_modules(config, declared, record.read))
   entries_of_configurations(config, "")
   configurations.named(config, "")
+  declared_configurations.read(config, "", {})
   module_graph.project_options(config)
   checked_plugin_set(config, "plugins", "pluginClasspath", record.owners)
   checked_plugin_set(config, "settingsPlugins", "settingsPluginClasspath", record.owners)

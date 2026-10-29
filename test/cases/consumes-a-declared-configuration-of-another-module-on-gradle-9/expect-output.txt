@@ -1,0 +1,2 @@
+JS=[p-1.0.0.jar]
+TEAVM extends [compileClasspath]
