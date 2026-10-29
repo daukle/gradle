@@ -6,6 +6,12 @@ function tables.append(target, source)
   return target
 end
 
+function tables.shallow_copy(map)
+  local copy = {}
+  for key, value in pairs(map) do copy[key] = value end
+  return copy
+end
+
 --- @implNote compared as text, because a model table can mix string and number keys.
 function tables.sorted_keys(map)
   local keys = {}

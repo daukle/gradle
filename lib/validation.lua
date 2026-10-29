@@ -9,6 +9,7 @@ local extensions = daukle.require("lib/extensions")
 local carried = daukle.require("lib/carried")
 local catalogs = daukle.require("lib/catalogs")
 local verbatim = daukle.require("lib/verbatim")
+local tables = daukle.require("lib/tables")
 
 local DEFAULT_JDK = "17"
 
@@ -259,11 +260,9 @@ local function unpinned_plugin_version(plugins, pins, plugins_key, classpath_key
     end
     if not pinned then
       return '"' .. plugins_key .. '[' .. index .. ']" applies ' .. plugins[index].id .. " "
-             .. version .. ', and no entry in "' .. classpath_key .. '" names that version.'
-             .. ' This check runs on every command, so "maven:resolve" cannot fix it in place:'
-             .. ' remove this entry,'
-             .. " resolve the marker at that version, then put it back. Or correct the version"
-             .. " here"
+             .. version .. ', and no entry in "' .. classpath_key .. '" names that version:'
+             .. ' run "daukle maven:resolve --resolve" with the marker at that version, which this'
+             .. " check lets through (daukle 0.16.0 or newer). Or correct the version here"
     end
   end
   return nil
@@ -273,9 +272,9 @@ end
 local function plugin_set_problem(plugins, jars, config, plugins_key, classpath_key)
   if #plugins > 0 and #jars == 0 then
     return '"' .. plugins_key .. '" names ' .. #plugins .. ' plugin(s) and "' .. classpath_key
-           .. '" is empty: a plugin is applied from a jar daukle pinned. This check runs on every'
-           .. ' command, so "maven:resolve" cannot fix it in place: resolve the marker with no "'
-           .. plugins_key .. '" block in the manifest, then add the block'
+           .. '" is empty: a plugin is applied from a jar daukle pinned. Run "daukle maven:resolve'
+           .. ' --resolve" to pin it; a resolve run is the one command this check lets through'
+           .. ' (daukle 0.16.0 or newer)'
   end
   return unpinned_plugin_version(config[plugins_key] or {}, jars, plugins_key, classpath_key)
 end
@@ -304,6 +303,37 @@ local function plugin_set_problem_of(config, plugins_key, classpath_key, owners)
 end
 
 local CONFIGURE_KEYS = { "settingsConfigure", "configure" }
+local PLUGIN_SETS = { { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }
+
+--- Whether a well-formed plugin list is refused only because its pins are
+--- missing: an empty classpath, or a version no pinned entry carries.
+local function lacks_only_its_pins(config, plugins_key, classpath_key, owners)
+  if plugins_problem(config[plugins_key], plugins_key, owners) ~= nil then return false end
+  if configurations.entries_problem(config[classpath_key], classpath_key) ~= nil then return false end
+  local _, _, _, problem = read_plugin_set(config, plugins_key, classpath_key, owners)
+  return problem ~= nil
+end
+
+--- The config `generate` renders: in a `--resolve` run, without a plugin list
+--- whose pins are missing, so the resolve that writes them is not refused by
+--- their absence (D-202). Every other run, and every task, still refuses.
+---
+--- @implNote nothing is printed, because generate has no output channel; the
+--- first Gradle task or ordinary command after a resolve that left the pins
+--- missing refuses with the usual message.
+local function generated_config(context, config)
+  if context.resolving ~= true then return config end
+  local _, read = checked_builds(context, config)
+  local owners = builds.owners(read)
+  local relaxed
+  for _, keys in ipairs(PLUGIN_SETS) do
+    if lacks_only_its_pins(config, keys[1], keys[2], owners) then
+      relaxed = relaxed or tables.shallow_copy(config)
+      relaxed[keys[1]] = nil
+    end
+  end
+  return relaxed or config
+end
 
 --- What `validated` would refuse in the plugin lists, their classpaths and the
 --- configure trees, as reasons, for a caller that reports a refusal instead of
@@ -312,7 +342,7 @@ local function plugin_set_problems(context, config)
   local _, read = checked_builds(context, config)
   local owners = builds.owners(read)
   local problems = {}
-  for _, keys in ipairs({ { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }) do
+  for _, keys in ipairs(PLUGIN_SETS) do
     local problem = plugin_set_problem_of(config, keys[1], keys[2], owners)
     if problem ~= nil then problems[#problems + 1] = problem end
   end
@@ -403,6 +433,7 @@ end
 return {
   MANIFEST = MANIFEST,
   config_of = config_of,
+  generated_config = generated_config,
   gradle_version_of = gradle_version_of,
   jdk_version_of = jdk_version_of,
   jdk_for = jdk_for,

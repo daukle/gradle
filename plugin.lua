@@ -75,7 +75,7 @@ local REPORT_FILE = carried.DISCOVERY_REPORT
 daukle.toolchain{
   name = "gradle",
   generate = function(context)
-    local config = validation.config_of(context)
+    local config = validation.generated_config(context, validation.config_of(context))
     validation.validated(context, config)
     return writer.generated_files(context, config)
   end,
