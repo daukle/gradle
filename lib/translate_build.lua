@@ -286,4 +286,15 @@ function translate_build.set_verbatim(config, place, dsl, text)
   return true
 end
 
+--- Sets a build's carried settings code: the main build's, or an included build's.
+--- @param place { root = true } or { build = <the included build's directory> }
+function translate_build.set_settings_verbatim(config, place, dsl, text)
+  local value = { [dsl] = text }
+  if place.build ~= nil then
+    config.builds[place.build].settingsVerbatim = value
+  else
+    config.settingsVerbatim = value
+  end
+end
+
 return translate_build

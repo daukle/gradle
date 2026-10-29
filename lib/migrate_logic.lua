@@ -60,6 +60,36 @@ local function script_actions(project)
   return actions
 end
 
+local function is_compiled_from(action, script_path)
+  return action.sourceFile ~= nil and is_build_script(action.sourceFile, script_path)
+end
+
+--- The actions not compiled from the build's settings script, which the
+--- settings selection carries instead (spec D-187, 4.1).
+--- @param settings_path nil to keep every action
+local function actions_outside(actions, settings_path)
+  if settings_path == nil then return actions end
+  local kept = {}
+  for _, action in ipairs(actions) do
+    if not is_compiled_from(action, settings_path) then kept[#kept + 1] = action end
+  end
+  return kept
+end
+
+--- Each task with only the actions compiled from `script_path`, for selecting
+--- over a settings script whose hooks reach every project.
+local function with_actions_from(tasks, script_path)
+  local filtered = {}
+  for _, task in ipairs(tasks) do
+    local actions = {}
+    for _, action in ipairs(task.actions or {}) do
+      if is_compiled_from(action, script_path) then actions[#actions + 1] = action end
+    end
+    filtered[#filtered + 1] = { name = task.name, actions = actions }
+  end
+  return filtered
+end
+
 local function unreadable_class_blocker(action, where)
   return boundary_blocker(action.task, where, "has an action compiled from " .. action.script
     .. " whose class file could not be read, so no statement can be found to carry it")
@@ -68,10 +98,10 @@ end
 --- Rule 1: the statements holding a script-compiled action's last line, the
 --- blockers for an action that no statement of the build script holds, and
 --- the tasks with such an action.
-local function statements_with_actions(script, tasks, where)
+local function statements_with_actions(script, tasks, where, settings_path)
   local seeds, blockers, reported, reported_tasks = {}, {}, {}, {}
   local located, unlocated = {}, {}
-  for _, action in ipairs(script_actions({ tasks = tasks })) do
+  for _, action in ipairs(actions_outside(script_actions({ tasks = tasks }), settings_path)) do
     if action.sourceFile == nil then
       unlocated[action.task] = true
       if not reported_tasks[action.task] then
@@ -246,14 +276,15 @@ end
 
 --- @param project a dumped project: its `script` and its tasks' `actions`
 --- @param missing_task_names the tasks signal 2 found the generated build lacks
+--- @param settings_path the build's settings script, whose actions this leaves to `select_settings`
 --- @return table { carried = statements in source order, blockers = blockers,
 ---         covered = set of the task names the carried statements account for,
 ---         catalogs = the names of the version catalogs a carried statement reads }
-function migrate_logic.select(project, missing_task_names, where)
+function migrate_logic.select(project, missing_task_names, where, settings_path)
   local script = project.script or { path = "", statements = {} }
   if script.unparsed ~= nil then return unparsed_result(project, missing_task_names, where) end
   local statements = script.statements
-  local seeds, blockers, actions = statements_with_actions(script, project.tasks, where)
+  local seeds, blockers, actions = statements_with_actions(script, project.tasks, where, settings_path)
   append_all(seeds, statements_registering(statements, missing_task_names))
   local carried = {}
   for _, seed in ipairs(seeds) do add(carried, seed) end
@@ -266,6 +297,16 @@ function migrate_logic.select(project, missing_task_names, where)
   local selected = in_source_order(statements, carried)
   return { carried = selected, blockers = blockers, covered = covered_tasks(registered, actions, missing_task_names),
            catalogs = catalogs_read(selected, project.catalogs) }
+end
+
+--- The rules of `select` over a parsed settings script, whose hooks reach
+--- every project of its build (spec D-187, 4.1).
+--- @param selectable the statements that may be carried: no declaration, which the render already writes
+--- @param tasks every task of every project of the build
+function migrate_logic.select_settings(script, selectable, tasks, missing_task_names, where)
+  local project = { script = { path = script.path, statements = selectable },
+                    tasks = with_actions_from(tasks, script.path) }
+  return migrate_logic.select(project, missing_task_names, where)
 end
 
 local function is_import(statement)

@@ -236,7 +236,7 @@ local function project_blockers(built, covered)
   return blockers
 end
 
-local NOTHING_CARRIED = { covered = {}, tasks = {}, statements = {}, blockers = {} }
+local NOTHING_CARRIED = { covered = {}, tasks = {}, statements = {}, translated = {}, blockers = {} }
 
 --- The generated build's model rendered from the keys alone, which is what
 --- signal 2 and the selection read; or nil and the blockers that stopped it.
@@ -290,6 +290,19 @@ local function dumped_catalogs(model, included)
   return catalogs
 end
 
+--- Each build's settings script and settings extensions as the dump read them,
+--- by "root" or the included build's directory.
+local function dumped_settings(model, included)
+  local function of(build_model)
+    return { script = build_model.settingsScript, extensions = build_model.settingsExtensions }
+  end
+  local settings = { root = of(model) }
+  for _, entry in ipairs(model.includedBuilds or {}) do
+    settings[entry.dir] = of(included[entry.name] or {})
+  end
+  return settings
+end
+
 local function refused(context, refusal)
   return { manifest = { toolchains = { [context.instance] = {} } }, foreign = {}, blockers = { refusal },
            owned = {} }
@@ -321,6 +334,7 @@ local function run(context)
   built.config.version = gradle_version
   built.version = built.version or UNVERSIONED
   built.catalogs = dumped_catalogs(model, included)
+  built.settings = dumped_settings(model, included)
   local blockers = built.blockers
   append(blockers, settings_code_blockers(context, model, included, settings))
   local carrying, generated, refusals, generated_models = carry(context, built, blockers)

@@ -82,7 +82,7 @@ local function duplicate_blocker(target, label)
 end
 
 local function new_result()
-  return { covered = {}, tasks = {}, statements = {}, blockers = {} }
+  return { covered = {}, tasks = {}, statements = {}, translated = {}, blockers = {}, missing = {} }
 end
 
 local function is_placed(place)
@@ -160,11 +160,31 @@ local function record_statements(result, carried_statements, label, project)
   end
 end
 
+--- A build's settings script as the dump read it, and its settings extensions,
+--- by "root" or the included build's directory.
+local function settings_of(built, build)
+  return (built.settings or {})[build] or {}
+end
+
+local function parsed_settings_path(built, build)
+  local script = settings_of(built, build).script
+  if script == nil or script.unparsed ~= nil then return nil end
+  return script.path
+end
+
+local function add_missing(result, build, names)
+  local missing = result.missing[build] or {}
+  for _, name in ipairs(names) do missing[name] = true end
+  result.missing[build] = missing
+end
+
 local function carry_target(target, built, result, taken)
   local config = built.config
   local missing = target.counterpart ~= nil
                   and migrate_blockers.missing_task_names(target.project, target.counterpart) or {}
-  local selection = migrate_logic.select(target.project, missing, target.where)
+  add_missing(result, target.build, missing)
+  local selection = migrate_logic.select(target.project, missing, target.where,
+                                         parsed_settings_path(built, target.build))
   append(result.blockers, selection.blockers)
   if #selection.carried == 0 then return end
   local dsl = dsl_of(target.project)
@@ -186,19 +206,113 @@ local function carry_target(target, built, result, taken)
   append(result.tasks, carried_task_paths(target, selection.covered))
 end
 
---- Selects what every project carries, setting its `verbatim` and `catalogs`
---- keys in `built.config`.
+--- Each build of the targets once, with its projects and where its blockers point.
+local function settings_builds(list)
+  local builds, by_name = {}, {}
+  for _, target in ipairs(list) do
+    local build = by_name[target.build]
+    if build == nil then
+      build = { name = target.build, where = target.where, projects = {},
+                place = target.place.build ~= nil and { build = target.place.build } or { root = true } }
+      by_name[target.build] = build
+      builds[#builds + 1] = build
+    end
+    build.projects[#build.projects + 1] = target.project
+  end
+  return builds
+end
+
+local function all_tasks(projects)
+  local tasks = {}
+  for _, project in ipairs(projects) do append(tasks, project.tasks or {}) end
+  return tasks
+end
+
+local function sorted_set(set)
+  local names = {}
+  for name in pairs(set or {}) do names[#names + 1] = name end
+  table.sort(names)
+  return names
+end
+
+local function settings_label(place)
+  if place.build ~= nil then return "builds." .. place.build .. ".settingsVerbatim" end
+  return "settingsVerbatim"
+end
+
+local function shown_settings_path(build, script)
+  if build.place.build == nil then return script.path end
+  return build.place.build .. "/" .. script.path
+end
+
+--- The statements a settings script holds that are code, not declarations.
+local function code_statements(settings)
+  local code = {}
+  for _, statement in ipairs(settings.script.statements or {}) do
+    if not migrate_blockers.is_settings_declaration(statement, settings.extensions) then code[#code + 1] = statement end
+  end
+  return code
+end
+
+local function cover_in_every_project(result, projects, covered)
+  for _, project in ipairs(projects) do
+    local merged = result.covered[project] or {}
+    for name in pairs(covered) do merged[name] = true end
+    result.covered[project] = merged
+  end
+end
+
+local function record_translated(result, build, script, code, carried_statements)
+  local carried_set = {}
+  for _, statement in ipairs(carried_statements) do carried_set[statement.index] = true end
+  for _, statement in ipairs(code) do
+    if not carried_set[statement.index] then
+      result.translated[#result.translated + 1] = { label = shown_settings_path(build, script),
+                                                    line = statement.startLine, build = build.name }
+    end
+  end
+end
+
+--- What a build's settings script carries: the statements `D-165`'s rules
+--- select over every project's tasks, set as its `settingsVerbatim`; every
+--- other code statement is translated, its effect left to the keys (spec D-187, 4.1).
+local function carry_settings(build, built, result)
+  local settings = settings_of(built, build.name)
+  if parsed_settings_path(built, build.name) == nil then return end
+  local code = code_statements(settings)
+  if #code == 0 then return end
+  local tasks = all_tasks(build.projects)
+  local selection = migrate_logic.select_settings(settings.script, code, tasks,
+                                                  sorted_set(result.missing[build.name]), build.where)
+  append(result.blockers, selection.blockers)
+  record_translated(result, build, settings.script, code, selection.carried)
+  if #selection.carried == 0 then return end
+  local dsl = settings.script.dsl or GROOVY
+  translate_build.set_settings_verbatim(built.config, build.place, dsl,
+                                        migrate_logic.text(selection.carried, dsl, settings.script.lineEnding))
+  record_statements(result, selection.carried, settings_label(build.place) .. "." .. dsl, { tasks = tasks })
+  cover_in_every_project(result, build.projects, selection.covered)
+end
+
+--- Selects what every project and every settings script carries, setting the
+--- `verbatim`, `settingsVerbatim` and `catalogs` keys in `built.config`.
 ---
 --- @param built            what `translate_build.build` returned, with `catalogs`: each build's dumped
----                         catalogs, by "root" or the included build's directory
+---                         catalogs, and `settings`: each build's { script, extensions }, both keyed
+---                         by "root" or the included build's directory
 --- @param generated        the generated root build's model, rendered without carried code
 --- @param generated_models the generated included builds' models, by directory
 --- @return { covered = project -> set of task names, tasks = { { build, path, shown } },
----           statements = { { label, line, row } }, blockers }
+---           statements = { { label, line, row } }, translated = { { label, line, build } },
+---           blockers, missing }
 function migrate_carry.select(built, generated, generated_models)
   local result, taken = new_result(), {}
-  for _, target in ipairs(targets(built, generated, generated_models)) do
+  local list = targets(built, generated, generated_models)
+  for _, target in ipairs(list) do
     carry_target(target, built, result, taken)
+  end
+  for _, build in ipairs(settings_builds(list)) do
+    carry_settings(build, built, result)
   end
   return result
 end
