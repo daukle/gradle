@@ -117,10 +117,16 @@ local function edges_left_to_declared(project)
   return elsewhere
 end
 
+local left_by_project = {}
+
 local function is_left_to_declared(project, row)
   local via = row.via or {}
   if #via == 0 then return false end
-  local left = edges_left_to_declared(project)
+  local left = left_by_project[project]
+  if left == nil then
+    left = edges_left_to_declared(project)
+    left_by_project[project] = left
+  end
   for _, edge in ipairs(via) do
     if not left[edge] then return false end
   end
