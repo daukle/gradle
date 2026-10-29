@@ -11,6 +11,7 @@ local carried = daukle.require("lib/carried")
 local catalogs = daukle.require("lib/catalogs")
 local build_file_kotlin = daukle.require("lib/build_file_kotlin")
 local verbatim = daukle.require("lib/verbatim")
+local declared_configurations = daukle.require("lib/declared_configurations")
 
 local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
@@ -148,7 +149,8 @@ local function write_included_builds(checked, named_of, place)
     junit.refuse_a_missing_launcher(test_reachable(build.entries))
     local jars = jars_of(build.entries, {}, named_of(build.named))
     local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
-                      group = (not build.plugin_build) and composite.GROUP or nil }
+                      group = (not build.plugin_build) and composite.GROUP or nil,
+                      declared_configurations = build.declared_configurations }
     if build.verbatim ~= nil or build.settings_verbatim ~= nil then
       write_carrying_included_build(build, at, jars, options, place)
     else
@@ -173,7 +175,8 @@ local function module_options(project_wide, module)
   return extended(project_wide, { main = module.main,
                                   requires = module.requires,
                                   required_builds = module.required_builds,
-                                  source_sets = with_paths(module.source_sets) })
+                                  source_sets = with_paths(module.source_sets),
+                                  declared_configurations = module.declared_configurations })
 end
 
 --- @implNote the root file is written on every multi-project run, carrying only
@@ -343,7 +346,8 @@ local function write_build_file(context, config, options)
     root_options = extended(project_wide,
                             { main = project_options.main,
                               required_builds = composite_record.required,
-                              source_sets = with_paths(source_sets.read(config, nil)) }),
+                              source_sets = with_paths(source_sets.read(config, nil)),
+                              declared_configurations = declared_configurations.read(config, "", {}) }),
     declared = module_graph.declared(context),
   }
   build.modules = #build.declared > 0

@@ -1,0 +1,31 @@
+schema = 1
+project = "example/declared"
+version = "1.0.0"
+
+[modules.lib]
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+# app compiles against lib only through a configuration it declares, and its
+# carried task reads that configuration by name.
+[toolchains.gradle]
+version = "7.6.4"
+
+[toolchains.gradle.modules.app.declaredConfigurations.toolCompile]
+extendedBy = ["compileClasspath"]
+requires = ["lib"]
+
+[toolchains.gradle.modules.app.verbatim]
+groovy = '''
+def runTool = tasks.register('runTool', JavaExec) {
+    dependsOn(tasks.named('classes'))
+    classpath += configurations['toolCompile']
+    classpath += sourceSets.main.output.classesDirs
+    mainClass = 'example.app.App'
+}
+
+tasks.named('jar') { dependsOn(runTool) }
+'''

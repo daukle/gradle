@@ -14,6 +14,7 @@ local extensions = daukle.require("lib/extensions")
 local composite = daukle.require("lib/composite")
 local source_sets = daukle.require("lib/source_sets")
 local carried = daukle.require("lib/carried")
+local declared_configurations = daukle.require("lib/declared_configurations")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -163,6 +164,8 @@ local function render_project(layout, jars, options, depth, prefix)
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
   for _, line in ipairs(source_sets.configurations_block(sets)) do lines[#lines + 1] = line end
+  local declared = options.declared_configurations or {}
+  for _, line in ipairs(declared_configurations.configurations_lines(declared)) do lines[#lines + 1] = line end
   lines[#lines + 1] = "dependencies {"
   for index = 1, #requires do
     lines[#lines + 1] = "  implementation project("
@@ -185,8 +188,12 @@ local function render_project(layout, jars, options, depth, prefix)
     end
   end
   for _, line in ipairs(source_sets.dependency_lines(sets)) do lines[#lines + 1] = line end
+  for _, line in ipairs(declared_configurations.dependency_lines(declared, gradle_path)) do
+    lines[#lines + 1] = line
+  end
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
+  for _, line in ipairs(declared_configurations.artifacts_lines(declared)) do lines[#lines + 1] = line end
 
   if options.release ~= nil or options.sources_jar then
     lines[#lines + 1] = "java {"
