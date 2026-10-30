@@ -20,7 +20,8 @@ local function project_blockers(old, generated, where, comparison)
   local blockers = {}
   append(blockers, migrate_blockers.core_plugins(old, generated, where))
   append(blockers, migrate_blockers.third_party_plugins(old.plugins, generated.plugins, where, ""))
-  append(blockers, migrate_blockers.extension_differences(old.extensions, generated.extensions, where, "configure"))
+  append(blockers, migrate_blockers.extension_differences(old.extensions, generated.extensions, where, "configure",
+                                                          { old = old.buildDir, new = generated.buildDir }))
   append(blockers, migrate_blockers.task_difference(old, generated, where))
   append(blockers, migrate_task_values.differences(old, generated, { where = where, root = comparison.root }))
   append(blockers, migrate_task_values.application(old, generated, where))
