@@ -94,6 +94,19 @@ def safely = { Closure read ->
 
 class WalkBudget { int remaining }
 
+/** Whether `toString` names the object rather than a value: `Object`'s own `<class>@<hash>`, a lambda's too. */
+def isIdentity = { Object value -> value.toString() ==~ /[\w.$\/]+@[0-9a-f]+/ }
+
+/**
+ * A file collection whose files are a value a script can change with `from(...)`. A configuration
+ * is left unrendered, because its contents are dependency rows the classpath comparison reads, and
+ * a source directory set renders its `srcDirs` instead.
+ */
+def isPlainFileCollection = { Object value ->
+  value instanceof org.gradle.api.file.FileCollection && !(value instanceof org.gradle.api.file.SourceDirectorySet) &&
+    !(value instanceof org.gradle.api.artifacts.Configuration)
+}
+
 /**
  * Whether a build script could have assigned the property: a setter, a non-final field, or a lazy
  * Gradle type, which the Groovy DSL assigns through its own setter.
@@ -105,8 +118,8 @@ def isAssignable = { MetaProperty property, Object raw ->
 }
 
 /**
- * The bounded walk of a third-party extension. A list, a map and a file arrive as one-key tables
- * (`$list`, `$map`, `$file`), because JSON cannot tell an empty list from an object nor a path
+ * The bounded walk of a third-party extension. A list, a map, a file and a file collection arrive as
+ * one-key tables (`$list`, `$map`, `$file`, `$files`), because JSON cannot tell an empty list from an object nor a path
  * from a string, and an object names the properties no script can assign in `$readOnly`.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
@@ -124,6 +137,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof Enum) return value.name()
   if (value instanceof File) return ['$file': pathFrom(base, value)]
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
+  if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
       || value instanceof org.gradle.api.file.FileCollection) {
     return plain(base, value)
@@ -141,7 +155,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
     }
     if (value instanceof Map) return ['$map': value.collectEntries { key, item -> [key.toString(), walk(base, item, depth + 1, seen, budget)] }]
     if (value instanceof Iterable) return ['$list': value.collect { walk(base, it, depth + 1, seen, budget) }.findAll { it != null }]
-    if (value.getClass().name.startsWith('java.')) return value.toString()
+    if (value.getClass().name.startsWith('java.')) return isIdentity(value) ? unrendered('identity') : value.toString()
     def out = [:]
     def readOnly = []
     value.metaClass.properties.each { property ->
@@ -155,7 +169,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
         out[name] = unrendered('unreadable: ' + failure.class.simpleName)
       }
     }
-    if (out.isEmpty()) return value.toString()
+    if (out.isEmpty()) return isIdentity(value) ? unrendered('identity') : value.toString()
     if (!readOnly.isEmpty()) out['$readOnly'] = readOnly.sort()
     out
   } finally {

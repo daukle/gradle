@@ -38,7 +38,7 @@ end
 
 local function project_options(model, options, context, where, extra)
   local out = { model = model, dir = options.dir, where = where, includedPluginIds = context.ids,
-                includedPluginBuilds = context.plugin_builds }
+                includedPluginBuilds = context.plugin_builds, extensionDefaults = options.extensionDefaults }
   for key, value in pairs(extra or {}) do out[key] = value end
   return out
 end
@@ -308,7 +308,8 @@ end
 
 --- @param model           the root build's model
 --- @param included_models the included builds' models, by the name `includedBuilds` gives them
---- @param options         { dir = <context.dir>, settings = <the settings file, relative to dir> }
+--- @param options         { dir = <context.dir>, settings = <the settings file, relative to dir>,
+---                          extensionDefaults? = what `extension_defaults.read` returned, or its SKIP }
 --- @return { config = <the [toolchains.gradle] keys>, name, version, modules = <core's [modules]>,
 ---           declared = { { name, requires } }, projects = { { project, where, module? } },
 ---           builds = { { dir, gradle_name, identity, project, where } }, blockers }
