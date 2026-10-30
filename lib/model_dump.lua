@@ -38,7 +38,7 @@ def DENY = ['class', 'convention', 'conventionMapping', 'extensions', 'asDynamic
             'plugins', 'pluginManager', 'conventionWhileDisabledDeprecationLogger', 'taskThatOwnsThisObject',
             'modelIdentityDisplayName', 'publishableArtifacts', 'attributes', 'factoryId', 'xmlAction', 'ant', 'logger',
             'logging', 'state', 'modelRegistry', 'inheritedScope', 'identityPath', 'projectEvaluator', 'instantiator',
-            'dependencyFactory', 'immutable'] as Set
+            'dependencyFactory', 'immutable', 'buildDependencies'] as Set
 def WALK_DEPTH = 5
 def WALK_BUDGET = 2000
 def LIVE_TYPES = [org.gradle.api.Project, org.gradle.api.Task, org.gradle.api.invocation.Gradle,
