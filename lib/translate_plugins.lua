@@ -194,7 +194,7 @@ function configure_tree(state, value, path, surface, default)
   return tree
 end
 
---- One configure block per third-party extension the walk rendered, less what
+--- One configure block per extension the walk rendered, third-party or core, less what
 --- the defaults build holds (lib/extension_defaults); none at all with SKIP.
 --- @implNote an extension whose walk found no public property arrives as its
 --- `toString`, an identity rather than a value: whatever state it holds has an
@@ -207,7 +207,7 @@ local function configure_of(state, extensions, label, surface, defaults)
     local extension = extensions[name]
     local path = label .. "." .. name
     local default = defaults ~= nil and defaults[name] ~= nil and defaults[name].value or nil
-    if extension.core == true or is_plugin_default(extension.value, default) then
+    if (extension.core == true and extension.walked ~= true) or is_plugin_default(extension.value, default) then
       configure[name] = nil
     elseif type(extension.value) == "table" and not is_identity(extension.value) then
       configure[name] = configure_value(state, extension.value, path, false, surface, default)

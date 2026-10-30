@@ -282,8 +282,9 @@ local function difference_blockers(old, new, path, where, why)
   return blockers
 end
 
---- A third-party extension the generated build does not register, or a value
---- of one it does not reproduce: what the configure tree could not carry (a
+--- A walked extension (a third-party one, or a core one the keys do not
+--- model) the generated build does not register, or a value of one it does
+--- not reproduce: what the configure tree could not carry (a
 --- read-only property, a file, a list or a value set through a method),
 --- compared leaf by leaf.
 --- @param label "configure" for a project's extensions, "settingsConfigure" for the settings'
@@ -293,11 +294,12 @@ function migrate_blockers.extension_differences(extensions, generated_extensions
     local extension = extensions[name]
     local path = label .. "." .. name
     local generated = (generated_extensions or {})[name]
-    if extension.core ~= true and generated == nil then
+    local compared = extension.core ~= true or extension.walked == true
+    if compared and generated == nil then
       blockers[#blockers + 1] = blocker(path, where, "is an extension the old build registers and the build"
                                         .. " daukle/gradle generates from the translated keys does not",
                                         UNCOVERED_ROW)
-    elseif extension.core ~= true and type(extension.value) == "table" and not is_unrendered(extension.value) then
+    elseif compared and type(extension.value) == "table" and not is_unrendered(extension.value) then
       append(blockers, difference_blockers(extension.value, generated.value, path, where, DIFFERS
                                            .. ": the old build set it in a way a configure tree does not"
                                            .. " carry (a read-only property, a file, a list or a method call)"))

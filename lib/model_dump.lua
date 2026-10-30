@@ -129,7 +129,7 @@ def isAssignable = { MetaProperty property, Object raw ->
 }
 
 /**
- * The bounded walk of a third-party extension. A list, a map, a file, a file collection and a source
+ * The bounded walk of an extension the keys do not model. A list, a map, a file, a file collection and a source
  * directory set arrive as one-key tables (`$list`, `$map`, `$file`, `$files`, `$sourceDirectories`),
  * because JSON cannot tell an empty list from an object nor a path. `$blocks` names the read-only
  * properties a script can open as a block
@@ -141,6 +141,8 @@ def isAssignable = { MetaProperty property, Object raw ->
  * A name holding `$` is skipped: it is a Kotlin `internal` member's JVM name
  * (`targetFuture$kotlin_gradle_plugin_common`), which no Kotlin DSL script can reach and which
  * led the Kotlin plugin's walk into its whole internal model on brazier, D-207.
+ * A source set arrives as its name: the `sourceSets` reader judges it, and inside an extension it is
+ * a reference (checkstyle's `sourceSets`, D-173).
  */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
@@ -151,6 +153,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof File) return ['$file': pathFrom(base, value)]
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
   if (value instanceof org.gradle.api.file.SourceDirectorySet) return ['$sourceDirectories': sourceDirectories(base, value)]
+  if (value instanceof org.gradle.api.tasks.SourceSet) return value.name
   if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
       || value instanceof org.gradle.api.file.FileCollection) {
@@ -598,6 +601,15 @@ def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtensi
                               gradlePlugin: gradlePluginExtension]
 
 /**
+ * The core extensions with no reader that are not walked: what the plugins every generated build
+ * applies register, which the keys model, and what a plugin that keeps blocking registers. Any other
+ * core extension belongs to a plugin a migration names by id, so it is walked as a third-party one is
+ * (spec D-173).
+ */
+def KEYED_CORE_EXTENSIONS = ['base', 'reporting', 'javaToolchains', 'testing', 'distributions', 'versionCatalogs',
+                             'publishing', 'signing'] as Set
+
+/**
  * The type that decides whether an extension is the build's or Gradle's: for a container (a
  * `project.container(Thing)` or `objects.domainObjectContainer(Thing)`), whose own type is always
  * Gradle's, the type of what it holds, read from the declared type argument, else the container's
@@ -629,7 +641,9 @@ def extensionsOf = { File base, owner ->
     if (extension == null) return [element.name, entry]
     def reader = CORE_EXTENSION_READERS[element.name]
     if (entry.core && reader != null) entry.value = safely { reader(base, extension, owner) }
-    if (!entry.core) entry.value = safely { walk(base, extension, 0, [] as Set, new WalkBudget(remaining: WALK_BUDGET)) }
+    def walked = !entry.core || (reader == null && !KEYED_CORE_EXTENSIONS.contains(element.name))
+    if (entry.core && walked) entry.walked = true
+    if (walked) entry.value = safely { walk(base, extension, 0, [] as Set, new WalkBudget(remaining: WALK_BUDGET)) }
     [element.name, entry]
   }
 }
