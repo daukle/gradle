@@ -1,0 +1,2 @@
+[toolchains.gradle.configure.level]
+label = "set"
