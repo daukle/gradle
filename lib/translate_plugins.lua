@@ -101,7 +101,8 @@ end
 --- applied by one of those in the generated build too or blocks there
 --- (`migrate_blockers.third_party_plugins`). The version is the jar's, which
 --- is the one the pinned url carries.
---- @param takes_core whether the list takes a core id, which only a project's does
+--- @param takes_core whether the list takes a core id: a main-build project's does, and neither an
+---                   included build's block nor the settings list does
 local function plugin_entries(state, plugins, buildscript, takes_core)
   local entries = {}
   for _, plugin in ipairs(plugins or {}) do
@@ -235,7 +236,7 @@ end
 function translate_plugins.project(state, project)
   local buildscript = project.buildscript or {}
   return {
-    plugins = non_empty(plugin_entries(state, project.plugins, buildscript, true)),
+    plugins = non_empty(plugin_entries(state, project.plugins, buildscript, not state.included)),
     pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)),
     configure = configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
                              extension_defaults.project(state.extension_defaults, state.defaults_build, project.path)),

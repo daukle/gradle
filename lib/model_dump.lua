@@ -606,8 +606,8 @@ def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtensi
  * core extension belongs to a plugin a migration names by id, so it is walked as a third-party one is
  * (spec D-173).
  */
-def KEYED_CORE_EXTENSIONS = ['base', 'reporting', 'javaToolchains', 'testing', 'distributions', 'versionCatalogs',
-                             'publishing', 'signing'] as Set
+def KEYED_CORE_EXTENSIONS = ['base', 'defaultArtifacts', 'reporting', 'javaToolchains', 'testing', 'distributions',
+                             'versionCatalogs', 'publishing', 'signing'] as Set
 
 /**
  * The type that decides whether an extension is the build's or Gradle's: for a container (a
