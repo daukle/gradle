@@ -71,6 +71,16 @@ local function union_unpinned(entries)
   return unpinned
 end
 
+--- The components a project's comparison skips: every module no pinned entry
+--- could name, which no generated project holds, and the project edges its
+--- own translation blocked, which another project may hold in both builds.
+local function skipped_for(unpinned, entry)
+  local skipped = {}
+  for component in pairs(unpinned) do skipped[component] = true end
+  for component in pairs(entry.blocked_edges or {}) do skipped[component] = true end
+  return skipped
+end
+
 local function module_names(built)
   local names = {}
   for _, module in ipairs(built.declared or {}) do names[#names + 1] = module.name end
@@ -126,7 +136,10 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
     if counterpart == nil then
       blockers[#blockers + 1] = missing(entry.project.path, entry.where)
     else
-      append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where, comparison))
+      local project_comparison = { identities = comparison.identities, root = comparison.root,
+                                   unpinned = skipped_for(comparison.unpinned, entry) }
+      append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where,
+                                        project_comparison))
     end
   end
   for _, record in ipairs(built.builds) do
@@ -134,7 +147,7 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
     if counterpart == nil then
       blockers[#blockers + 1] = missing(record.dir, record.where)
     else
-      local build_comparison = { identities = comparison.identities, unpinned = record.unpinned,
+      local build_comparison = { identities = comparison.identities, unpinned = skipped_for(record.unpinned, record),
                                  root = migrate_paths.within(dir, record.dir) }
       local old, new = compared_included(built, record, old_root, counterpart)
       append(blockers, project_blockers(old, new, record.where, build_comparison))

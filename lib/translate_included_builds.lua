@@ -130,7 +130,7 @@ local function included_block(entry, model, options, blockers)
   block[GRADLE_PLUGINS] = gradle_plugins_of(project, state)
   append(blockers, state.blockers)
   return { dir = entry.dir, gradle_name = (string.gsub(entry.dir, "/", "-")), project = project, where = where,
-           block = block, jdk = rest.jdk, unpinned = translation.unpinned,
+           block = block, jdk = rest.jdk, unpinned = translation.unpinned, blocked_edges = translation.blocked_edges,
            identity = CURRENT_BUILD .. entry.name }
 end
 
