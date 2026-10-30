@@ -2,6 +2,7 @@ plugins {
   id 'java'
 }
 
-tasks.named('compileJava') {
-  options.release = 11
+java {
+  sourceCompatibility = JavaVersion.VERSION_11
+  targetCompatibility = JavaVersion.VERSION_11
 }

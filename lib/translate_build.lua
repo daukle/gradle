@@ -19,8 +19,12 @@ local split_keys = tables.split_keys
 local within = migrate_paths.within
 local ROOT_PATH = ":"
 
---- The keys that hold one value for every module, so the modules must agree on it.
-local PROJECT_WIDE_KEYS = { "jdk", "release", "sourcesJar", "plugins", "configure" }
+--- The keys that hold one value for every module, so the modules must agree on it:
+--- one JDK runs the whole build.
+local PROJECT_WIDE_KEYS = { "jdk" }
+
+--- Module keys a project-wide value composes with (D-168), hoisted when every module shares it.
+local WHOLE_VALUE_KEYS = { "release", "sourcesJar" }
 
 local function blocker(construct, where, why)
   return migrate_surface.blocker(construct, where, why, migrate_surface.UNCOVERED_ROW)
@@ -118,19 +122,6 @@ local function module_requires(translation, context, where, blockers)
   return requires
 end
 
---- A plugin list as id -> version, because two modules applying the same
---- plugins in another order render the same lines in every module.
-local function plugin_set(plugins)
-  local set = {}
-  for _, entry in ipairs(plugins or {}) do set[entry.id] = entry.version or true end
-  return set
-end
-
-local function agrees(key, left, right)
-  if key == "plugins" then return deep_equal(plugin_set(left), plugin_set(right)) end
-  return deep_equal(left, right)
-end
-
 --- Blocks a project-wide key two modules disagree about, and returns the agreed values.
 local function project_wide(module_results, blockers)
   local agreed = {}
@@ -139,13 +130,88 @@ local function project_wide(module_results, blockers)
     agreed[key] = first.rest[key]
     for index = 2, #module_results do
       local other = module_results[index]
-      if not agrees(key, first.rest[key], other.rest[key]) then
+      if not deep_equal(first.rest[key], other.rest[key]) then
         blockers[#blockers + 1] = blocker(key, other.where, "differs between the modules " .. first.name .. " and "
                                           .. other.name .. ", and it is a key every module shares")
       end
     end
   end
   return agreed
+end
+
+local function every_block_agrees(module_results, value_of)
+  local first = value_of(module_results[1].block)
+  for index = 2, #module_results do
+    if not deep_equal(first, value_of(module_results[index].block)) then return false end
+  end
+  return true
+end
+
+local function hoist_whole_values(module_results, config)
+  for _, key in ipairs(WHOLE_VALUE_KEYS) do
+    if every_block_agrees(module_results, function(block) return block[key] end) then
+      config[key] = module_results[1].block[key]
+      for _, result in ipairs(module_results) do result.block[key] = nil end
+    end
+  end
+end
+
+local function same_plugin(left, right)
+  return left ~= nil and right ~= nil and left.id == right.id and left.version == right.version
+end
+
+local function plugins_of(result)
+  return result.block.plugins or {}
+end
+
+local function shared_prefix_length(module_results)
+  local first = plugins_of(module_results[1])
+  for index = 1, #first do
+    for _, result in ipairs(module_results) do
+      if not same_plugin(first[index], plugins_of(result)[index]) then return index - 1 end
+    end
+  end
+  return #first
+end
+
+local function slice(list, from, to)
+  local out = {}
+  for index = from, to do out[#out + 1] = list[index] end
+  return out
+end
+
+--- @implNote a common PREFIX rather than a set: the project-wide plugins render before a module's
+--- own, so only a prefix keeps each module's order of application among its core ids and among its
+--- pinned ones (the render applies core ids before pinned ones either way).
+local function hoist_plugin_prefix(module_results, config)
+  local shared = shared_prefix_length(module_results)
+  if shared == 0 then return end
+  config.plugins = slice(plugins_of(module_results[1]), 1, shared)
+  for _, result in ipairs(module_results) do
+    local own = slice(plugins_of(result), shared + 1, #plugins_of(result))
+    result.block.plugins = #own > 0 and own or nil
+  end
+end
+
+local function hoist_shared_extensions(module_results, config)
+  for name in pairs(module_results[1].block.configure or {}) do
+    if every_block_agrees(module_results, function(block) return (block.configure or {})[name] end) then
+      config.configure = config.configure or {}
+      config.configure[name] = module_results[1].block.configure[name]
+      for _, result in ipairs(module_results) do result.block.configure[name] = nil end
+    end
+  end
+  for _, result in ipairs(module_results) do
+    if result.block.configure ~= nil and next(result.block.configure) == nil then result.block.configure = nil end
+  end
+end
+
+--- Moves into `config` what every module's block shares of the keys a module value composes
+--- with, leaving each block only its own (D-168).
+local function hoist_shared(module_results, config)
+  hoist_whole_values(module_results, config)
+  hoist_plugin_prefix(module_results, config)
+  hoist_shared_extensions(module_results, config)
 end
 
 local function shared_version(module_results, blockers)
@@ -208,7 +274,6 @@ local function translate_modules(model, options, context, blockers)
     projects[#projects + 1] = { project = result.project, where = result.where, module = name,
                                 unpinned = result.unpinned }
     declared[#declared + 1] = { name = name, requires = result.requires }
-    if next(result.block) ~= nil then blocks[name] = result.block end
   end
   if #results == 0 then
     blockers[#blockers + 1] = blocker(ROOT_PATH, project_where(options, model.projects[1]), "has subprojects and"
@@ -216,6 +281,10 @@ local function translate_modules(model, options, context, blockers)
     return { config = {}, name = root_name, projects = projects, declared = {} }
   end
   local config = project_wide(results, blockers)
+  hoist_shared(results, config)
+  for _, result in ipairs(results) do
+    if next(result.block) ~= nil then blocks[result.name] = result.block end
+  end
   if #plugin_classpath > 0 then config.pluginClasspath = plugin_classpath end
   if next(blocks) ~= nil then config.modules = blocks end
   return { config = config, name = root_name, version = shared_version(results, blockers), projects = projects,

@@ -1,0 +1,5 @@
+[toolchains.gradle.modules.app]
+release = "11"
+
+[toolchains.gradle]
+!release =

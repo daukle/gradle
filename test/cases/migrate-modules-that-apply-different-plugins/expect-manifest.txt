@@ -1,0 +1,8 @@
+[[toolchains.gradle.modules.app.plugins]]
+id = "org.barfuin.gradle.taskinfo"
+version = "2.2.0"
+
+[toolchains.gradle.modules.app.configure.taskinfo]
+color = false
+
+![[toolchains.gradle.plugins]]
