@@ -122,6 +122,8 @@ local configure_tree
 --- Whether the plugin's own build holds the same value at the same place, so
 --- the old script did not set it. An unrendered value matches only the same
 --- marker, which says the plugin built the same kind of object there.
+--- @implNote a list is kept or left out whole: subtracting it element by
+--- element leaves a hole, which core refuses as a table with a number key.
 local function is_plugin_default(value, default)
   if default == nil then return false end
   if is_unrendered(value) then return is_unrendered(default) and value["$unrendered"] == default["$unrendered"] end
@@ -160,6 +162,7 @@ local function configure_value(state, value, path, read_only, surface, default)
     end
     return nil
   end
+  if #value > 0 then return configure_tree(state, value, path, surface, nil) end
   return configure_tree(state, value, path, surface, default)
 end
 
