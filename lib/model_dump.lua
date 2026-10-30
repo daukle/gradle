@@ -112,6 +112,9 @@ def isAssignable = { MetaProperty property, Object raw ->
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
  * An enum arrives as its constant's name, the one string Groovy assigns back to it: `JavaVersion`
  * prints as `17`, which a rendered `version = '17'` cannot be converted from.
+ * A name holding `$` is skipped: it is a Kotlin `internal` member's JVM name
+ * (`targetFuture$kotlin_gradle_plugin_common`), which no Kotlin DSL script can reach and which
+ * led the Kotlin plugin's walk into its whole internal model on brazier, D-207.
  */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
@@ -143,7 +146,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
     def readOnly = []
     value.metaClass.properties.each { property ->
       def name = property.name
-      if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__')) return
+      if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__') || name.contains('$')) return
       try {
         def item = property.getProperty(value)
         out[name] = walk(base, item, depth + 1, seen, budget)

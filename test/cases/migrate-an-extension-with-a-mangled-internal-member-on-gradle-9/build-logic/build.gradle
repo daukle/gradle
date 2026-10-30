@@ -1,0 +1,12 @@
+plugins {
+  id 'java-gradle-plugin'
+}
+
+gradlePlugin {
+  plugins {
+    level {
+      id = 'example.level'
+      implementationClass = 'com.example.logic.LevelPlugin'
+    }
+  }
+}
