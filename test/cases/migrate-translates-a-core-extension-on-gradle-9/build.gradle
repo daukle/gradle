@@ -1,0 +1,10 @@
+plugins {
+  id 'java'
+  id 'checkstyle'
+}
+
+version = '1.0.0'
+
+checkstyle {
+  maxWarnings = 0
+}

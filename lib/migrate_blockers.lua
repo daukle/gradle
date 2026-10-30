@@ -6,6 +6,7 @@ local distributions = daukle.require("lib/distributions")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local translation = daukle.require("lib/translation")
 local tables = daukle.require("lib/tables")
+local core_plugins = daukle.require("lib/core_plugins")
 
 local blocker = migrate_surface.blocker
 local append = tables.append
@@ -27,24 +28,7 @@ local CORE_PLUGIN_ROWS = {
   ["org.gradle.java-test-fixtures"] = migrate_surface.TESTING_ROW .. ", `java-test-fixtures`",
 }
 
---- The core plugins the keys imply beyond what the generated build applies:
---- `java-library` renders only when an api key is set, `application` only
---- with a main class, and `distribution` is what `application` applies itself.
-local IMPLIED_CORE_PLUGINS = {
-  ["org.gradle.java"] = true,
-  ["org.gradle.java-library"] = true,
-  ["org.gradle.application"] = true,
-  ["org.gradle.distribution"] = true,
-}
-
---- @implNote a `.kts` build's own script plugins report as core plugins and
---- are the DSL's, not the build's (spec section 5).
-local KOTLIN_SCRIPT_PLUGINS = {
-  ["org.gradle.kotlin.dsl.provider.plugins.KotlinScriptBasePlugin"] = true,
-  ["org.gradle.kotlin.dsl.provider.plugins.KotlinScriptRootPlugin"] = true,
-}
-
---- @implNote the task those plugins register, measured on 7.6.4, 8.13 and 9.6.0;
+--- @implNote the task a `.kts` build's own script plugins register, measured on 7.6.4, 8.13 and 9.6.0;
 --- a Groovy build, the generated one included, never has it.
 local KOTLIN_SCRIPT_TASK_TYPES = {
   ["org.gradle.kotlin.dsl.accessors.tasks.PrintAccessors"] = true,
@@ -190,7 +174,7 @@ end
 
 local function carried_plugins(generated)
   local carried = {}
-  for id in pairs(IMPLIED_CORE_PLUGINS) do carried[id] = true end
+  for id in pairs(core_plugins.IMPLIED) do carried[id] = true end
   for _, plugin in ipairs(generated.plugins or {}) do
     carried[plugin.type] = true
     for _, id in ipairs(plugin.ids or {}) do carried[id] = true end
@@ -199,7 +183,7 @@ local function carried_plugins(generated)
 end
 
 local function is_carried(plugin, carried)
-  if carried[plugin.type] or KOTLIN_SCRIPT_PLUGINS[plugin.type] then return true end
+  if carried[plugin.type] or core_plugins.KOTLIN_SCRIPT[plugin.type] then return true end
   for _, id in ipairs(plugin.ids or {}) do
     if carried[id] then return true end
   end
@@ -298,8 +282,9 @@ local function difference_blockers(old, new, path, where, why)
   return blockers
 end
 
---- A third-party extension the generated build does not register, or a value
---- of one it does not reproduce: what the configure tree could not carry (a
+--- A walked extension (a third-party one, or a core one the keys do not
+--- model) the generated build does not register, or a value of one it does
+--- not reproduce: what the configure tree could not carry (a
 --- read-only property, a file, a list or a value set through a method),
 --- compared leaf by leaf.
 --- @param label "configure" for a project's extensions, "settingsConfigure" for the settings'
@@ -309,11 +294,12 @@ function migrate_blockers.extension_differences(extensions, generated_extensions
     local extension = extensions[name]
     local path = label .. "." .. name
     local generated = (generated_extensions or {})[name]
-    if extension.core ~= true and generated == nil then
+    local compared = extension.core ~= true or extension.walked == true
+    if compared and generated == nil then
       blockers[#blockers + 1] = blocker(path, where, "is an extension the old build registers and the build"
                                         .. " daukle/gradle generates from the translated keys does not",
                                         UNCOVERED_ROW)
-    elseif extension.core ~= true and type(extension.value) == "table" and not is_unrendered(extension.value) then
+    elseif compared and type(extension.value) == "table" and not is_unrendered(extension.value) then
       append(blockers, difference_blockers(extension.value, generated.value, path, where, DIFFERS
                                            .. ": the old build set it in a way a configure tree does not"
                                            .. " carry (a read-only property, a file, a list or a method call)"))
