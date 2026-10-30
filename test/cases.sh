@@ -267,7 +267,7 @@ serve_plugin() {
   server=$!
   trap 'kill "$server" 2>/dev/null || true' EXIT
   port=
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
+  for _ in $(seq 60); do
     [ -s "$port_file" ] && port=$(cat "$port_file") &&
       curl -fsS "http://127.0.0.1:$port/$digest/plugin.lua" -o /dev/null 2>/dev/null && break
     port=

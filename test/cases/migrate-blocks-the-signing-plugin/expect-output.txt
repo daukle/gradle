@@ -1,0 +1,1 @@
+org.gradle.signing: is a core Gradle plugin daukle/gradle does not model, so nothing it configures has a key (surface: GRADLE-SURFACE.md: 4. Packaging and publishing, `signing`)

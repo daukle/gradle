@@ -1,0 +1,6 @@
+[[toolchains.gradle.plugins]]
+id = "checkstyle"
+
+[toolchains.gradle.configure.checkstyle]
+maxWarnings = 0
+!toolVersion =

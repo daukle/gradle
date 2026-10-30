@@ -116,7 +116,8 @@ local function included_block(entry, model, options, blockers)
   if problem ~= nil then return nil, problem end
   local project = model.projects[1]
   local where = within(options.dir, entry.dir .. "/" .. (project.buildFile or "."))
-  local build = { model = model, dir = options.dir, where = where, prefix = entry.dir .. "/", name = entry.dir }
+  local build = { model = model, dir = options.dir, where = where, prefix = entry.dir .. "/", name = entry.dir, included = true,
+                  extensionDefaults = options.extensionDefaults, defaultsBuild = entry.dir }
   local translation = translate_model.project(project, build)
   append(blockers, translation.blockers)
   local block, rest = split_keys(translation.config, builds.KEYS)

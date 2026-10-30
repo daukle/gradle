@@ -26,9 +26,11 @@ end
 function translation.new(build)
   return { model = build.model, dir = build.dir, where = build.where, blockers = {}, blocked = {},
            environment = environment_index(build.model), prefix = build.prefix or "", name = build.name,
+           included = build.included == true,
            included_plugin_ids = build.includedPluginIds or {},
            included_plugin_builds = build.includedPluginBuilds or {},
            inherited_buildscript = build.inheritedBuildscript or {},
+           extension_defaults = build.extensionDefaults, defaults_build = build.defaultsBuild,
            requires = {}, required_builds = {}, unpinned = {} }
 end
 

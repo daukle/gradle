@@ -38,7 +38,7 @@ def DENY = ['class', 'convention', 'conventionMapping', 'extensions', 'asDynamic
             'plugins', 'pluginManager', 'conventionWhileDisabledDeprecationLogger', 'taskThatOwnsThisObject',
             'modelIdentityDisplayName', 'publishableArtifacts', 'attributes', 'factoryId', 'xmlAction', 'ant', 'logger',
             'logging', 'state', 'modelRegistry', 'inheritedScope', 'identityPath', 'projectEvaluator', 'instantiator',
-            'dependencyFactory', 'immutable'] as Set
+            'dependencyFactory', 'immutable', 'buildDependencies'] as Set
 def WALK_DEPTH = 5
 def WALK_BUDGET = 2000
 def LIVE_TYPES = [org.gradle.api.Project, org.gradle.api.Task, org.gradle.api.invocation.Gradle,
@@ -95,6 +95,30 @@ def safely = { Closure read ->
 class WalkBudget { int remaining }
 
 /**
+ * Whether a script can open the property as a block, `name { ... }`: the owner has a method of that
+ * name taking a closure or an action. A read-only property without one is reachable only as a value,
+ * so a configure tree that renders it as a block fails the build (brazier's Kotlin
+ * `languageSettings.compilationCompilerOptions`, D-207).
+ */
+def isConfigurableByBlock = { Object owner, String name ->
+  !owner.metaClass.respondsTo(owner, name, Closure).isEmpty() ||
+    !owner.metaClass.respondsTo(owner, name, org.gradle.api.Action).isEmpty()
+}
+
+/** Whether `toString` names the object rather than a value: `Object`'s own `<class>@<hash>`, a lambda's too. */
+def isIdentity = { Object value -> value.toString() ==~ /[\w.$\/]+@[0-9a-f]+/ }
+
+/**
+ * A file collection whose files are a value a script can change with `from(...)`. A configuration
+ * is left unrendered, because its contents are dependency rows the classpath comparison reads, and
+ * a source directory set renders its `srcDirs` instead.
+ */
+def isPlainFileCollection = { Object value ->
+  value instanceof org.gradle.api.file.FileCollection && !(value instanceof org.gradle.api.file.SourceDirectorySet) &&
+    !(value instanceof org.gradle.api.artifacts.Configuration)
+}
+
+/**
  * Whether a build script could have assigned the property: a setter, a non-final field, or a lazy
  * Gradle type, which the Groovy DSL assigns through its own setter.
  */
@@ -105,13 +129,20 @@ def isAssignable = { MetaProperty property, Object raw ->
 }
 
 /**
- * The bounded walk of a third-party extension. A list, a map and a file arrive as one-key tables
- * (`$list`, `$map`, `$file`), because JSON cannot tell an empty list from an object nor a path
+ * The bounded walk of an extension the keys do not model. A list, a map, a file, a file collection and a source
+ * directory set arrive as one-key tables (`$list`, `$map`, `$file`, `$files`, `$sourceDirectories`),
+ * because JSON cannot tell an empty list from an object nor a path. `$blocks` names the read-only
+ * properties a script can open as a block
  * from a string, and an object names the properties no script can assign in `$readOnly`.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
  * An enum arrives as its constant's name, the one string Groovy assigns back to it: `JavaVersion`
  * prints as `17`, which a rendered `version = '17'` cannot be converted from.
+ * A name holding `$` is skipped: it is a Kotlin `internal` member's JVM name
+ * (`targetFuture$kotlin_gradle_plugin_common`), which no Kotlin DSL script can reach and which
+ * led the Kotlin plugin's walk into its whole internal model on brazier, D-207.
+ * A source set arrives as its name: the `sourceSets` reader judges it, and inside an extension it is
+ * a reference (checkstyle's `sourceSets`, D-173).
  */
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
@@ -121,6 +152,9 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof Enum) return value.name()
   if (value instanceof File) return ['$file': pathFrom(base, value)]
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
+  if (value instanceof org.gradle.api.file.SourceDirectorySet) return ['$sourceDirectories': sourceDirectories(base, value)]
+  if (value instanceof org.gradle.api.tasks.SourceSet) return value.name
+  if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
       || value instanceof org.gradle.api.file.FileCollection) {
     return plain(base, value)
@@ -138,22 +172,27 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
     }
     if (value instanceof Map) return ['$map': value.collectEntries { key, item -> [key.toString(), walk(base, item, depth + 1, seen, budget)] }]
     if (value instanceof Iterable) return ['$list': value.collect { walk(base, it, depth + 1, seen, budget) }.findAll { it != null }]
-    if (value.getClass().name.startsWith('java.')) return value.toString()
+    if (value.getClass().name.startsWith('java.')) return isIdentity(value) ? unrendered('identity') : value.toString()
     def out = [:]
     def readOnly = []
+    def blocks = []
     value.metaClass.properties.each { property ->
       def name = property.name
-      if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__')) return
+      if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__') || name.contains('$')) return
       try {
         def item = property.getProperty(value)
         out[name] = walk(base, item, depth + 1, seen, budget)
-        if (!isAssignable(property, item)) readOnly << name
+        if (!isAssignable(property, item)) {
+          readOnly << name
+          if (isConfigurableByBlock(value, name)) blocks << name
+        }
       } catch (Throwable failure) {
         out[name] = unrendered('unreadable: ' + failure.class.simpleName)
       }
     }
-    if (out.isEmpty()) return value.toString()
+    if (out.isEmpty()) return isIdentity(value) ? unrendered('identity') : value.toString()
     if (!readOnly.isEmpty()) out['$readOnly'] = readOnly.sort()
+    if (!blocks.isEmpty()) out['$blocks'] = blocks.sort()
     out
   } finally {
     seen.remove(identity)
@@ -562,6 +601,15 @@ def CORE_EXTENSION_READERS = [java: javaExtension, sourceSets: sourceSetsExtensi
                               gradlePlugin: gradlePluginExtension]
 
 /**
+ * The core extensions with no reader that are not walked: what the plugins every generated build
+ * applies register, which the keys model, and what a plugin that keeps blocking registers. Any other
+ * core extension belongs to a plugin a migration names by id, so it is walked as a third-party one is
+ * (spec D-173).
+ */
+def KEYED_CORE_EXTENSIONS = ['base', 'defaultArtifacts', 'reporting', 'javaToolchains', 'testing', 'distributions',
+                             'versionCatalogs', 'publishing', 'signing'] as Set
+
+/**
  * The type that decides whether an extension is the build's or Gradle's: for a container (a
  * `project.container(Thing)` or `objects.domainObjectContainer(Thing)`), whose own type is always
  * Gradle's, the type of what it holds, read from the declared type argument, else the container's
@@ -593,7 +641,9 @@ def extensionsOf = { File base, owner ->
     if (extension == null) return [element.name, entry]
     def reader = CORE_EXTENSION_READERS[element.name]
     if (entry.core && reader != null) entry.value = safely { reader(base, extension, owner) }
-    if (!entry.core) entry.value = safely { walk(base, extension, 0, [] as Set, new WalkBudget(remaining: WALK_BUDGET)) }
+    def walked = !entry.core || (reader == null && !KEYED_CORE_EXTENSIONS.contains(element.name))
+    if (entry.core && walked) entry.walked = true
+    if (walked) entry.value = safely { walk(base, extension, 0, [] as Set, new WalkBudget(remaining: WALK_BUDGET)) }
     [element.name, entry]
   }
 }
