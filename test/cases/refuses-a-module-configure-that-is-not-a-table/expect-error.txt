@@ -1,0 +1,1 @@
+"modules.alpha.configure" must be a table of extension blocks, not a string

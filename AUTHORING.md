@@ -67,7 +67,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 | `declaredConfigurations` | a configuration the project declares itself, `declaredConfigurations.<name>`, created before `verbatim` runs so carried code can name it: `extendsFrom` and `extendedBy` (configurations of the same project, `extendedBy` being `<other>.extendsFrom(<name>)`), `requires` (module names, or `{ module, configuration }` for a producer's own configuration), `artifacts` (tasks the render registers, such as `jar`), and `canBeResolved`, `canBeConsumed`, `transitive`. External coordinates in it are pinned under `configurations.<name>`. A name Gradle or this toolchain provides is refused. `daukle migrate` writes it for every configuration the old build has and the keys alone do not give |
 | `settingsPlugins`, `settingsPluginClasspath`, `settingsConfigure` | the same three for `Settings` rather than for a project: plugins applied in the settings phase, the pinned jars they come from, and their extension blocks. See **Settings plugins** below |
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
-| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds`, `sourceSets`, `declaredConfigurations` and **every dependency configuration key above**, and when the project declares modules these are REFUSED project-wide rather than applied to all of them, except `configurations`, which is project-wide and rendered into every module. **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
+| `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds`, `sourceSets`, `declaredConfigurations`, `plugins`, `configure`, `release`, `sourcesJar`, `verbatim` and **every dependency configuration key above**; any other key is refused by name. When the project declares modules these are REFUSED project-wide rather than applied to all of them, except `configurations` and the four that compose (**Per-module plugins** below). **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
 | `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
 | `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
 
@@ -535,6 +535,26 @@ duplication costs a reader nothing, because the renderer is the only writer, and
 configuration mechanism to learn. `allprojects {}` would also reach the root project, which has no
 sources and would gain a Java plugin and a source set for them.
 
+### Per-module plugins, configure, release and sourcesJar
+
+A project-wide value renders into every module and never the root, which is Gradle's
+`subprojects {}`; a module block's value is what that project's own script adds (`D-168`,
+`docs/superpowers/specs/2026-10-30-gradle-per-module-plugins-design.md`):
+
+- **`plugins`**: the project-wide list, then the module's. **An id in both is refused**, naming both,
+  because the two entries can carry different versions. A module cannot remove a project-wide
+  plugin; a plugin some modules lack is listed per module.
+- **`configure`**: the project-wide blocks render first, then the module's. One extension in both
+  is legal and Gradle applies both, the later assignment winning (measured on 9.6.0).
+- **`release`, `sourcesJar`**: the module's, else the project-wide one; `sourcesJar = false` turns it
+  off for one module. `gradle:sources-jar` runs when any module asks for it.
+- **`pluginClasspath` stays project-wide** and is refused in a module: the root build file holds it
+  and every module's classloader inherits it. A module's plugin versions are checked against it, and
+  a `--resolve` run lets a module list whose pins are missing through, as it does the project-wide one.
+
+**Before this, a module's `plugins` was read by nothing and rendered nothing, at exit 0**, which is
+why an unknown module key is now refused by name rather than ignored.
+
 **The root build file exists to hold the buildscript classpath, and it is written on every run.**
 It was conditional first, and the measurement that changed it was the migration this feature
 invites: a single-project project already built once has a full build file at that path, and adding
@@ -883,6 +903,12 @@ options, filters, `jvmArgs`, `systemProperties`, `testClassesDirs`, `failFast` a
 or `workingDir`, so a registration setting one of those translates without it. The same holds for
 every task the migration translates by its reader (`D-200`).
 
+**Modules that differ** (`D-168`). `release` and `sourcesJar` go project-wide when every module
+agrees and per module otherwise; `plugins` puts the modules' longest common PREFIX project-wide and
+the rest per module, a prefix because the project-wide plugins render first and only a prefix keeps
+each module's order of application; `configure` puts an extension project-wide when its block is
+equal in every module. `jdk` still blocks when the modules disagree: one JDK runs the build.
+
 ### Gradle code written by hand: `verbatim` and `catalogs`
 
 `verbatim` is the escape hatch, and a user may write it by hand at the same three places, in either
@@ -1052,8 +1078,6 @@ direction); map keys in `configure` and `systemProperties` are not redacted; red
 coincidental 8-character environment match; two `Jar` tasks with one archive path fail in the old
 build, loudly. `lib/model_dump.lua` still holds most of the init script; `lib/model_dump_parse.lua`
 and `lib/model_dump_environment.lua` are the fragments split out so far.
-Per-module `release`, `plugins` and `configure` in `modules.<name>` are not carried: a module that
-disagrees with the project-wide value blocks, which will dominate real multi-module builds.
 
 ## Tests
 

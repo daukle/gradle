@@ -133,7 +133,9 @@ between components: `[modules."tools/core"]` is Gradle's `:tools:core`, and a na
 unless it overrides something: its sources default to `<name>/src/main/java` and its tests to
 `<name>/src/test/java`. Once a project declares modules, `main`, a source root and a classpath
 belong to a module and are **refused project-wide**, because applying them to every module at once
-is the silent version. Two modules declaring `main` is refused by name, and so is a `requires`
+is the silent version. `plugins`, `configure`, `release` and `sourcesJar` work in both places: a
+project-wide value reaches every module and a module's own adds to it or overrides it, as Gradle's
+`subprojects {}` and a project's own script do. Two modules declaring `main` is refused by name, and so is a `requires`
 naming no module, two modules requiring each other, or a module requiring itself.
 
 **This needs daukle 0.7.0.** An older daukle does not publish the module list to a plugin at all,

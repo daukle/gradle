@@ -1,0 +1,2 @@
+build/daukle/gradle/beta/build.gradle JavaVersion.toVersion('11')
+build/daukle/gradle/alpha/build.gradle JavaVersion.toVersion('8')

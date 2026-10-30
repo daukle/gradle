@@ -1,0 +1,18 @@
+schema = 1
+project = "example/onesources"
+version = "1.0.0"
+
+[modules.alpha]
+[modules.beta]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+sourcesJar = true
+version = "7.6.4"
+
+[toolchains.gradle.modules.beta]
+release = "11"
+sourcesJar = false

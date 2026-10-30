@@ -127,13 +127,23 @@ gradle_task("test", { "test" })
 gradle_task("jar", { "jar" })
 gradle_task("run", { "daukleRun" })
 
+--- Gradle runs an unqualified `sourcesJar` in every project that has the task,
+--- so one module asking for it is enough (D-168).
+local function asks_for_a_sources_jar(config)
+  if config.sourcesJar == true then return true end
+  for _, block in pairs(type(config.modules) == "table" and config.modules or {}) do
+    if type(block) == "table" and block.sourcesJar == true then return true end
+  end
+  return false
+end
+
 daukle.task{
   name = "gradle:sources-jar",
   run = function(context)
     local config = validation.config_of(context)
-    if config.sourcesJar ~= true then
-      error('"gradle:sources-jar" needs "sourcesJar = true" in [toolchains.gradle], which is'
-            .. ' what gives Gradle a sourcesJar task to run', 0)
+    if not asks_for_a_sources_jar(config) then
+      error('"gradle:sources-jar" needs "sourcesJar = true" in [toolchains.gradle] or in a'
+            .. ' module, which is what gives Gradle a sourcesJar task to run', 0)
     end
     writer.write_build_file(context, config)
     run_gradle(context, config, { "sourcesJar" })

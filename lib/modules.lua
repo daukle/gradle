@@ -289,13 +289,16 @@ end
 local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
   main = true, requiresBuilds = true, sourceSets = true, configurations = true, verbatim = true,
-  declaredConfigurations = true,
+  declaredConfigurations = true, plugins = true, configure = true, release = true, sourcesJar = true,
 }
 
 --- Module keys that stay legal beside declared modules: one pinned closure
 --- serves every module, and a module's own entry replaces it by name; a
---- project-wide `verbatim` is the root project's own.
-local PROJECT_WIDE_KEYS = { configurations = true, verbatim = true }
+--- project-wide `verbatim` is the root project's own; the other four are what
+--- Gradle's `subprojects {}` would hold, and a module's own value composes with
+--- them (D-168).
+local PROJECT_WIDE_KEYS = { configurations = true, verbatim = true, plugins = true, configure = true,
+                            release = true, sourcesJar = true }
 
 for index = 1, #configurations.all do
   MODULE_KEYS[configurations.all[index].key] = true
@@ -324,6 +327,25 @@ function modules.refuse_toolchain_keys_in_core_modules(manifest)
   end
 end
 
+--- Keys a module block may not hold although the top level may, each with why.
+local PROJECT_ONLY_REASONS = {
+  pluginClasspath = '"pluginClasspath" is project-wide: the root build file holds it and every'
+                    .. " module's classloader inherits it",
+}
+
+--- @implNote refused rather than ignored: before D-168 a module's "plugins" was read by nothing
+--- and rendered nothing, at exit 0.
+local function refuse_an_unknown_module_key(name, block)
+  if type(block) ~= "table" then return end
+  for key in pairs(block) do
+    if not MODULE_KEYS[key] then
+      local message = '"modules.' .. name .. '.' .. tostring(key) .. '" is not a key a module takes'
+      local reason = PROJECT_ONLY_REASONS[key]
+      error(message .. (reason ~= nil and (": " .. reason) or ""), 0)
+    end
+  end
+end
+
 --- The toolchain's own per-module blocks, checked against the graph.
 function modules.blocks_of(config, declared)
   local blocks = config.modules
@@ -333,11 +355,12 @@ function modules.blocks_of(config, declared)
   end
   local known = {}
   for index = 1, #declared do known[declared[index].name] = true end
-  for name in pairs(blocks) do
+  for name, block in pairs(blocks) do
     if known[name] == nil then
       error('"modules.' .. tostring(name) .. '" names no module this project declares: a'
             .. ' module is declared in "[modules]" and configured here', 0)
     end
+    refuse_an_unknown_module_key(name, block)
   end
   return blocks
 end

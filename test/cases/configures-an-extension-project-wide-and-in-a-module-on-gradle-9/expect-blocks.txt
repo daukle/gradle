@@ -1,0 +1,13 @@
+build/daukle/gradle/alpha/build.gradle
+taskinfo {
+  color = false
+}
+
+taskinfo {
+  showTaskTypes = true
+}
+--
+build/daukle/gradle/beta/build.gradle
+taskinfo {
+  color = false
+}
