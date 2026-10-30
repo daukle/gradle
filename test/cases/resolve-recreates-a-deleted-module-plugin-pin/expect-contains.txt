@@ -1,0 +1,1 @@
+daukle/maven/classpath.lua gradle-versions-plugin-0.51.0.jar

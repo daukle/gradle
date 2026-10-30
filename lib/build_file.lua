@@ -15,6 +15,7 @@ local composite = daukle.require("lib/composite")
 local source_sets = daukle.require("lib/source_sets")
 local carried = daukle.require("lib/carried")
 local declared_configurations = daukle.require("lib/declared_configurations")
+local tables = daukle.require("lib/tables")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -225,7 +226,8 @@ local function render_project(layout, jars, options, depth, prefix)
     end
   end
 
-  local configuration = build_file.configuration(options.configure, depth)
+  local configuration = tables.joined(build_file.configuration(options.configure, depth),
+                               build_file.configuration(options.module_configure, depth))
   for index = 1, #configuration do
     --[[ One blank line before each top-level block, which is every line this
          returns at indent zero that is not a closing brace. ]]

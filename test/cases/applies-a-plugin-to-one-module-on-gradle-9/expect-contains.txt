@@ -1,0 +1,2 @@
+build/daukle/gradle/alpha/build.gradle apply plugin: 'org.barfuin.gradle.taskinfo'
+build/daukle/gradle/alpha/build.gradle taskinfo {

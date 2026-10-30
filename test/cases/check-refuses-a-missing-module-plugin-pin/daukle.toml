@@ -1,0 +1,28 @@
+schema = 1
+project = "example/greeter"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+maven = { url = "https://github.com/daukle/maven/releases/download/1.7.0/plugin.lua", sha256 = "d3a2342b6c116be914647b9b8ce8d2a757d30b4d34cf21cc1f1403056ccc4501" }
+
+# A versioned plugin whose pin file was deleted: daukle/maven/classpath.lua is
+# absent, so "pluginClasspath" is empty. Every ordinary command refuses that,
+# and a --resolve run must not, or the resolve that recreates the pin is
+# refused by the pin's absence (D-202).
+[toolchains.maven]
+for = "gradle"
+
+[[toolchains.maven.resolve]]
+repository  = "https://plugins.gradle.org/m2"
+into        = "pluginClasspath"
+coordinates = ["com.github.ben-manes:gradle-versions-plugin:0.51.0"]
+
+[toolchains.gradle]
+version = "9.6.0"
+
+[[toolchains.gradle.modules.alpha.plugins]]
+id      = "com.github.ben-manes.versions"
+version = "0.51.0"

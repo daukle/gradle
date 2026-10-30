@@ -1,0 +1,1 @@
+"modules.beta.plugins[1]" applies org.barfuin.gradle.taskinfo 9.9.9, and no entry in "pluginClasspath" names that version
