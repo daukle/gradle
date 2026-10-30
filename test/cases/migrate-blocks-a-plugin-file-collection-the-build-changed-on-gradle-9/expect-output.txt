@@ -1,1 +1,1 @@
-configure.level.inputs: is a file collection the build changed, which a configure tree cannot assign
+configure.level.inputs.1: differs in the build daukle/gradle generates from the translated keys

@@ -1,1 +1,1 @@
-configure.probe.inputs: is a file collection the build changed, which a configure tree cannot assign
+configure.probe: is an extension the old build registers and the build daukle/gradle generates from the translated keys does not

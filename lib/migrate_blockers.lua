@@ -250,14 +250,15 @@ function migrate_blockers.third_party_plugins(plugins, generated_plugins, where,
   return blockers
 end
 
-local READ_ONLY = "$readOnly"
-local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true }
+local METADATA = { ["$readOnly"] = true, ["$blocks"] = true }
+local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true, ["$files"] = true,
+                   ["$sourceDirectories"] = true }
 
 local function union_keys(left, right)
   local seen, keys = {}, {}
   for _, side in ipairs({ left, right }) do
     for key in pairs(side) do
-      if key ~= READ_ONLY and not seen[key] then
+      if not METADATA[key] and not seen[key] then
         seen[key] = true
         keys[#keys + 1] = key
       end

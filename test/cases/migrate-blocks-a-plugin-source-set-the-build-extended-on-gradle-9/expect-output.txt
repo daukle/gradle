@@ -1,0 +1,1 @@
+configure.level.sources.srcDirs.2: differs in the build daukle/gradle generates from the translated keys
