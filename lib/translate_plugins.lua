@@ -12,6 +12,7 @@ local translation_state = daukle.require("lib/translation")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
 local extension_defaults = daukle.require("lib/extension_defaults")
+local core_plugins = daukle.require("lib/core_plugins")
 
 local block = translation_state.block
 local carried = translation_state.carried
@@ -100,10 +101,14 @@ end
 --- applied by one of those in the generated build too or blocks there
 --- (`migrate_blockers.third_party_plugins`). The version is the jar's, which
 --- is the one the pinned url carries.
-local function plugin_entries(state, plugins, buildscript)
+--- @param takes_core whether the list takes a core id, which only a project's does
+local function plugin_entries(state, plugins, buildscript, takes_core)
   local entries = {}
   for _, plugin in ipairs(plugins or {}) do
-    if plugin.core ~= true and plugin.script == nil then
+    local core_id = takes_core and core_plugins.entry_id(plugin) or nil
+    if core_id ~= nil then
+      entries[#entries + 1] = { id = core_id }
+    elseif plugin.core ~= true and plugin.script == nil then
       local included = included_id(state, plugin)
       local entry = included ~= nil and { id = carried(state, included, included) }
                     or pinned_entry(state, plugin, buildscript)
@@ -230,7 +235,7 @@ end
 function translate_plugins.project(state, project)
   local buildscript = project.buildscript or {}
   return {
-    plugins = non_empty(plugin_entries(state, project.plugins, buildscript)),
+    plugins = non_empty(plugin_entries(state, project.plugins, buildscript, true)),
     pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)),
     configure = configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
                              extension_defaults.project(state.extension_defaults, state.defaults_build, project.path)),
@@ -241,7 +246,7 @@ end
 function translate_plugins.settings(state, model)
   local buildscript = model.settingsBuildscript or {}
   return {
-    settingsPlugins = non_empty(plugin_entries(state, model.settingsPlugins, buildscript)),
+    settingsPlugins = non_empty(plugin_entries(state, model.settingsPlugins, buildscript, false)),
     settingsPluginClasspath = non_empty(classpath_of(state, buildscript, "settings buildscript.classpath",
                                                      SETTINGS_PLUGINS_ROW)),
     settingsConfigure = configure_of(state, model.settingsExtensions, "settingsConfigure",
