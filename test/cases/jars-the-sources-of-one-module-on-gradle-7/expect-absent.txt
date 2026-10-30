@@ -1,0 +1,1 @@
+build/daukle/gradle/beta/build/libs/beta-1.0.0-sources.jar

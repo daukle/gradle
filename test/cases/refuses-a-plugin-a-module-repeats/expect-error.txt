@@ -1,0 +1,1 @@
+"modules.alpha.plugins[1]" applies org.barfuin.gradle.taskinfo, which "plugins" already applies to every module

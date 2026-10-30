@@ -12,6 +12,9 @@ local catalogs = daukle.require("lib/catalogs")
 local build_file_kotlin = daukle.require("lib/build_file_kotlin")
 local verbatim = daukle.require("lib/verbatim")
 local declared_configurations = daukle.require("lib/declared_configurations")
+local tables = daukle.require("lib/tables")
+
+local joined = tables.joined
 
 local BUILD_FILE = "build.gradle"
 local SETTINGS_FILE = "settings.gradle"
@@ -171,8 +174,20 @@ local function refuse_a_module_missing_launcher(module)
   junit.refuse_a_missing_launcher(test_reachable(module.entries))
 end
 
-local function module_options(project_wide, module)
-  return extended(project_wide, { main = module.main,
+--- The project-wide options with a module's own composed in, as Gradle composes
+--- `subprojects {}` with a project's own script (D-168): plugins after the
+--- project-wide ones, configure blocks after theirs, release and sourcesJar
+--- already resolved against their project-wide fallback.
+local function module_options(build, module)
+  local project_wide = build.project_wide
+  local own = build.bare and { pinned = {}, included = {}, core = {} } or module.plugins
+  return extended(project_wide, { release = module.release,
+                                  sources_jar = module.sources_jar,
+                                  plugins = joined(project_wide.plugins, own.pinned),
+                                  core_plugins = joined(project_wide.core_plugins, own.core),
+                                  included_plugins = joined(project_wide.included_plugins, own.included),
+                                  module_configure = (not build.bare) and module.configure or nil,
+                                  main = module.main,
                                   requires = module.requires,
                                   required_builds = module.required_builds,
                                   source_sets = with_paths(module.source_sets),
@@ -207,7 +222,7 @@ local function write_today(build)
       path = module.name .. "/" .. BUILD_FILE,
       text = build_file.module(module.name, module.layout,
                                jars_of(module.entries, {}, build.named_of(module.named)),
-                               module_options(build.project_wide, module)),
+                               module_options(build, module)),
     }
   end
 
@@ -246,7 +261,7 @@ local function write_real_tree(build)
   for _, module in ipairs(build.modules) do
     refuse_a_module_missing_launcher(module)
     local jars = jars_of(module.entries, {}, build.named_of(module.named))
-    local options = module_options(build.project_wide, module)
+    local options = module_options(build, module)
     write_carrying_project({ directory = "", name = module.name, verbatim = module.verbatim,
                              render = real_tree_render(module.name, module.name, module.layout,
                                                        jars, options),

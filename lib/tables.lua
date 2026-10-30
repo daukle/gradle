@@ -6,6 +6,11 @@ function tables.append(target, source)
   return target
 end
 
+--- A new list holding `first`'s values then `second`'s; either may be nil.
+function tables.joined(first, second)
+  return tables.append(tables.append({}, first), second)
+end
+
 function tables.shallow_copy(map)
   local copy = {}
   for key, value in pairs(map) do copy[key] = value end

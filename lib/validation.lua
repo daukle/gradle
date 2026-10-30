@@ -95,41 +95,6 @@ end
 local checked_classpath = configurations.checked_entries
 local entries_of_configurations = configurations.entries_of
 
---- Every declared module with its own block read and shape-checked.
----
---- @implNote `validated` runs this and throws the result away, so a module's
---- classpath is refused by `daukle sync` and not only by the task that would
---- have written its file. One function rather than a second loop beside the
---- writer's: two loops over the same blocks would drift.
-local function checked_modules(config, declared, read)
-  local blocks = module_graph.blocks_of(config, declared)
-  local project_wide = configurations.named(config, "")
-  local names = {}
-  for index = 1, #declared do names[index] = declared[index].name end
-  local checked = {}
-  for index = 1, #declared do
-    local name = declared[index].name
-    --[[ A module fault labelled "classpath" would name a key the manifest does
-         not hold and that this plugin refuses project-wide. ]]
-    local scope = "modules." .. name .. "."
-    local block = blocks[name] or {}
-    checked[index] = {
-      name = name,
-      requires = declared[index].requires,
-      layout = module_graph.layout_of(name, block),
-      main = string_key(block, "main", nil, scope .. "main"),
-      entries = entries_of_configurations(block, scope),
-      named = configurations.overridden(project_wide, configurations.named(block, scope)),
-      required_builds = builds.required(block, scope .. "requiresBuilds", read),
-      source_sets = source_sets.read(block, name),
-      declared_configurations = declared_configurations.read(block, scope, names),
-      verbatim = verbatim.checked(block.verbatim, scope .. "verbatim"),
-    }
-  end
-  module_graph.refuse_two_mains(checked)
-  return checked
-end
-
 local function project_name(context)
   local name = context.project or "project"
   return (name:match("([^/]+)$") or name)
@@ -184,11 +149,11 @@ local function is_core_plugin(entry, owners)
          and not is_included_plugin(entry, owners)
 end
 
---- @implNote only the project's `plugins` takes an id with no version and no owner: Gradle
+--- @implNote only a project's `plugins`, its own or a module's, takes an id with no version and no owner: Gradle
 --- resolves it from its own distribution and says so itself when it cannot, so daukle keeps no
 --- list of ids. The settings list has no such form and keeps requiring a version.
 local function takes_core_plugins(key)
-  return key == "plugins"
+  return key == "plugins" or key:sub(-#".plugins") == ".plugins"
 end
 
 local function is_acceptable_plugin(entry, key, owners)
@@ -307,6 +272,91 @@ local function plugin_set_problem_of(config, plugins_key, classpath_key, owners)
   return set_problem
 end
 
+--- An id a module lists that the project-wide list already applies, or nil.
+--- Refused rather than merged: the two entries can carry different versions.
+local function repeated_plugin_problem(project_wide, own, key)
+  local applied = {}
+  for _, entry in ipairs(type(project_wide) == "table" and project_wide or {}) do
+    if type(entry) == "table" and entry.id ~= nil then applied[entry.id] = true end
+  end
+  for index, entry in ipairs(type(own) == "table" and own or {}) do
+    if type(entry) == "table" and applied[entry.id] then
+      return '"' .. key .. '[' .. index .. ']" applies ' .. entry.id .. ', which "plugins" already'
+             .. ' applies to every module: list it in one of the two places'
+    end
+  end
+  return nil
+end
+
+--- A module's plugin list seen as a config of its own, labelled with where it
+--- lives and checked against the project-wide classpath, which every module's
+--- classloader inherits from the root build file (D-168).
+local function module_plugin_view(config, block, scope)
+  local key = scope .. "plugins"
+  return { [key] = block.plugins, pluginClasspath = config.pluginClasspath }, key
+end
+
+local function checked_module_plugins(config, block, scope, owners)
+  local view, key = module_plugin_view(config, block, scope)
+  local pinned, _, included, core = checked_plugin_set(view, key, "pluginClasspath", owners)
+  local repeated = repeated_plugin_problem(config.plugins, block.plugins, key)
+  if repeated ~= nil then error(repeated, 0) end
+  return { pinned = pinned, included = included, core = core }
+end
+
+--- Every module block that is a table, with the scope its keys are labelled by.
+local function module_blocks(config)
+  local found = {}
+  for name, block in pairs(type(config.modules) == "table" and config.modules or {}) do
+    if type(block) == "table" then found[#found + 1] = { name = name, block = block, scope = "modules." .. name .. "." } end
+  end
+  table.sort(found, function(left, right) return left.scope < right.scope end)
+  return found
+end
+
+--- Every declared module with its own block read and shape-checked.
+---
+--- @implNote `validated` runs this and throws the result away, so a module's
+--- classpath is refused by `daukle sync` and not only by the task that would
+--- have written its file. One function rather than a second loop beside the
+--- writer's: two loops over the same blocks would drift.
+local function checked_modules(config, declared, read)
+  local blocks = module_graph.blocks_of(config, declared)
+  local project_wide = configurations.named(config, "")
+  local project_options = module_graph.project_options(config)
+  local owners = builds.owners(read)
+  local names = {}
+  for index = 1, #declared do names[index] = declared[index].name end
+  local checked = {}
+  for index = 1, #declared do
+    local name = declared[index].name
+    --[[ A module fault labelled "classpath" would name a key the manifest does
+         not hold and that this plugin refuses project-wide. ]]
+    local scope = "modules." .. name .. "."
+    local block = blocks[name] or {}
+    checked[index] = {
+      name = name,
+      requires = declared[index].requires,
+      layout = module_graph.layout_of(name, block),
+      main = string_key(block, "main", nil, scope .. "main"),
+      entries = entries_of_configurations(block, scope),
+      named = configurations.overridden(project_wide, configurations.named(block, scope)),
+      required_builds = builds.required(block, scope .. "requiresBuilds", read),
+      source_sets = source_sets.read(block, name),
+      declared_configurations = declared_configurations.read(block, scope, names),
+      verbatim = verbatim.checked(block.verbatim, scope .. "verbatim"),
+      release = string_key(block, "release", project_options.release, scope .. "release"),
+      sources_jar = module_graph.boolean_key(block, "sourcesJar", project_options.sources_jar,
+                                             scope .. "sourcesJar"),
+      plugins = checked_module_plugins(config, block, scope, owners),
+      configure = block.configure,
+    }
+    build_file.configuration(block.configure, nil, scope .. "configure")
+  end
+  module_graph.refuse_two_mains(checked)
+  return checked
+end
+
 local CONFIGURE_KEYS = { "settingsConfigure", "configure" }
 local PLUGIN_SETS = { { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }
 
@@ -337,6 +387,15 @@ local function generated_config(context, config)
       relaxed[keys[1]] = nil
     end
   end
+  for _, module in ipairs(module_blocks(config)) do
+    local view, key = module_plugin_view(config, module.block, module.scope)
+    if lacks_only_its_pins(view, key, "pluginClasspath", owners) then
+      relaxed = relaxed or tables.shallow_copy(config)
+      if relaxed.modules == config.modules then relaxed.modules = tables.shallow_copy(config.modules) end
+      relaxed.modules[module.name] = tables.shallow_copy(module.block)
+      relaxed.modules[module.name].plugins = nil
+    end
+  end
   return relaxed or config
 end
 
@@ -353,6 +412,13 @@ local function plugin_set_problems(context, config)
   end
   for _, key in ipairs(CONFIGURE_KEYS) do
     local problem = extensions.configuration_problem(config[key], key)
+    if problem ~= nil then problems[#problems + 1] = problem end
+  end
+  for _, module in ipairs(module_blocks(config)) do
+    local view, key = module_plugin_view(config, module.block, module.scope)
+    local problem = plugin_set_problem_of(view, key, "pluginClasspath", owners)
+                    or repeated_plugin_problem(config.plugins, module.block.plugins, key)
+                    or extensions.configuration_problem(module.block.configure, module.scope .. "configure")
     if problem ~= nil then problems[#problems + 1] = problem end
   end
   return problems

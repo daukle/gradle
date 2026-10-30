@@ -1,1 +1,0 @@
-core/build.gradle: release: differs between the modules app and core, and it is a key every module shares

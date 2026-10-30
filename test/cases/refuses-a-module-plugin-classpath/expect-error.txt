@@ -1,0 +1,1 @@
+"modules.alpha.pluginClasspath" is not a key a module takes: "pluginClasspath" is project-wide

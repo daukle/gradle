@@ -1,0 +1,1 @@
+build/daukle/gradle/app/build.gradle JavaVersion.toVersion('11')

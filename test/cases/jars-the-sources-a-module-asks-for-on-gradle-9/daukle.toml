@@ -1,0 +1,15 @@
+schema = 1
+project = "example/modulesources"
+version = "1.0.0"
+
+[modules.alpha]
+[modules.beta]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.modules.alpha]
+sourcesJar = true

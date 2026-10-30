@@ -1,0 +1,26 @@
+schema = 1
+project = "example/onemodule"
+version = "1.0.0"
+
+[modules.alpha]
+[modules.beta]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+
+[[toolchains.gradle.pluginClasspath]]
+url = "https://plugins.gradle.org/m2/org/barfuin/gradle/taskinfo/gradle-taskinfo/2.2.0/gradle-taskinfo-2.2.0.jar"
+sha256 = "ebf2dc6a475b8790a0fb0b92f7329c7f3f0012493a16759097a5c86ee28dc60c"
+as = "gradle-taskinfo 2.2.0"
+
+[[toolchains.gradle.modules.alpha.plugins]]
+id = "org.barfuin.gradle.taskinfo"
+version = "2.2.0"
+
+[toolchains.gradle.modules.alpha.configure.taskinfo]
+showTaskTypes = true
+color = false
