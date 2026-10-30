@@ -1,1 +1,1 @@
-configure.probe.inputs: holds a value the model could not render (file collection), so it can be neither carried nor left out
+configure.probe.inputs: is a file collection the build changed, which a configure tree cannot assign

@@ -1,0 +1,8 @@
+plugins {
+  id 'java'
+  id 'example.level'
+}
+
+version = '1.0.0'
+
+level.inputs.from('notes.txt')

@@ -10,6 +10,7 @@ local translate_plugins = {}
 local translation_state = daukle.require("lib/translation")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
+local extension_defaults = daukle.require("lib/extension_defaults")
 
 local block = translation_state.block
 local carried = translation_state.carried
@@ -21,6 +22,7 @@ local UNCOVERED_ROW = migrate_surface.UNCOVERED_ROW
 local SETTINGS_PLUGINS_ROW = migrate_surface.SETTINGS_PLUGINS_ROW
 local READ_ONLY = "$readOnly"
 local FILE = "$file"
+local FILES = "$files"
 local COLLECTIONS = { "$list", "$map" }
 
 --- The keys `daukle/gradle` reads as a marker rather than a block in a
@@ -117,7 +119,26 @@ end
 
 local configure_tree
 
-local function configure_value(state, value, path, read_only, surface)
+--- Whether the plugin's own build holds the same value at the same place, so
+--- the old script did not set it. An unrendered value matches only the same
+--- marker, which says the plugin built the same kind of object there.
+local function is_plugin_default(value, default)
+  if default == nil then return false end
+  if is_unrendered(value) then return is_unrendered(default) and value["$unrendered"] == default["$unrendered"] end
+  return tables.deep_equal(value, default)
+end
+
+local function is_identity(value)
+  return is_unrendered(value) and value["$unrendered"] == "identity"
+end
+
+local function default_at(default, key)
+  if type(default) ~= "table" or is_unrendered(default) then return nil end
+  return default[key]
+end
+
+local function configure_value(state, value, path, read_only, surface, default)
+  if is_plugin_default(value, default) then return nil end
   if type(value) ~= "table" then
     if read_only then return nil end
     return carried(state, value, path)
@@ -128,6 +149,10 @@ local function configure_value(state, value, path, read_only, surface)
     return nil
   end
   if value[FILE] ~= nil then return nil end
+  if value[FILES] ~= nil then
+    block(state, path, "is a file collection the build changed, which a configure tree cannot assign", surface)
+    return nil
+  end
   local collection = collection_of(value)
   if collection ~= nil then
     if not read_only and next(collection) ~= nil then
@@ -135,16 +160,16 @@ local function configure_value(state, value, path, read_only, surface)
     end
     return nil
   end
-  return configure_tree(state, value, path, surface)
+  return configure_tree(state, value, path, surface, default)
 end
 
-function configure_tree(state, value, path, surface)
+function configure_tree(state, value, path, surface, default)
   local read_only = as_set(value[READ_ONLY])
   local tree = {}
   for _, key in ipairs(sorted_keys(value)) do
     if key ~= READ_ONLY then
       local key_path = path .. "." .. key
-      local item = configure_value(state, value[key], key_path, read_only[key], surface)
+      local item = configure_value(state, value[key], key_path, read_only[key], surface, default_at(default, key))
       if item ~= nil and MARKER_KEYS[key] then
         block(state, key_path, "is a property named like a configure marker, which daukle/gradle"
               .. " reads as a marker rather than a value", surface)
@@ -157,18 +182,24 @@ function configure_tree(state, value, path, surface)
   return tree
 end
 
---- One configure block per third-party extension the walk rendered.
+--- One configure block per third-party extension the walk rendered, less what
+--- the defaults build holds (lib/extension_defaults); none at all with SKIP.
 --- @implNote an extension whose walk found no public property arrives as its
 --- `toString`, an identity rather than a value: whatever state it holds has an
 --- unknown origin, so it blocks rather than passing as empty.
-local function configure_of(state, extensions, label, surface)
+--- @param defaults the same build's extensions in the defaults build, SKIP, or nil
+local function configure_of(state, extensions, label, surface, defaults)
+  if defaults == extension_defaults.SKIP then return nil end
   local configure = {}
   for _, name in ipairs(sorted_keys(extensions or {})) do
     local extension = extensions[name]
     local path = label .. "." .. name
-    if extension.core ~= true and type(extension.value) == "table" then
-      configure[name] = configure_value(state, extension.value, path, false, surface)
-    elseif extension.core ~= true and extension.value ~= nil then
+    local default = defaults ~= nil and defaults[name] ~= nil and defaults[name].value or nil
+    if extension.core == true or is_plugin_default(extension.value, default) then
+      configure[name] = nil
+    elseif type(extension.value) == "table" and not is_identity(extension.value) then
+      configure[name] = configure_value(state, extension.value, path, false, surface, default)
+    elseif extension.value ~= nil then
       block(state, path, "is a third-party extension with no public property the model could read, so"
             .. " whatever it holds can be neither carried nor left out", surface)
     end
@@ -194,7 +225,8 @@ function translate_plugins.project(state, project)
   return {
     plugins = non_empty(plugin_entries(state, project.plugins, buildscript)),
     pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)),
-    configure = configure_of(state, project.extensions, "configure", UNCOVERED_ROW),
+    configure = configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
+                             extension_defaults.project(state.extension_defaults, state.defaults_build, project.path)),
   }
 end
 
@@ -206,7 +238,8 @@ function translate_plugins.settings(state, model)
     settingsPluginClasspath = non_empty(classpath_of(state, buildscript, "settings buildscript.classpath",
                                                      SETTINGS_PLUGINS_ROW)),
     settingsConfigure = configure_of(state, model.settingsExtensions, "settingsConfigure",
-                                     SETTINGS_PLUGINS_ROW),
+                                     SETTINGS_PLUGINS_ROW,
+                                     extension_defaults.settings(state.extension_defaults, state.defaults_build)),
   }
 end
 

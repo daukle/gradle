@@ -15,6 +15,7 @@ local tables = daukle.require("lib/tables")
 local carried = daukle.require("lib/carried")
 local migrate_carry = daukle.require("lib/migrate_carry")
 local migrate_declared_configurations = daukle.require("lib/migrate_declared_configurations")
+local extension_defaults = daukle.require("lib/extension_defaults")
 
 local INIT_SCRIPT = carried.MIGRATE_PREFIX .. "model.gradle"
 local MODEL = carried.MIGRATE_PREFIX .. "model.json"
@@ -382,6 +383,33 @@ local function compared_with_fallback(context, model, built, carrying, generated
   return {}, retried, retried_models
 end
 
+--- @param defaults what `extension_defaults.read` returned, its SKIP, or nil
+local function translated(model, included, context, settings, gradle_version, defaults)
+  local built = translate_build.build(model, included, { dir = context.dir, settings = settings,
+                                                         extensionDefaults = defaults })
+  built.config.version = gradle_version
+  built.version = built.version or UNVERSIONED
+  built.catalogs = dumped_catalogs(model, included)
+  built.settings = dumped_settings(model, included)
+  return built
+end
+
+--- What every third-party extension holds when its plugin is applied and
+--- nothing is set: the keys-only build rendered with no `configure` and
+--- dumped. Nil when that build does not configure, so the translation falls
+--- back to carrying every value, and the baseline render reports why.
+local function extension_defaults_of(context, bare, model)
+  local linked = migrate_carry.linked_roots(context, bare)
+  local generated = dump_generated(context, bare, migrate_carry.baseline_config(bare.config, linked),
+                                   bare.projects[1].where, true)
+  if generated == nil then return nil end
+  local real_roots = { root = model.rootDir }
+  for _, record in ipairs(bare.builds) do real_roots[record.dir] = model.rootDir .. "/" .. record.dir end
+  local modules = {}
+  for _, module in ipairs(bare.declared or {}) do modules[#modules + 1] = module.name end
+  return extension_defaults.read(generated, generated_builds(context, bare), real_roots, modules)
+end
+
 local function run(context)
   local distribution = wrapper_distribution(context)
   local refusal = gradle_refusal(context, distribution)
@@ -391,11 +419,9 @@ local function run(context)
   local model = read_model(context)
   local included = included_models(context, model)
   local settings = settings_name(context, model.projects[1])
-  local built = translate_build.build(model, included, { dir = context.dir, settings = settings })
-  built.config.version = gradle_version
-  built.version = built.version or UNVERSIONED
-  built.catalogs = dumped_catalogs(model, included)
-  built.settings = dumped_settings(model, included)
+  local defaults = extension_defaults_of(context, translated(model, included, context, settings, gradle_version,
+                                                             extension_defaults.SKIP), model)
+  local built = translated(model, included, context, settings, gradle_version, defaults)
   local blockers = built.blockers
   append(blockers, settings_code_blockers(context, model, included, settings))
   local carrying, generated, refusals, generated_models = carry(context, built, blockers)
