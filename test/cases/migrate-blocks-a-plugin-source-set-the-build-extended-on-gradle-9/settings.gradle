@@ -2,4 +2,4 @@ pluginManagement {
   includeBuild('build-logic')
 }
 
-rootProject.name = 'extended'
+rootProject.name = 'sourced'

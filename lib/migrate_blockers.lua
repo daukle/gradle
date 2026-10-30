@@ -251,7 +251,8 @@ function migrate_blockers.third_party_plugins(plugins, generated_plugins, where,
 end
 
 local READ_ONLY = "$readOnly"
-local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true }
+local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true, ["$files"] = true,
+                   ["$sourceDirectories"] = true }
 
 local function union_keys(left, right)
   local seen, keys = {}, {}

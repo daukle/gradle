@@ -118,8 +118,9 @@ def isAssignable = { MetaProperty property, Object raw ->
 }
 
 /**
- * The bounded walk of a third-party extension. A list, a map, a file and a file collection arrive as
- * one-key tables (`$list`, `$map`, `$file`, `$files`), because JSON cannot tell an empty list from an object nor a path
+ * The bounded walk of a third-party extension. A list, a map, a file, a file collection and a source
+ * directory set arrive as one-key tables (`$list`, `$map`, `$file`, `$files`, `$sourceDirectories`),
+ * because JSON cannot tell an empty list from an object nor a path
  * from a string, and an object names the properties no script can assign in `$readOnly`.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
@@ -137,6 +138,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof Enum) return value.name()
   if (value instanceof File) return ['$file': pathFrom(base, value)]
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
+  if (value instanceof org.gradle.api.file.SourceDirectorySet) return ['$sourceDirectories': sourceDirectories(base, value)]
   if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
       || value instanceof org.gradle.api.file.FileCollection) {

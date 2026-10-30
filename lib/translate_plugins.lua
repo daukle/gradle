@@ -2,7 +2,8 @@
 --- `plugins`, `pluginClasspath` and `configure`, or their settings twins.
 ---
 --- @implNote a value the configure tree is not given (a read-only property, a
---- file, an empty list or map) is not dropped: `migrate_blockers.extension_differences`
+--- file, a file collection, a source directory set, an empty list or map) is
+--- not dropped: `migrate_blockers.extension_differences`
 --- compares the extension in the generated build with the old one, so such a
 --- value either comes out the same there or blocks.
 local translate_plugins = {}
@@ -23,6 +24,7 @@ local SETTINGS_PLUGINS_ROW = migrate_surface.SETTINGS_PLUGINS_ROW
 local READ_ONLY = "$readOnly"
 local FILE = "$file"
 local FILES = "$files"
+local SOURCE_DIRECTORIES = "$sourceDirectories"
 local COLLECTIONS = { "$list", "$map" }
 
 --- The keys `daukle/gradle` reads as a marker rather than a block in a
@@ -122,8 +124,6 @@ local configure_tree
 --- Whether the plugin's own build holds the same value at the same place, so
 --- the old script did not set it. An unrendered value matches only the same
 --- marker, which says the plugin built the same kind of object there.
---- @implNote a list is kept or left out whole: subtracting it element by
---- element leaves a hole, which core refuses as a table with a number key.
 local function is_plugin_default(value, default)
   if default == nil then return false end
   if is_unrendered(value) then return is_unrendered(default) and value["$unrendered"] == default["$unrendered"] end
@@ -150,11 +150,7 @@ local function configure_value(state, value, path, read_only, surface, default)
           .. "), so it can be neither carried nor left out", surface)
     return nil
   end
-  if value[FILE] ~= nil then return nil end
-  if value[FILES] ~= nil then
-    block(state, path, "is a file collection the build changed, which a configure tree cannot assign", surface)
-    return nil
-  end
+  if value[FILE] ~= nil or value[FILES] ~= nil or value[SOURCE_DIRECTORIES] ~= nil then return nil end
   local collection = collection_of(value)
   if collection ~= nil then
     if not read_only and next(collection) ~= nil then
@@ -162,7 +158,6 @@ local function configure_value(state, value, path, read_only, surface, default)
     end
     return nil
   end
-  if #value > 0 then return configure_tree(state, value, path, surface, nil) end
   return configure_tree(state, value, path, surface, default)
 end
 
