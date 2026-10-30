@@ -22,6 +22,7 @@ local sorted_keys = tables.sorted_keys
 local UNCOVERED_ROW = migrate_surface.UNCOVERED_ROW
 local SETTINGS_PLUGINS_ROW = migrate_surface.SETTINGS_PLUGINS_ROW
 local READ_ONLY = "$readOnly"
+local BLOCKS = "$blocks"
 local FILE = "$file"
 local FILES = "$files"
 local SOURCE_DIRECTORIES = "$sourceDirectories"
@@ -161,11 +162,19 @@ local function configure_value(state, value, path, read_only, surface, default)
   return configure_tree(state, value, path, surface, default)
 end
 
+--- Whether a configure tree can open the key as a block. A read-only object
+--- the owner has no `key { }` method for is reachable only as a value, so it
+--- is left to the comparison (`$blocks`, lib/model_dump.lua).
+local function is_unreachable_block(item, read_only, blocks)
+  return read_only and not blocks and type(item) == "table" and not is_unrendered(item)
+end
+
 function configure_tree(state, value, path, surface, default)
   local read_only = as_set(value[READ_ONLY])
+  local blocks = as_set(value[BLOCKS])
   local tree = {}
   for _, key in ipairs(sorted_keys(value)) do
-    if key ~= READ_ONLY then
+    if key ~= READ_ONLY and key ~= BLOCKS and not is_unreachable_block(value[key], read_only[key], blocks[key]) then
       local key_path = path .. "." .. key
       local item = configure_value(state, value[key], key_path, read_only[key], surface, default_at(default, key))
       if item ~= nil and MARKER_KEYS[key] then

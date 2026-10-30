@@ -94,6 +94,17 @@ def safely = { Closure read ->
 
 class WalkBudget { int remaining }
 
+/**
+ * Whether a script can open the property as a block, `name { ... }`: the owner has a method of that
+ * name taking a closure or an action. A read-only property without one is reachable only as a value,
+ * so a configure tree that renders it as a block fails the build (brazier's Kotlin
+ * `languageSettings.compilationCompilerOptions`, D-207).
+ */
+def isConfigurableByBlock = { Object owner, String name ->
+  !owner.metaClass.respondsTo(owner, name, Closure).isEmpty() ||
+    !owner.metaClass.respondsTo(owner, name, org.gradle.api.Action).isEmpty()
+}
+
 /** Whether `toString` names the object rather than a value: `Object`'s own `<class>@<hash>`, a lambda's too. */
 def isIdentity = { Object value -> value.toString() ==~ /[\w.$\/]+@[0-9a-f]+/ }
 
@@ -120,7 +131,8 @@ def isAssignable = { MetaProperty property, Object raw ->
 /**
  * The bounded walk of a third-party extension. A list, a map, a file, a file collection and a source
  * directory set arrive as one-key tables (`$list`, `$map`, `$file`, `$files`, `$sourceDirectories`),
- * because JSON cannot tell an empty list from an object nor a path
+ * because JSON cannot tell an empty list from an object nor a path. `$blocks` names the read-only
+ * properties a script can open as a block
  * from a string, and an object names the properties no script can assign in `$readOnly`.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
@@ -160,19 +172,24 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
     if (value.getClass().name.startsWith('java.')) return isIdentity(value) ? unrendered('identity') : value.toString()
     def out = [:]
     def readOnly = []
+    def blocks = []
     value.metaClass.properties.each { property ->
       def name = property.name
       if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__') || name.contains('$')) return
       try {
         def item = property.getProperty(value)
         out[name] = walk(base, item, depth + 1, seen, budget)
-        if (!isAssignable(property, item)) readOnly << name
+        if (!isAssignable(property, item)) {
+          readOnly << name
+          if (isConfigurableByBlock(value, name)) blocks << name
+        }
       } catch (Throwable failure) {
         out[name] = unrendered('unreadable: ' + failure.class.simpleName)
       }
     }
     if (out.isEmpty()) return isIdentity(value) ? unrendered('identity') : value.toString()
     if (!readOnly.isEmpty()) out['$readOnly'] = readOnly.sort()
+    if (!blocks.isEmpty()) out['$blocks'] = blocks.sort()
     out
   } finally {
     seen.remove(identity)
