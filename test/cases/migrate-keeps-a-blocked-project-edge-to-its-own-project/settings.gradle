@@ -1,2 +1,2 @@
 rootProject.name = 'tested'
-include 'fixtures', 'app', 'lib'
+include 'base', 'fixtures', 'app', 'lib'

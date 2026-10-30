@@ -1,2 +1,3 @@
 stderr.txt lib/build.gradle: compileClasspath :fixtures:
 stderr.txt lib/build.gradle: runtimeClasspath :fixtures:
+stderr.txt app/build.gradle: testCompileClasspath :base:

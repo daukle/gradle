@@ -44,14 +44,38 @@ local function display(row)
   return row.fileName or row.component
 end
 
+--- The `via` edges of the skipped project rows, in the dump's `project <build> <path>` form.
+local function skipped_edges(rows, skipped)
+  local edges = {}
+  for _, row in ipairs(rows or {}) do
+    if row.kind == "project" and skipped[row.component] then
+      edges["project " .. row.build .. " " .. row.project] = true
+    end
+  end
+  return edges
+end
+
+--- Whether a row is skipped, or reached only through skipped project edges,
+--- whose blocker already names the cause.
+local function is_skipped(row, skipped, edges)
+  if skipped[row.component] then return true end
+  local via = row.via or {}
+  if #via == 0 then return false end
+  for _, edge in ipairs(via) do
+    if not edges[edge] then return false end
+  end
+  return true
+end
+
 --- A configuration's entries as signatures: `display` maps each to how a
 --- blocker names it, `order` lists them by first appearance, `overlaps` to the
 --- digests of the earlier entries holding a class of the same name.
 local function signatures(rows, identity_of, skipped)
   local out = { display = {}, order = {}, overlaps = {} }
+  local edges = skipped_edges(rows, skipped)
   for _, row in ipairs(rows or {}) do
     local key = signature(row, identity_of)
-    if not skipped[row.component] and out.display[key] == nil then
+    if not is_skipped(row, skipped, edges) and out.display[key] == nil then
       out.display[key] = display(row)
       out.order[#out.order + 1] = key
       out.overlaps[key] = row.overlaps
