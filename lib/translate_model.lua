@@ -390,6 +390,7 @@ end
 ---           requires = <the paths of this build's projects its main classpaths hold>,
 ---           requiredBuilds = <the identity paths of the included builds they hold>,
 ---           unpinned = <set of the components no pinned entry could name>,
+---           blocked_edges = <set of the project components this project's own blockers name>,
 ---           blockers = { { construct, where, why, surface? } } }
 function translate_model.project(project, build)
   local translation = translation_state.new(build)
@@ -404,7 +405,8 @@ function translate_model.project(project, build)
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
   return { config = config, name = carried(translation, project.name, "rootProject.name"), version = version,
            requires = sorted_keys(translation.requires), requiredBuilds = sorted_keys(translation.required_builds),
-           unpinned = translation.unpinned, blockers = translation.blockers }
+           unpinned = translation.unpinned, blocked_edges = translation.blocked_edges,
+           blockers = translation.blockers }
 end
 
 --- A project that becomes no module: the root of a multi-project build, or a

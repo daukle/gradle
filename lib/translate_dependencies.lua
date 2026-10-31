@@ -162,7 +162,7 @@ local function record_edge(translation, row)
 end
 
 local function block_edge(translation, row, place)
-  translation.unpinned[row.component] = true
+  translation.blocked_edges[row.component] = true
   block(translation, project_name(row), "is a project dependency of " .. place .. ", and requires and"
         .. " requiresBuilds put a project on main's compile and runtime classpaths only", CONFIGURATIONS_ROW)
 end

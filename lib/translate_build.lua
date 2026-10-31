@@ -51,7 +51,8 @@ local function translate_single(model, options, context, blockers)
   translation.config.requiresBuilds = translate_included_builds.required(translation, context.by_identity, where,
                                                                          blockers)
   return { config = translation.config, name = translation.name, version = translation.version,
-           projects = { { project = root, where = where, unpinned = translation.unpinned } } }
+           projects = { { project = root, where = where, unpinned = translation.unpinned,
+                           blocked_edges = translation.blocked_edges } } }
 end
 
 local function ancestors_buildscript(project, by_path)
@@ -235,7 +236,7 @@ local function translate_module(model, project, name, options, context, blockers
   block.requiresBuilds = translate_included_builds.required(translation, context.by_identity, where, blockers)
   return { name = name, project = project, where = where, block = block, rest = rest, version = translation.version,
            requires = module_requires(translation, context, where, blockers),
-           unpinned = translation.unpinned }
+           unpinned = translation.unpinned, blocked_edges = translation.blocked_edges }
 end
 
 local function translate_parents(model, options, context, names, blockers, plugin_classpath, seen)
@@ -272,7 +273,7 @@ local function translate_modules(model, options, context, blockers)
     union_by_url(plugin_classpath, result.rest.pluginClasspath, seen)
     results[#results + 1] = result
     projects[#projects + 1] = { project = result.project, where = result.where, module = name,
-                                unpinned = result.unpinned }
+                                unpinned = result.unpinned, blocked_edges = result.blocked_edges }
     declared[#declared + 1] = { name = name, requires = result.requires }
   end
   if #results == 0 then

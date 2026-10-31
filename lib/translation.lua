@@ -31,7 +31,7 @@ function translation.new(build)
            included_plugin_builds = build.includedPluginBuilds or {},
            inherited_buildscript = build.inheritedBuildscript or {},
            extension_defaults = build.extensionDefaults, defaults_build = build.defaultsBuild,
-           requires = {}, required_builds = {}, unpinned = {} }
+           requires = {}, required_builds = {}, unpinned = {}, blocked_edges = {} }
 end
 
 function translation.block(state, construct, why, surface)
