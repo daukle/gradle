@@ -1,0 +1,2 @@
+rootProject.name = 'tested'
+include 'base', 'fixtures', 'app', 'lib'

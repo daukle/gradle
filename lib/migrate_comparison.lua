@@ -20,7 +20,8 @@ local function project_blockers(old, generated, where, comparison)
   local blockers = {}
   append(blockers, migrate_blockers.core_plugins(old, generated, where))
   append(blockers, migrate_blockers.third_party_plugins(old.plugins, generated.plugins, where, ""))
-  append(blockers, migrate_blockers.extension_differences(old.extensions, generated.extensions, where, "configure"))
+  append(blockers, migrate_blockers.extension_differences(old.extensions, generated.extensions, where, "configure",
+                                                          { old = old.buildDir, new = generated.buildDir }))
   append(blockers, migrate_blockers.task_difference(old, generated, where))
   append(blockers, migrate_task_values.differences(old, generated, { where = where, root = comparison.root }))
   append(blockers, migrate_task_values.application(old, generated, where))
@@ -69,6 +70,16 @@ local function union_unpinned(entries)
     for component in pairs(entry.unpinned or {}) do unpinned[component] = true end
   end
   return unpinned
+end
+
+--- The components a project's comparison skips: every module no pinned entry
+--- could name, which no generated project holds, and the project edges its
+--- own translation blocked, which another project may hold in both builds.
+local function skipped_for(unpinned, entry)
+  local skipped = {}
+  for component in pairs(unpinned) do skipped[component] = true end
+  for component in pairs(entry.blocked_edges or {}) do skipped[component] = true end
+  return skipped
 end
 
 local function module_names(built)
@@ -126,7 +137,10 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
     if counterpart == nil then
       blockers[#blockers + 1] = missing(entry.project.path, entry.where)
     else
-      append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where, comparison))
+      local project_comparison = { identities = comparison.identities, root = comparison.root,
+                                   unpinned = skipped_for(comparison.unpinned, entry) }
+      append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where,
+                                        project_comparison))
     end
   end
   for _, record in ipairs(built.builds) do
@@ -134,7 +148,7 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
     if counterpart == nil then
       blockers[#blockers + 1] = missing(record.dir, record.where)
     else
-      local build_comparison = { identities = comparison.identities, unpinned = record.unpinned,
+      local build_comparison = { identities = comparison.identities, unpinned = skipped_for(record.unpinned, record),
                                  root = migrate_paths.within(dir, record.dir) }
       local old, new = compared_included(built, record, old_root, counterpart)
       append(blockers, project_blockers(old, new, record.where, build_comparison))

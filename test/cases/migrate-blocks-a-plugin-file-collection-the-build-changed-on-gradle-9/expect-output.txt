@@ -1,1 +1,2 @@
 configure.level.inputs.1: differs in the build daukle/gradle generates from the translated keys
+its entry notes.txt is only in the old build

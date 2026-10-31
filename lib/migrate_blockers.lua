@@ -7,6 +7,7 @@ local migrate_surface = daukle.require("lib/migrate_surface")
 local translation = daukle.require("lib/translation")
 local tables = daukle.require("lib/tables")
 local core_plugins = daukle.require("lib/core_plugins")
+local migrate_file_collections = daukle.require("lib/migrate_file_collections")
 
 local blocker = migrate_surface.blocker
 local append = tables.append
@@ -254,19 +255,27 @@ end
 
 local compare_values
 
-local function compare_tables(old, new, path, differences)
+local function compare_tables(old, new, path, differences, directories)
   for _, key in ipairs(union_keys(old, new)) do
     local key_path = WRAPPERS[key] and path or path .. "." .. key
-    compare_values(old[key], new[key], key_path, differences)
+    compare_values(old[key], new[key], key_path, differences, directories)
   end
 end
 
+local function is_file_collection(value)
+  return type(value) == "table" and type(value["$files"]) == "table"
+end
+
 --- @implNote an unrendered old value is skipped, because its caller reports
---- it by name.
-function compare_values(old, new, path, differences)
+--- it by name; an unrendered new one is one difference, not one per key.
+function compare_values(old, new, path, differences, directories)
   if is_unrendered(old) then return end
-  if type(old) == "table" and type(new) == "table" then
-    compare_tables(old, new, path, differences)
+  if is_unrendered(new) then
+    differences[#differences + 1] = path
+  elseif is_file_collection(old) and is_file_collection(new) then
+    migrate_file_collections.differences(old["$files"], new["$files"], path, directories, differences)
+  elseif type(old) == "table" and type(new) == "table" then
+    compare_tables(old, new, path, differences, directories)
   elseif old ~= new then
     differences[#differences + 1] = path
   end
@@ -274,11 +283,18 @@ end
 
 local DIFFERS = "differs in the build daukle/gradle generates from the translated keys"
 
-local function difference_blockers(old, new, path, where, why)
+local function difference_blockers(old, new, path, where, why, directories)
   local differences = {}
-  compare_values(old, new, path, differences)
+  compare_values(old, new, path, differences, directories or {})
   local blockers = {}
-  for _, difference in ipairs(differences) do blockers[#blockers + 1] = blocker(difference, where, why, UNCOVERED_ROW) end
+  for _, difference in ipairs(differences) do
+    if type(difference) == "table" then
+      blockers[#blockers + 1] = blocker(difference.path, where, why .. "; its entry " .. difference.entry
+                                        .. " is only in " .. difference.side, UNCOVERED_ROW)
+    else
+      blockers[#blockers + 1] = blocker(difference, where, why, UNCOVERED_ROW)
+    end
+  end
   return blockers
 end
 
@@ -287,8 +303,10 @@ end
 --- not reproduce: what the configure tree could not carry (a
 --- read-only property, a file, a list or a value set through a method),
 --- compared leaf by leaf.
---- @param label "configure" for a project's extensions, "settingsConfigure" for the settings'
-function migrate_blockers.extension_differences(extensions, generated_extensions, where, label)
+--- @param label       "configure" for a project's extensions, "settingsConfigure" for the settings'
+--- @param directories { old, new }: each project's build directory, which a file collection's entries are
+---                    compared within (lib/migrate_file_collections); nil for the settings'
+function migrate_blockers.extension_differences(extensions, generated_extensions, where, label, directories)
   local blockers = {}
   for _, name in ipairs(union_keys(extensions or {}, {})) do
     local extension = extensions[name]
@@ -302,7 +320,8 @@ function migrate_blockers.extension_differences(extensions, generated_extensions
     elseif compared and type(extension.value) == "table" and not is_unrendered(extension.value) then
       append(blockers, difference_blockers(extension.value, generated.value, path, where, DIFFERS
                                            .. ": the old build set it in a way a configure tree does not"
-                                           .. " carry (a read-only property, a file, a list or a method call)"))
+                                           .. " carry (a read-only property, a file, a list or a method call)",
+                                           directories))
     end
   end
   return blockers
