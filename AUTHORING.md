@@ -53,6 +53,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 | `testResourceRoot` | defaults to `src/test/resources` |
 | `release` | Java source and target level, e.g. `"8"` |
 | `main` | the class `gradle:run` runs, and the reason `application` is applied |
+| `testFramework` | the framework the `test` task runs: `"junitPlatform"` (the default, `useJUnitPlatform()`), `"junit"` (`useJUnit()`, JUnit 4) or `"testng"` (`useTestNG()`). Project-wide or per module, a module's replacing the project-wide one as `release` does; the migrator reads it off the old `test` task. A test suite (`sourceSets.<name>.test`) stays on the JUnit Platform |
 | `sourcesJar` | `true` renders `java { withSourcesJar() }` into every project file, and `gradle:sources-jar` runs it. The task refuses by name while this is unset, because Gradle has no `sourcesJar` task to run until it is |
 | `sourceSets` | one block per source set, keyed by name: `test`, `sourceRoot`, `resourceRoot`, `classpath`, `compileOnly`, `runtimeOnly`, `annotationProcessor`. With `test = true` the set sees main the way `test` does and gets a `Test` task and a `gradle:<kebab-name>` daukle task. Not Gradle's `testing { suites {} }`, which adds a JUnit dependency no build here can resolve; see **Source sets** below |
 | `classpath`, `testClasspath` | pinned entries, normally written by `daukle/maven`. They render `implementation` and `testImplementation`, and they keep these names rather than the configuration's because they are released |

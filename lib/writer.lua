@@ -193,6 +193,7 @@ local function module_options(build, module)
   local own = build.bare and { pinned = {}, included = {}, core = {} } or module.plugins
   return extended(project_wide, { release = module.release,
                                   sources_jar = module.sources_jar,
+                                  test_framework = module.test_framework,
                                   plugins = joined(project_wide.plugins, own.pinned),
                                   core_plugins = joined(project_wide.core_plugins, own.core),
                                   included_plugins = joined(project_wide.included_plugins, own.included),
@@ -365,6 +366,7 @@ local function write_build_file(context, config, options)
   end
   local project_wide = { release = project_options.release,
                          sources_jar = project_options.sources_jar,
+                         test_framework = project_options.test_framework,
                          version = context.version,
                          plugins = pinned_plugins,
                          core_plugins = core_plugins,

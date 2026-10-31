@@ -4,6 +4,7 @@
 local modules = {}
 
 local configurations = daukle.require("lib/configurations")
+local test_frameworks = daukle.require("lib/test_frameworks")
 
 local function slash_form(name)
   local trimmed = string.gsub(name, "^:", "")
@@ -209,7 +210,8 @@ end
 function modules.project_options(config)
   return { release = modules.string_key(config, "release", nil),
            main = modules.string_key(config, "main", nil),
-           sources_jar = modules.boolean_key(config, "sourcesJar", false) }
+           sources_jar = modules.boolean_key(config, "sourcesJar", false),
+           test_framework = test_frameworks.read(config, test_frameworks.DEFAULT, "testFramework") }
 end
 
 local BUILD_OUTPUT = "buildOutput"
@@ -290,7 +292,7 @@ local MODULE_KEYS = {
   sourceRoot = true, resourceRoot = true, testSourceRoot = true, testResourceRoot = true,
   main = true, requiresBuilds = true, sourceSets = true, configurations = true, verbatim = true,
   declaredConfigurations = true, plugins = true, configure = true, release = true, sourcesJar = true,
-  projectDependencies = true,
+  projectDependencies = true, testFramework = true,
 }
 
 --- Module keys that stay legal beside declared modules: one pinned closure
@@ -299,7 +301,7 @@ local MODULE_KEYS = {
 --- Gradle's `subprojects {}` would hold, and a module's own value composes with
 --- them (D-168).
 local PROJECT_WIDE_KEYS = { configurations = true, verbatim = true, plugins = true, configure = true,
-                            release = true, sourcesJar = true }
+                            release = true, sourcesJar = true, testFramework = true }
 
 for index = 1, #configurations.all do
   MODULE_KEYS[configurations.all[index].key] = true
