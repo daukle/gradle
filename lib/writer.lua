@@ -155,6 +155,7 @@ local function write_included_builds(checked, named_of, place)
     local options = { release = build.release, test_framework = build.test_framework, plugins = {},
                       gradle_plugins = build.gradle_plugins, pinned_modules = pinned_modules.of(build.entries, build.named),
                       group = (not build.plugin_build) and composite.GROUP or nil,
+                      library = not build.plugin_build,
                       declared_configurations = build.declared_configurations }
     if build.verbatim ~= nil or build.settings_verbatim ~= nil then
       write_carrying_included_build(build, at, jars, options, place)

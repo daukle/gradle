@@ -5,13 +5,18 @@ local core_plugins = {}
 local CORE_PREFIX = "org.gradle."
 
 --- The core plugins the keys imply beyond what the generated build applies:
---- `java-library` renders only when an api key is set, `application` only
---- with a main class, and `distribution` is what `application` applies itself.
+--- `application` renders with a main class, and `distribution` and
+--- `distribution-base` are what `application` applies itself.
+---
+--- @implNote not `java-library`: it renders only when an api key is set, and
+--- a library without one exposes its classes directory to a consumer's
+--- compile classpath where `java` exposes its jar, so it is translated as an
+--- id (brazier, 2026-10-31).
 core_plugins.IMPLIED = {
   ["org.gradle.java"] = true,
-  ["org.gradle.java-library"] = true,
   ["org.gradle.application"] = true,
   ["org.gradle.distribution"] = true,
+  ["org.gradle.distribution-base"] = true,
 }
 
 --- @implNote measured in the generated build of every brazier project on
