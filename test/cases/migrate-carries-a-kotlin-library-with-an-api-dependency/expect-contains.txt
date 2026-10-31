@@ -1,0 +1,2 @@
+daukle.toml import java.util.Locale
+daukle.toml tasks.register("stamp") {

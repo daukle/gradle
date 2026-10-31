@@ -92,13 +92,27 @@ local function append_apply_lines(lines, options)
   if #options.plugins > 0 then lines[#lines + 1] = "" end
 end
 
+local function distinct(ids)
+  local seen, out = {}, {}
+  for _, id in ipairs(ids) do
+    if not seen[id] then
+      seen[id] = true
+      out[#out + 1] = id
+    end
+  end
+  return out
+end
+
 --- Every id a project applies, which a Kotlin wrapper names in its own
 --- `plugins {}` so their accessors compile (spec 7.2).
+---
+--- @implNote each id once: a Kotlin `plugins {}` refuses an id requested twice,
+--- and `java-library` can come from the keys and from a translated entry.
 function build_file.plugin_ids(jars, options)
   local ids = block_ids(jars, options)
   for _, id in ipairs(options.core_plugins or {}) do ids[#ids + 1] = id end
   for _, plugin in ipairs(options.plugins) do ids[#ids + 1] = plugin.id end
-  return ids
+  return distinct(ids)
 end
 
 --- @param layout   { main = {java, resources}, test = {java, resources} }
@@ -384,7 +398,7 @@ function build_file.parent_ids(options)
   if options == nil then return {} end
   local ids = tables.joined(options.included_plugins or {}, options.core_plugins or {})
   for _, plugin in ipairs(options.plugins or {}) do ids[#ids + 1] = plugin.id end
-  return ids
+  return distinct(ids)
 end
 
 build_file.ROOT = ROOT
