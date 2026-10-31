@@ -37,14 +37,15 @@ local function counts_of(entries)
   return counts
 end
 
---- Appends `path.<index>` for each entry of `entries` the other side lacks.
-local function append_unmatched(entries, other, path, out)
+--- Appends `{ path = <path>.<index>, entry, side }` for each entry of
+--- `entries` the other side lacks, `entry` as that side's dump wrote it.
+local function append_unmatched(entries, files, other, side, path, out)
   local available = counts_of(other)
   for index, entry in ipairs(entries) do
     if (available[entry] or 0) > 0 then
       available[entry] = available[entry] - 1
     else
-      out[#out + 1] = path .. "." .. index
+      out[#out + 1] = { path = path .. "." .. index, entry = tostring(files[index]), side = side }
     end
   end
 end
@@ -53,8 +54,8 @@ end
 function migrate_file_collections.differences(old_files, new_files, path, directories, out)
   local old = entries_of(old_files, directories.old)
   local new = entries_of(new_files, directories.new)
-  append_unmatched(old, new, path, out)
-  append_unmatched(new, old, path, out)
+  append_unmatched(old, old_files, new, "the old build", path, out)
+  append_unmatched(new, new_files, old, "the build daukle/gradle generates", path, out)
   return out
 end
 

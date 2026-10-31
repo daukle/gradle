@@ -287,7 +287,14 @@ local function difference_blockers(old, new, path, where, why, directories)
   local differences = {}
   compare_values(old, new, path, differences, directories or {})
   local blockers = {}
-  for _, difference in ipairs(differences) do blockers[#blockers + 1] = blocker(difference, where, why, UNCOVERED_ROW) end
+  for _, difference in ipairs(differences) do
+    if type(difference) == "table" then
+      blockers[#blockers + 1] = blocker(difference.path, where, why .. "; its entry " .. difference.entry
+                                        .. " is only in " .. difference.side, UNCOVERED_ROW)
+    else
+      blockers[#blockers + 1] = blocker(difference, where, why, UNCOVERED_ROW)
+    end
+  end
   return blockers
 end
 
