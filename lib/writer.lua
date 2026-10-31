@@ -13,6 +13,7 @@ local build_file_kotlin = daukle.require("lib/build_file_kotlin")
 local verbatim = daukle.require("lib/verbatim")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local tables = daukle.require("lib/tables")
+local pinned_modules = daukle.require("lib/pinned_modules")
 
 local joined = tables.joined
 
@@ -152,7 +153,7 @@ local function write_included_builds(checked, named_of, place)
     junit.refuse_a_missing_launcher(test_reachable(build.entries))
     local jars = jars_of(build.entries, {}, named_of(build.named))
     local options = { release = build.release, test_framework = build.test_framework, plugins = {},
-                      gradle_plugins = build.gradle_plugins,
+                      gradle_plugins = build.gradle_plugins, pinned_modules = pinned_modules.of(build.entries, build.named),
                       group = (not build.plugin_build) and composite.GROUP or nil,
                       declared_configurations = build.declared_configurations }
     if build.verbatim ~= nil or build.settings_verbatim ~= nil then
@@ -204,7 +205,8 @@ local function module_options(build, module)
                                   required_builds = module.required_builds,
                                   source_sets = with_paths(module.source_sets),
                                   declared_configurations = module.declared_configurations,
-                                  project_dependencies = module.project_dependencies })
+                                  project_dependencies = module.project_dependencies,
+                                  pinned_modules = pinned_modules.of(module.entries, module.named) })
 end
 
 --- @implNote the root file is written on every multi-project run, carrying only
@@ -382,7 +384,8 @@ local function write_build_file(context, config, options)
                             { main = project_options.main,
                               required_builds = composite_record.required,
                               source_sets = with_paths(source_sets.read(config, nil)),
-                              declared_configurations = declared_configurations.read(config, "", {}) }),
+                              declared_configurations = declared_configurations.read(config, "", {}),
+                              pinned_modules = pinned_modules.of(entries, configurations.named(config, "")) }),
     declared = module_graph.declared(context),
   }
   build.parents = {}
