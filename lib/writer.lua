@@ -151,7 +151,8 @@ local function write_included_builds(checked, named_of, place)
     local at = composite.path_of(build.name)
     junit.refuse_a_missing_launcher(test_reachable(build.entries))
     local jars = jars_of(build.entries, {}, named_of(build.named))
-    local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
+    local options = { release = build.release, test_framework = build.test_framework, plugins = {},
+                      gradle_plugins = build.gradle_plugins,
                       group = (not build.plugin_build) and composite.GROUP or nil,
                       declared_configurations = build.declared_configurations }
     if build.verbatim ~= nil or build.settings_verbatim ~= nil then

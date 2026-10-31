@@ -123,6 +123,7 @@ local function checked_builds(context, config)
       plugin_build = #build.gradle_plugins > 0, gradle_plugins = build.gradle_plugins,
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
+      test_framework = test_frameworks.read(build.block, test_frameworks.DEFAULT, scope .. "testFramework"),
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
       declared_configurations = declared_configurations.read(build.block, scope, {}),
