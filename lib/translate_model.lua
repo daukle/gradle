@@ -404,16 +404,19 @@ function translate_model.project(project, build)
   copy_into(config, translate_plugins.project(translation, project))
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
   return { config = config, name = carried(translation, project.name, "rootProject.name"), version = version,
+           projectDependencies = translate_dependencies.project_dependencies(project),
            requires = sorted_keys(translation.requires), requiredBuilds = sorted_keys(translation.required_builds),
            unpinned = translation.unpinned, blocked_edges = translation.blocked_edges,
            blockers = translation.blockers }
 end
 
 --- A project that becomes no module: the root of a multi-project build, or a
---- parent directory Gradle made a project of. Only its plugin classpath has a
---- key, the derived root's; everything else it holds is compared with the
---- generated build's project of the same path, which holds nothing.
---- @return { config = { pluginClasspath? }, name = <the project's name>, unpinned, blockers }
+--- parent directory Gradle made a project of. Its plugin classpath is the
+--- derived root's, and its plugins and configure blocks are its `root` or
+--- `parents.<name>` block (lib/parents); everything else it holds is compared
+--- with the generated build's project of the same path.
+--- @return { config = { plugins?, pluginClasspath?, configure? }, name = <the project's name>, unpinned,
+---           blockers }
 function translate_model.parent(project, build)
   local translation = translation_state.new(build)
   block_unresolved(translation, project)
@@ -421,7 +424,7 @@ function translate_model.parent(project, build)
     block(translation, project.path, "applies a Java plugin, and with modules daukle/gradle's root and parent"
           .. " projects compile nothing", LAYOUT_ROW)
   end
-  return { config = translate_plugins.classpath(translation, project),
+  return { config = translate_plugins.project(translation, project),
            name = carried(translation, project.name, "rootProject.name"), unpinned = translation.unpinned,
            blockers = translation.blockers }
 end

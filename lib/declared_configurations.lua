@@ -83,6 +83,9 @@ local function checked_requires(value, label, modules)
   return requires
 end
 
+--- A list of `requires` entries, each a module name or { module, configuration }.
+declared_configurations.checked_requires = checked_requires
+
 local function checked_flags(block, label)
   local flags = {}
   for _, flag in ipairs(FLAGS) do

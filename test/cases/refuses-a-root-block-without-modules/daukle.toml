@@ -1,0 +1,14 @@
+schema = 1
+project = "example/rootalone"
+version = "1.0.0"
+
+[modules]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+[toolchains.gradle.root]
+plugins = [{ id = "idea" }]

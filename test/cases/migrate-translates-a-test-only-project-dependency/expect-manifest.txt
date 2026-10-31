@@ -1,0 +1,2 @@
+[toolchains.gradle.modules.app.projectDependencies]
+testClasspath = ["fixtures"]

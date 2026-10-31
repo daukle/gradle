@@ -1,0 +1,2 @@
+build/daukle/gradle/app/build.gradle compileOnly project(':contract')
+build/daukle/gradle/app/build.gradle testImplementation project(':fixtures')

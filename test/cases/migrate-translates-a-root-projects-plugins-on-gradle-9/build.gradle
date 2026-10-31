@@ -1,0 +1,13 @@
+plugins {
+  id 'idea'
+}
+
+idea {
+  module {
+    downloadJavadoc = true
+  }
+}
+
+subprojects {
+  version = '1.0.0'
+}

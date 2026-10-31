@@ -16,6 +16,7 @@ local source_sets = daukle.require("lib/source_sets")
 local carried = daukle.require("lib/carried")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local tables = daukle.require("lib/tables")
+local project_dependencies = daukle.require("lib/project_dependencies")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -67,7 +68,9 @@ end
 --- nothing could run. Both are built into Gradle, so naming them here resolves
 --- nothing and the no-repository property is untouched.
 local function block_ids(jars, options)
-  local ids = { configurations.needs_java_library(jars) and "java-library" or "java" }
+  local library = configurations.needs_java_library(jars)
+                  or project_dependencies.needs_java_library(options.project_dependencies)
+  local ids = { library and "java-library" or "java" }
   if #(options.gradle_plugins or {}) > 0 then ids[#ids + 1] = "java-gradle-plugin" end
   if options.main ~= nil then ids[#ids + 1] = "application" end
   for _, id in ipairs(options.included_plugins or {}) do ids[#ids + 1] = id end
@@ -171,6 +174,9 @@ local function render_project(layout, jars, options, depth, prefix)
   for index = 1, #requires do
     lines[#lines + 1] = "  implementation project("
                         .. groovy.quoted(gradle_path(requires[index])) .. ")"
+  end
+  for _, line in ipairs(project_dependencies.lines(options.project_dependencies, gradle_path)) do
+    lines[#lines + 1] = line
   end
   for _, build_name in ipairs(options.required_builds or {}) do
     lines[#lines + 1] = "  implementation " .. groovy.quoted(composite.GROUP .. ":" .. build_name)
@@ -297,9 +303,9 @@ end
 
 --- The root file of a multi-project build that carries logic: today's
 --- classpath header, and the build directory every project of it moves.
-function build_file.real_tree_header(plugin_jars)
-  return build_file.buildscript(plugin_jars)
-         .. "layout.buildDirectory.set(" .. carried.build_directory_of(nil) .. ")\n"
+function build_file.real_tree_header(plugin_jars, options, wrapped)
+  return build_file.parent_project(plugin_jars, options, carried.depth_of(nil), wrapped,
+                                   { "layout.buildDirectory.set(" .. carried.build_directory_of(nil) .. ")" })
 end
 
 --- An included build's file, its source roots climbing back from its directory
@@ -333,11 +339,51 @@ function build_file.buildscript(plugin_jars)
   return table.concat(lines, "\n")
 end
 
---- An implicit parent project's file: the header and nothing else, so a build
---- file an earlier run left in its directory is overwritten rather than read.
-function build_file.empty_project()
-  return build_file.buildscript({})
+--- The root's or an implicit parent's file in a multi-project build: the
+--- buildscript classpath, then its `root` or `parents.<name>` block's plugins,
+--- then `extra_lines`, then its configure blocks (lib/parents).
+---
+--- @implNote with no block it is the header alone, and it is still written, so
+--- a build file an earlier run left in that directory is overwritten rather
+--- than read.
+--- @param options { plugins = <pinned entries>, core_plugins, included_plugins, configure }, or nil
+--- @param depth the `file` marker's prefix from the project's directory
+--- @param wrapped whether a Kotlin wrapper applies the plugins instead
+function build_file.parent_project(plugin_jars, options, depth, wrapped, extra_lines)
+  options = options or { plugins = {} }
+  local lines = {}
+  if not wrapped then
+    local included = options.included_plugins or {}
+    if #included > 0 then
+      for _, line in ipairs(composite.plugins_block(included)) do lines[#lines + 1] = line end
+      lines[#lines + 1] = ""
+    end
+    append_apply_lines(lines, options)
+  end
+  for _, line in ipairs(extra_lines or {}) do lines[#lines + 1] = line end
+  local configuration = build_file.configuration(options.configure, depth)
+  for index = 1, #configuration do
+    if index > 1 and configuration[index]:sub(1, 1) ~= " " and configuration[index] ~= "}" then
+      lines[#lines + 1] = ""
+    end
+    lines[#lines + 1] = configuration[index]
+  end
+  local header = build_file.buildscript(plugin_jars)
+  if #lines == 0 then return header end
+  if lines[#lines] == "" then lines[#lines] = nil end
+  return header .. table.concat(lines, "\n") .. "\n"
 end
+
+--- Every id a root or parent block applies, for a Kotlin wrapper's `plugins {}`.
+function build_file.parent_ids(options)
+  if options == nil then return {} end
+  local ids = tables.joined(options.included_plugins or {}, options.core_plugins or {})
+  for _, plugin in ipairs(options.plugins or {}) do ids[#ids + 1] = plugin.id end
+  return ids
+end
+
+build_file.ROOT = ROOT
+build_file.root_of = root_of
 
 build_file.gradle_path = gradle_path
 build_file.file_list = file_list

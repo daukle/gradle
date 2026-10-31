@@ -1,0 +1,16 @@
+schema = 1
+project = "example/parentidea"
+version = "1.0.0"
+
+[modules."tools/cli"]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+tasks = ["idea"]
+
+[toolchains.gradle.parents.tools]
+plugins = [{ id = "idea" }]

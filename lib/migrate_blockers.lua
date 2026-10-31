@@ -237,7 +237,7 @@ end
 
 local METADATA = { ["$readOnly"] = true, ["$blocks"] = true }
 local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true, ["$files"] = true,
-                   ["$sourceDirectories"] = true }
+                   ["$sourceDirectories"] = true, ["$pathString"] = true }
 
 local function union_keys(left, right)
   local seen, keys = {}, {}

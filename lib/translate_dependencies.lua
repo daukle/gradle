@@ -11,6 +11,7 @@ local translate_dependencies = {}
 
 local model_dump = daukle.require("lib/model_dump")
 local translation_state = daukle.require("lib/translation")
+local configurations = daukle.require("lib/configurations")
 
 local block = translation_state.block
 
@@ -133,6 +134,59 @@ local function is_left_to_declared(project, row)
   return true
 end
 
+--- Each configuration `projectDependencies` takes, by its Gradle name:
+--- every key but `classpath`, whose project edges are core's `requires`
+--- (spec D-211).
+---
+--- @implNote an `api` edge is also on main's both classpaths, so it is a
+--- `requires` as well; the `api` entry is what puts the project on a
+--- consumer's compile classpath, which `implementation` does not.
+local PROJECT_DEPENDENCY_KEYS = {}
+for _, row in ipairs(configurations.all) do
+  if row.key ~= "classpath" then PROJECT_DEPENDENCY_KEYS[row.render] = row.key end
+end
+
+local function declared_project_rows(project)
+  local rows = {}
+  for _, row in ipairs((project.dependencies or {}).declared or {}) do
+    if row.kind == "project" and PROJECT_DEPENDENCY_KEYS[row.configuration] ~= nil then rows[#rows + 1] = row end
+  end
+  return rows
+end
+
+--- The project edges a project declares in a configuration
+--- `projectDependencies` carries, by key, each { project = <path>, configuration? }.
+function translate_dependencies.project_dependencies(project)
+  local by_key = {}
+  for _, row in ipairs(declared_project_rows(project)) do
+    local key = PROJECT_DEPENDENCY_KEYS[row.configuration]
+    by_key[key] = by_key[key] or {}
+    table.insert(by_key[key], { project = row.project, configuration = row.targetConfiguration })
+  end
+  return by_key
+end
+
+local carried_edges_by_project = {}
+
+--- Whether a resolved project row is one of those edges, or reached only
+--- through them.
+local function is_carried_by_project_dependencies(project, row)
+  local edges = carried_edges_by_project[project]
+  if edges == nil then
+    edges = {}
+    for _, declared in ipairs(declared_project_rows(project)) do
+      edges[PROJECT_EDGE .. ": " .. declared.project] = true
+    end
+    carried_edges_by_project[project] = edges
+  end
+  local via = row.via or {}
+  if #via == 0 then return false end
+  for _, edge in ipairs(via) do
+    if not edges[edge] then return false end
+  end
+  return true
+end
+
 local function applies_gradle_plugin_plugin(project)
   for _, plugin in ipairs(project.plugins or {}) do
     for _, id in ipairs(plugin.ids or {}) do
@@ -182,7 +236,7 @@ local function place_row(translation, project, buckets, key, row, place)
   if row.kind == "project" then
     if place == nil then
       record_edge(translation, row)
-    elseif not is_carried_by_projects(row) then
+    elseif not is_carried_by_projects(row) and not is_carried_by_project_dependencies(project, row) then
       block_edge(translation, row, place)
     end
     return
