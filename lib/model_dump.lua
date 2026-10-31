@@ -89,13 +89,16 @@ plain = { File base, Object raw ->
 }
 
 /**
- * Whether a string names an absolute path inside the build root, which a plugin holds as text
- * (`idea`'s `$MODULE_DIR$` prefix) and which differs between two checkouts of one build.
+ * Whether a string names a path of this checkout, which a plugin holds as text (`idea`'s
+ * `$MODULE_DIR$` prefix) and which differs between two checkouts of one build: absolute, and inside
+ * the build root or naming a file that exists, which a carrying build's real module directory is
+ * from its derived root. Existence keeps a text such as `/api` a string.
  */
-def isAbsolutePathUnder = { File base, String text ->
+def isCheckoutPath = { File base, String text ->
   try {
     def path = java.nio.file.Paths.get(text)
-    path.isAbsolute() && path.toAbsolutePath().normalize().startsWith(base.toPath().toAbsolutePath().normalize())
+    if (!path.isAbsolute()) return false
+    path.toAbsolutePath().normalize().startsWith(base.toPath().toAbsolutePath().normalize()) || path.toFile().exists()
   } catch (Throwable ignored) {
     false
   }
@@ -167,7 +170,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
   if (value instanceof org.gradle.api.file.SourceDirectorySet) return ['$sourceDirectories': sourceDirectories(base, value)]
   if (value instanceof org.gradle.api.tasks.SourceSet) return value.name
-  if (value instanceof CharSequence && isAbsolutePathUnder(base, value.toString())) {
+  if (value instanceof CharSequence && isCheckoutPath(base, value.toString())) {
     return ['$pathString': pathFrom(base, value.toString())]
   }
   if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
