@@ -1,0 +1,2 @@
+:bundleNotes: carried, configured and compared, not run by the proof
+verbatim.groovy from notes.gradle: line 1 carried verbatim, coverage owed (GRADLE-SURFACE.md: 4. Packaging and publishing)

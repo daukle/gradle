@@ -1,1 +1,0 @@
-stderr.txt no statement of its build script registers

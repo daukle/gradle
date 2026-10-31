@@ -303,13 +303,13 @@ local function settings_code_blockers(context, model, included, settings)
   return blockers
 end
 
---- Each build's catalogs as the dump read them, by "root" or the included build's directory.
-local function dumped_catalogs(model, included)
-  local catalogs = { root = model.catalogs }
+--- One field of each build's dump, by "root" or the included build's directory.
+local function dumped_by_build(model, included, field)
+  local by_build = { root = model[field] }
   for _, entry in ipairs(model.includedBuilds or {}) do
-    catalogs[entry.dir] = (included[entry.name] or {}).catalogs
+    by_build[entry.dir] = (included[entry.name] or {})[field]
   end
-  return catalogs
+  return by_build
 end
 
 --- Each build's settings script and settings extensions as the dump read them,
@@ -393,7 +393,8 @@ local function translated(model, included, context, settings, gradle_version, de
                                                          extensionDefaults = defaults })
   built.config.version = gradle_version
   built.version = built.version or UNVERSIONED
-  built.catalogs = dumped_catalogs(model, included)
+  built.catalogs = dumped_by_build(model, included, "catalogs")
+  built.applied = dumped_by_build(model, included, "appliedScripts")
   built.settings = dumped_settings(model, included)
   return built
 end

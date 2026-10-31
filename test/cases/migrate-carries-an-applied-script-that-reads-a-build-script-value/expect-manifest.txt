@@ -1,0 +1,4 @@
+[toolchains.gradle.verbatim]
+groovy = '''
+ext.greeting = 'hello'
+tasks.register('notes') {

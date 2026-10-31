@@ -1,0 +1,11 @@
+plugins {
+  id 'java'
+}
+
+apply from: "$rootDir/gradle/notes.gradle"
+
+tasks.named('notes') {
+  doLast {
+    println 'after the notes'
+  }
+}

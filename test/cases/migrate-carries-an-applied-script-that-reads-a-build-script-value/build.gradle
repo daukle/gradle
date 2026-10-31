@@ -1,0 +1,7 @@
+plugins {
+  id 'java'
+}
+
+ext.greeting = 'hello'
+
+apply from: 'notes.gradle'
