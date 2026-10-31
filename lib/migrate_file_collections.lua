@@ -10,8 +10,13 @@
 --- decides which class loads, the classpath rows already compare it.
 local migrate_file_collections = {}
 
-local function is_absolute(path)
+local ENVIRONMENT_MARKER = "${env:"
+
+--- @implNote the dump redacts an environment variable's value, so a path
+--- outside the root can start `${env:HOME}/` instead (lib/model_dump_environment).
+local function is_outside_root(path)
   return string.match(path, "^%a:/") ~= nil or string.sub(path, 1, 1) == "/"
+         or string.sub(path, 1, #ENVIRONMENT_MARKER) == ENVIRONMENT_MARKER
 end
 
 local function normalized(path, build_dir)
@@ -21,7 +26,7 @@ local function normalized(path, build_dir)
     local prefix = build_dir .. "/"
     if string.sub(path, 1, #prefix) == prefix then return "<build>/" .. string.sub(path, #prefix + 1) end
   end
-  if is_absolute(path) then return "<file>/" .. (string.match(path, "([^/]+)$") or path) end
+  if is_outside_root(path) then return "<file>/" .. (string.match(path, "([^/]+)$") or path) end
   return path
 end
 
