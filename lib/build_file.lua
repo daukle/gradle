@@ -18,6 +18,7 @@ local declared_configurations = daukle.require("lib/declared_configurations")
 local tables = daukle.require("lib/tables")
 local project_dependencies = daukle.require("lib/project_dependencies")
 local test_frameworks = daukle.require("lib/test_frameworks")
+local pinned_modules = daukle.require("lib/pinned_modules")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -202,6 +203,7 @@ local function render_project(layout, jars, options, depth, prefix)
   lines[#lines + 1] = "}"
   lines[#lines + 1] = ""
   for _, line in ipairs(declared_configurations.artifacts_lines(declared)) do lines[#lines + 1] = line end
+  for _, line in ipairs(pinned_modules.lines(options.pinned_modules)) do lines[#lines + 1] = line end
 
   if options.release ~= nil or options.sources_jar then
     lines[#lines + 1] = "java {"
