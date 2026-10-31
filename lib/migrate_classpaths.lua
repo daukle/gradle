@@ -149,19 +149,38 @@ local function configuration_names(old, new)
   return sorted_keys(names)
 end
 
+--- The generated project's configurations that failed to resolve, by name.
+local function generated_errors(project)
+  local errors = {}
+  for _, failure in ipairs((project.dependencies or {}).errors or {}) do
+    errors[failure.configuration] = failure.error
+  end
+  return errors
+end
+
 --- @param options { where, unpinned = <set of components already blocked>,
 ---                  identities = <old build identity path -> generated identity path> }
+---
+--- @implNote a configuration the generated build could not resolve blocks on
+--- the error and is not compared, since its rows are not its classpath.
 function migrate_classpaths.differences(old_project, generated_project, options)
   local blockers = {}
   local old = old_groups(old_project)
   local new = grouped(generated_project)
+  local unresolved = generated_errors(generated_project)
   local same = {}
   for _, identity in pairs(options.identities) do same[identity] = identity end
+  for _, configuration in ipairs(sorted_keys(unresolved)) do
+    blockers[#blockers + 1] = blocker(configuration, options.where, "could not be resolved in the build"
+                                      .. " daukle/gradle generates from the translated keys: " .. unresolved[configuration])
+  end
   for _, configuration in ipairs(configuration_names(old, new)) do
-    local old_entries = signatures(old[configuration], options.identities, options.unpinned or {})
-    local new_entries = signatures(new[configuration], same, {})
-    compare_membership(configuration, old_entries.display, new_entries.display, options.where, blockers)
-    compare_precedence(configuration, old_entries, new_entries, options.where, blockers)
+    if unresolved[configuration] == nil then
+      local old_entries = signatures(old[configuration], options.identities, options.unpinned or {})
+      local new_entries = signatures(new[configuration], same, {})
+      compare_membership(configuration, old_entries.display, new_entries.display, options.where, blockers)
+      compare_precedence(configuration, old_entries, new_entries, options.where, blockers)
+    end
   end
   return blockers
 end

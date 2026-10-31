@@ -20,6 +20,9 @@ local extension_defaults = daukle.require("lib/extension_defaults")
 local INIT_SCRIPT = carried.MIGRATE_PREFIX .. "model.gradle"
 local MODEL = carried.MIGRATE_PREFIX .. "model.json"
 local GENERATED_MODEL = carried.MIGRATE_PREFIX .. "generated-model.json"
+--- The first render's model when settings code is retried carried, which the
+--- retry's overwrites: a failed retry reports the first one's blockers.
+local TRANSLATED_SETTINGS_MODEL = carried.MIGRATE_PREFIX .. "generated-model-settings-translated.json"
 local WRAPPER_DIRECTORY = "gradle/wrapper"
 local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
 local DUMP_JDK = "17"
@@ -368,6 +371,7 @@ local function compared_with_fallback(context, model, built, carrying, generated
   local compared = comparison_of(context, model, built, generated, generated_models, settings)
   if compared == nil then return {}, generated, generated_models end
   if #compared == 0 or #carrying.fallbacks == 0 then return compared, generated, generated_models end
+  daukle.write{ path = TRANSLATED_SETTINGS_MODEL, text = daukle.read(derived(context, GENERATED_MODEL)) }
   local fallback = migrate_carry.carry_translated(built, carrying)
   local retried, refusals = dump_generated(context, built, built.config, built.projects[1].where, false)
   local retried_models = retried ~= nil and generated_builds(context, built) or nil

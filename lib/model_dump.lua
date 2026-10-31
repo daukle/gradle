@@ -462,10 +462,23 @@ def resolvedRows = { configuration ->
   }, artifacts.collect { it.file })
 }
 
+/**
+ * A resolution failure with the causes Gradle wraps it in, outermost first: the outer
+ * `Could not resolve all artifacts` names no artifact.
+ */
+def failureText = { Throwable failure ->
+  def parts = []
+  def seen = [] as Set
+  for (def cause = failure; cause != null && seen.add(System.identityHashCode(cause)); cause = cause.cause) {
+    parts << cause.toString()
+  }
+  parts.join(' <- ')
+}
+
 def resolveInto = { configuration, List resolved, List errors ->
   if (configuration == null || !configuration.canBeResolved) return
   try { resolved.addAll(resolvedRows(configuration)) }
-  catch (Throwable failure) { errors << [configuration: configuration.name, error: failure.toString()] }
+  catch (Throwable failure) { errors << [configuration: configuration.name, error: failureText(failure)] }
 }
 
 /**
@@ -524,7 +537,7 @@ def impliedLauncherInto = { project, List resolved, List errors ->
       project.dependencies.create("org.junit.platform:junit-platform-launcher:${engine.version}"))
   launcher.transitive = false
   try { resolved.addAll(resolvedRows(launcher).collect { row -> row.configuration = IMPLIED_LAUNCHER; row }) }
-  catch (Throwable failure) { errors << [configuration: IMPLIED_LAUNCHER, error: failure.toString()] }
+  catch (Throwable failure) { errors << [configuration: IMPLIED_LAUNCHER, error: failureText(failure)] }
 }
 
 /**
