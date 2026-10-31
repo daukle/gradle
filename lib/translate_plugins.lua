@@ -27,6 +27,7 @@ local BLOCKS = "$blocks"
 local FILE = "$file"
 local FILES = "$files"
 local SOURCE_DIRECTORIES = "$sourceDirectories"
+local PATH_STRING = "$pathString"
 local COLLECTIONS = { "$list", "$map" }
 
 --- The keys `daukle/gradle` reads as a marker rather than a block in a
@@ -158,6 +159,13 @@ local function configure_value(state, value, path, read_only, surface, default)
     return nil
   end
   if value[FILE] ~= nil or value[FILES] ~= nil or value[SOURCE_DIRECTORIES] ~= nil then return nil end
+  if value[PATH_STRING] ~= nil then
+    if not read_only then
+      block(state, path, "holds an absolute path of this checkout as text, which a configure tree would"
+            .. " carry to every other checkout unchanged", surface)
+    end
+    return nil
+  end
   local collection = collection_of(value)
   if collection ~= nil then
     if not read_only and next(collection) ~= nil then
@@ -224,12 +232,6 @@ end
 local function non_empty(list)
   if #list == 0 then return nil end
   return list
-end
-
---- @return { pluginClasspath? }
-function translate_plugins.classpath(state, project)
-  local buildscript = project.buildscript or {}
-  return { pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)) }
 end
 
 --- @return { plugins?, pluginClasspath?, configure? }

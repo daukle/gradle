@@ -88,6 +88,19 @@ plain = { File base, Object raw ->
   value.toString()
 }
 
+/**
+ * Whether a string names an absolute path inside the build root, which a plugin holds as text
+ * (`idea`'s `$MODULE_DIR$` prefix) and which differs between two checkouts of one build.
+ */
+def isAbsolutePathUnder = { File base, String text ->
+  try {
+    def path = java.nio.file.Paths.get(text)
+    path.isAbsolute() && path.toAbsolutePath().normalize().startsWith(base.toPath().toAbsolutePath().normalize())
+  } catch (Throwable ignored) {
+    false
+  }
+}
+
 def safely = { Closure read ->
   try { read() } catch (Throwable failure) { unrendered('unreadable: ' + failure.class.simpleName) }
 }
@@ -154,6 +167,9 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
   if (value instanceof org.gradle.api.file.SourceDirectorySet) return ['$sourceDirectories': sourceDirectories(base, value)]
   if (value instanceof org.gradle.api.tasks.SourceSet) return value.name
+  if (value instanceof CharSequence && isAbsolutePathUnder(base, value.toString())) {
+    return ['$pathString': pathFrom(base, value.toString())]
+  }
   if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
       || value instanceof org.gradle.api.file.FileCollection) {

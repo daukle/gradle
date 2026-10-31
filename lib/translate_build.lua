@@ -239,8 +239,22 @@ local function translate_module(model, project, name, options, context, blockers
            unpinned = translation.unpinned, blocked_edges = translation.blocked_edges }
 end
 
+--- A parent project's directory, which is the name its `parents` block takes.
+local function parent_name(project)
+  return (string.gsub(string.sub(project.path, 2), ":", "/"))
+end
+
+--- The `root` or `parents.<name>` block a parent's translation gives, or nil.
+local function parent_block(config)
+  local block = { plugins = config.plugins, configure = config.configure }
+  if next(block) == nil then return nil end
+  return block
+end
+
+--- @return the parents' comparison entries, the root's name, and their blocks by name ("" for the root)
 local function translate_parents(model, options, context, names, blockers, plugin_classpath, seen)
   local parents = {}
+  local blocks = {}
   local root_name = nil
   for index, project in ipairs(model.projects) do
     if index == 1 or not is_java(project) then
@@ -253,11 +267,12 @@ local function translate_parents(model, options, context, names, blockers, plugi
         append(blockers, translation.blockers)
         union_by_url(plugin_classpath, translation.config.pluginClasspath, seen)
         if index == 1 then root_name = translation.name end
+        blocks[index == 1 and "" or parent_name(project)] = parent_block(translation.config)
         parents[#parents + 1] = { project = project, where = where, unpinned = translation.unpinned }
       end
     end
   end
-  return parents, root_name
+  return parents, root_name, blocks
 end
 
 local function translate_modules(model, options, context, blockers)
@@ -266,7 +281,8 @@ local function translate_modules(model, options, context, blockers)
   context.module_of_path = {}
   for _, name in ipairs(names) do context.module_of_path[modules[name].path] = name end
   local plugin_classpath, seen = {}, {}
-  local projects, root_name = translate_parents(model, options, context, names, blockers, plugin_classpath, seen)
+  local projects, root_name, parent_blocks = translate_parents(model, options, context, names, blockers,
+                                                               plugin_classpath, seen)
   local results, declared, blocks = {}, {}, {}
   for _, name in ipairs(names) do
     local result = translate_module(model, modules[name], name, options, context, blockers)
@@ -288,6 +304,9 @@ local function translate_modules(model, options, context, blockers)
   end
   if #plugin_classpath > 0 then config.pluginClasspath = plugin_classpath end
   if next(blocks) ~= nil then config.modules = blocks end
+  config.root = parent_blocks[""]
+  parent_blocks[""] = nil
+  if next(parent_blocks) ~= nil then config.parents = parent_blocks end
   return { config = config, name = root_name, version = shared_version(results, blockers), projects = projects,
            declared = declared }
 end

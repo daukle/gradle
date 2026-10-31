@@ -69,6 +69,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
 | `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds`, `sourceSets`, `declaredConfigurations`, `plugins`, `configure`, `release`, `sourcesJar`, `verbatim` and **every dependency configuration key above**; any other key is refused by name. When the project declares modules these are REFUSED project-wide rather than applied to all of them, except `configurations` and the four that compose (**Per-module plugins** below). **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
 | `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
+| `root`, `parents` | the root project's and each implicit parent's `plugins` and `configure`, which the project-wide keys never reach; only beside declared modules (**The root and the implicit parents** below) |
 | `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
 
 **The manifest's own `version` is rendered as Gradle's `version`** into every project file, so a
@@ -554,6 +555,31 @@ A project-wide value renders into every module and never the root, which is Grad
 
 **Before this, a module's `plugins` was read by nothing and rendered nothing, at exit 0**, which is
 why an unknown module key is now refused by name rather than ignored.
+
+### The root and the implicit parents: `root` and `parents.<name>`
+
+**The project-wide keys never reach the root project or an implicit parent** (`tools` for a module
+`tools/cli`). `[toolchains.gradle.root]` and `[toolchains.gradle.parents.<name>]` give each of them
+`plugins` and `configure`, and nothing else (`D-209`,
+`docs/superpowers/specs/2026-10-31-gradle-root-and-parent-plugins-design.md`):
+
+```toml
+[toolchains.gradle.root]
+plugins = [{ id = "idea" }]
+
+[toolchains.gradle.parents.tools]
+plugins = [{ id = "idea" }]
+```
+
+- **Both need declared modules**: in a single-project build the root is the project, and the
+  project-wide keys are its own. `parents.<name>` must name an implicit parent; a declared module's
+  name is refused, pointing at its own block.
+- **An id in the project-wide list and in one of these blocks is legal**: the project-wide list
+  reaches the modules alone, so the two never apply to the same project.
+- A pinned plugin is checked against the project-wide `pluginClasspath`, as a module's is.
+- **The migrator writes them** from a parent project's model, translated like a module's plugins and
+  extensions. **Not an `allprojects` key**: a plugin every project applies is listed in every
+  block, until a measurement asks for a shorthand.
 
 **The root build file exists to hold the buildscript classpath, and it is written on every run.**
 It was conditional first, and the measurement that changed it was the migration this feature

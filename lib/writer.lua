@@ -170,6 +170,16 @@ end
 --- project-wide check would pass while one module's test runtime held a
 --- platform engine and no launcher, which is the declaration that passes on
 --- Gradle 8 and dies on the next major.
+--- What the root's (`name` nil) or an implicit parent's block renders, or nil
+--- for none or for a bare render, which leaves out every plugin.
+local function parent_options(build, name)
+  if build.bare then return nil end
+  local found = build.parents[name or ""]
+  if found == nil then return nil end
+  return { plugins = found.plugins.pinned, core_plugins = found.plugins.core,
+           included_plugins = found.plugins.included, configure = found.configure }
+end
+
 local function refuse_a_module_missing_launcher(module)
   junit.refuse_a_missing_launcher(test_reachable(module.entries))
 end
@@ -214,7 +224,8 @@ local function write_today(build)
     }
   end
 
-  daukle.write{ path = BUILD_FILE, text = build_file.buildscript(build.plugin_jars) }
+  daukle.write{ path = BUILD_FILE,
+                text = build_file.parent_project(build.plugin_jars, parent_options(build, nil), build_file.ROOT) }
 
   for _, module in ipairs(build.modules) do
     refuse_a_module_missing_launcher(module)
@@ -227,7 +238,8 @@ local function write_today(build)
   end
 
   for _, parent in ipairs(module_graph.undeclared_parents(build.declared)) do
-    daukle.write{ path = parent .. "/" .. BUILD_FILE, text = build_file.empty_project() }
+    daukle.write{ path = parent .. "/" .. BUILD_FILE,
+                  text = build_file.parent_project({}, parent_options(build, parent), build_file.root_of(parent)) }
   end
 end
 
@@ -235,9 +247,12 @@ local function write_carrying_root(build, root_jars)
   local config = build.config
   local root_verbatim = carried.root_of(config)
   if #build.declared > 0 then
+    local options = parent_options(build, nil)
     return write_carrying_project({ directory = "", verbatim = root_verbatim,
-                                    render = function() return build_file.real_tree_header(root_jars) end,
-                                    ids = {} }, build.blank)
+                                    render = function(wrapped)
+                                      return build_file.real_tree_header(root_jars, options, wrapped)
+                                    end,
+                                    ids = build_file.parent_ids(options) }, build.blank)
   end
   local jars = jars_of(build.entries, root_jars, build.named_of(configurations.named(config, "")))
   write_carrying_project({ directory = "", verbatim = root_verbatim,
@@ -268,7 +283,8 @@ local function write_real_tree(build)
                              ids = build_file.plugin_ids(jars, options) }, build.blank)
   end
   for _, parent in ipairs(module_graph.undeclared_parents(build.declared)) do
-    daukle.write{ path = carried.script_of(parent, nil), text = build_file.empty_project() }
+    daukle.write{ path = carried.script_of(parent, nil),
+                  text = build_file.parent_project({}, parent_options(build, parent), carried.depth_of(parent)) }
   end
 end
 
@@ -365,6 +381,10 @@ local function write_build_file(context, config, options)
                               declared_configurations = declared_configurations.read(config, "", {}) }),
     declared = module_graph.declared(context),
   }
+  build.parents = {}
+  for _, found in ipairs(validation.checked_parents(config, build.declared, composite_record.owners)) do
+    build.parents[found.name or ""] = found
+  end
   build.modules = #build.declared > 0
                   and validation.checked_modules(config, build.declared, composite_record.read)
                   or {}

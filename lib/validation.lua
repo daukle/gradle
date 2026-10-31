@@ -11,6 +11,7 @@ local catalogs = daukle.require("lib/catalogs")
 local verbatim = daukle.require("lib/verbatim")
 local tables = daukle.require("lib/tables")
 local declared_configurations = daukle.require("lib/declared_configurations")
+local parents = daukle.require("lib/parents")
 
 local DEFAULT_JDK = "17"
 
@@ -357,6 +358,26 @@ local function checked_modules(config, declared, read)
   return checked
 end
 
+--- The root's and each implicit parent's block, checked: its plugins against
+--- the project-wide classpath, which the root build file carries, and its
+--- configure tree rendered once.
+---
+--- @implNote not checked against the project-wide `plugins`, which reach the
+--- modules alone, so an id listed in both places applies once to each project.
+--- @return { { name = <nil for the root>, plugins = { pinned, included, core }, configure } }
+local function checked_parents(config, declared, owners)
+  local checked = {}
+  for _, found in ipairs(parents.blocks(config, declared)) do
+    local key = found.label .. ".plugins"
+    local view = { [key] = found.block.plugins, pluginClasspath = config.pluginClasspath }
+    local pinned, _, included, core = checked_plugin_set(view, key, "pluginClasspath", owners)
+    build_file.configuration(found.block.configure, nil, found.label .. ".configure")
+    checked[#checked + 1] = { name = found.name, plugins = { pinned = pinned, included = included, core = core },
+                              configure = found.block.configure }
+  end
+  return checked
+end
+
 local CONFIGURE_KEYS = { "settingsConfigure", "configure" }
 local PLUGIN_SETS = { { "settingsPlugins", "settingsPluginClasspath" }, { "plugins", "pluginClasspath" } }
 
@@ -475,6 +496,7 @@ local function validated(context, config)
   local record = composite_of(context, config)
   source_sets.refuse_task_collisions(config,
                                      checked_modules(config, declared, record.read))
+  checked_parents(config, declared, record.owners)
   entries_of_configurations(config, "")
   configurations.named(config, "")
   declared_configurations.read(config, "", {})
@@ -513,6 +535,7 @@ return {
   checked_classpath = checked_classpath,
   entries_of_configurations = entries_of_configurations,
   checked_modules = checked_modules,
+  checked_parents = checked_parents,
   instance_of = instance_of,
   checked_builds = checked_builds,
   checked_catalogs = checked_catalogs,
