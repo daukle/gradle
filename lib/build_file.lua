@@ -222,6 +222,7 @@ local function render_project(layout, jars, options, depth, prefix)
        matters more in a generated file than in a hand-written one, because the
        user cannot see this one. ]]
   lines[#lines + 1] = "tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }"
+  lines[#lines + 1] = "tasks.withType(Javadoc).configureEach { options.encoding = 'UTF-8' }"
   lines[#lines + 1] = ""
   lines[#lines + 1] = "test { useJUnitPlatform() }"
   for _, line in ipairs(source_sets.test_task_lines(sets)) do lines[#lines + 1] = line end
