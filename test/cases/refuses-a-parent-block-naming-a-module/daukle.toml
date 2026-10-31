@@ -1,0 +1,14 @@
+schema = 1
+project = "example/parentmodule"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "8.13"
+
+[toolchains.gradle.parents.alpha]
+plugins = [{ id = "idea" }]

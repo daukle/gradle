@@ -1,0 +1,4 @@
+[toolchains.gradle.verbatim]
+kotlin = '''
+import java.util.Locale
+tasks.register("stamp") {

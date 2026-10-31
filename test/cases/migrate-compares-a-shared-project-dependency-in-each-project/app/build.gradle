@@ -1,0 +1,11 @@
+plugins {
+  id 'java'
+}
+
+dependencies {
+  testImplementation project(':fixtures')
+}
+
+test {
+  useJUnitPlatform()
+}

@@ -88,6 +88,22 @@ plain = { File base, Object raw ->
   value.toString()
 }
 
+/**
+ * Whether a string names a path of this checkout, which a plugin holds as text (`idea`'s
+ * `$MODULE_DIR$` prefix) and which differs between two checkouts of one build: absolute, and inside
+ * the build root or naming a file that exists, which a carrying build's real module directory is
+ * from its derived root. Existence keeps a text such as `/api` a string.
+ */
+def isCheckoutPath = { File base, String text ->
+  try {
+    def path = java.nio.file.Paths.get(text)
+    if (!path.isAbsolute()) return false
+    path.toAbsolutePath().normalize().startsWith(base.toPath().toAbsolutePath().normalize()) || path.toFile().exists()
+  } catch (Throwable ignored) {
+    false
+  }
+}
+
 def safely = { Closure read ->
   try { read() } catch (Throwable failure) { unrendered('unreadable: ' + failure.class.simpleName) }
 }
@@ -154,6 +170,9 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   if (value instanceof org.gradle.api.file.FileSystemLocation) return ['$file': pathFrom(base, value.asFile)]
   if (value instanceof org.gradle.api.file.SourceDirectorySet) return ['$sourceDirectories': sourceDirectories(base, value)]
   if (value instanceof org.gradle.api.tasks.SourceSet) return value.name
+  if (value instanceof CharSequence && isCheckoutPath(base, value.toString())) {
+    return ['$pathString': pathFrom(base, value.toString())]
+  }
   if (isPlainFileCollection(value)) return safely { ['$files': value.files.collect { pathFrom(base, it) }] }
   if (scalar(value) || value instanceof org.gradle.jvm.toolchain.JavaLanguageVersion
       || value instanceof org.gradle.api.file.FileCollection) {
@@ -443,10 +462,23 @@ def resolvedRows = { configuration ->
   }, artifacts.collect { it.file })
 }
 
+/**
+ * A resolution failure with the causes Gradle wraps it in, outermost first: the outer
+ * `Could not resolve all artifacts` names no artifact.
+ */
+def failureText = { Throwable failure ->
+  def parts = []
+  def seen = [] as Set
+  for (def cause = failure; cause != null && seen.add(System.identityHashCode(cause)); cause = cause.cause) {
+    parts << cause.toString()
+  }
+  parts.join(' <- ')
+}
+
 def resolveInto = { configuration, List resolved, List errors ->
   if (configuration == null || !configuration.canBeResolved) return
   try { resolved.addAll(resolvedRows(configuration)) }
-  catch (Throwable failure) { errors << [configuration: configuration.name, error: failure.toString()] }
+  catch (Throwable failure) { errors << [configuration: configuration.name, error: failureText(failure)] }
 }
 
 /**
@@ -505,7 +537,7 @@ def impliedLauncherInto = { project, List resolved, List errors ->
       project.dependencies.create("org.junit.platform:junit-platform-launcher:${engine.version}"))
   launcher.transitive = false
   try { resolved.addAll(resolvedRows(launcher).collect { row -> row.configuration = IMPLIED_LAUNCHER; row }) }
-  catch (Throwable failure) { errors << [configuration: IMPLIED_LAUNCHER, error: failure.toString()] }
+  catch (Throwable failure) { errors << [configuration: IMPLIED_LAUNCHER, error: failureText(failure)] }
 }
 
 /**

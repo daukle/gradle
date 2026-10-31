@@ -1,0 +1,1 @@
+"testFramework" must be "junitPlatform", "junit" or "testng", not spock

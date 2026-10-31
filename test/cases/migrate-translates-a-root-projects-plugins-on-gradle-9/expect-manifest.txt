@@ -1,0 +1,5 @@
+[[toolchains.gradle.root.plugins]]
+id = "idea"
+
+[toolchains.gradle.root.configure.idea.module]
+downloadJavadoc = true

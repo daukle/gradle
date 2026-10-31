@@ -17,6 +17,7 @@ local translate_plugins = daukle.require("lib/translate_plugins")
 local translate_dependencies = daukle.require("lib/translate_dependencies")
 local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
+local test_frameworks = daukle.require("lib/test_frameworks")
 
 local LAYOUT_ROW = migrate_surface.LAYOUT_ROW
 local as_set = tables.as_set
@@ -392,6 +393,39 @@ end
 ---           unpinned = <set of the components no pinned entry could name>,
 ---           blocked_edges = <set of the project components this project's own blockers name>,
 ---           blockers = { { construct, where, why, surface? } } }
+local function holds_a_file(directory)
+  for _, entry in ipairs(daukle.list(directory) or {}) do
+    if entry.kind == "file" then return true end
+    if entry.kind == "directory" and holds_a_file(directory .. "/" .. entry.name) then return true end
+  end
+  return false
+end
+
+--- Whether the `test` source set has a Java source, outside the build root
+--- counting as one so a doubt keeps the framework.
+local function has_test_sources(translation, project)
+  local sets = extension_value(project, "sourceSets")
+  local test = type(sets) == "table" and sets[TEST] or nil
+  for _, root in ipairs(type(test) == "table" and (test.java or {}).srcDirs or {}) do
+    if is_absolute(root) or holds_a_file(on_disk(translation, root)) then return true end
+  end
+  return false
+end
+
+--- The `test` task's framework as a `testFramework` value, or nil for the
+--- default, for no `test` task, or for no test to run, where the framework
+--- decides nothing (the comparison reconciles it, lib/migrate_task_values).
+--- A framework this plugin does not know is left to the comparison.
+local function translate_test_framework(translation, project)
+  if not has_test_sources(translation, project) then return nil end
+  local test = tables.named(project.tasks, "test")
+  local values = test ~= nil and test.values or nil
+  if type(values) ~= "table" or type(values.framework) ~= "string" then return nil end
+  local framework = test_frameworks.of_options_type(values.framework)
+  if framework == test_frameworks.DEFAULT then return nil end
+  return framework
+end
+
 function translate_model.project(project, build)
   local translation = translation_state.new(build)
   block_unresolved(translation, project)
@@ -400,20 +434,24 @@ function translate_model.project(project, build)
   config.release = translate_release(translation, project, main_compile_task(project))
   config.main = translate_main(translation, project)
   if tables.named(project.tasks, SOURCES_JAR_TASK) ~= nil then config.sourcesJar = true end
+  config.testFramework = translate_test_framework(translation, project)
   translate_source_sets(translation, project, config)
   copy_into(config, translate_plugins.project(translation, project))
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
   return { config = config, name = carried(translation, project.name, "rootProject.name"), version = version,
+           projectDependencies = translate_dependencies.project_dependencies(project),
            requires = sorted_keys(translation.requires), requiredBuilds = sorted_keys(translation.required_builds),
            unpinned = translation.unpinned, blocked_edges = translation.blocked_edges,
            blockers = translation.blockers }
 end
 
 --- A project that becomes no module: the root of a multi-project build, or a
---- parent directory Gradle made a project of. Only its plugin classpath has a
---- key, the derived root's; everything else it holds is compared with the
---- generated build's project of the same path, which holds nothing.
---- @return { config = { pluginClasspath? }, name = <the project's name>, unpinned, blockers }
+--- parent directory Gradle made a project of. Its plugin classpath is the
+--- derived root's, and its plugins and configure blocks are its `root` or
+--- `parents.<name>` block (lib/parents); everything else it holds is compared
+--- with the generated build's project of the same path.
+--- @return { config = { plugins?, pluginClasspath?, configure? }, name = <the project's name>, unpinned,
+---           blockers }
 function translate_model.parent(project, build)
   local translation = translation_state.new(build)
   block_unresolved(translation, project)
@@ -421,7 +459,7 @@ function translate_model.parent(project, build)
     block(translation, project.path, "applies a Java plugin, and with modules daukle/gradle's root and parent"
           .. " projects compile nothing", LAYOUT_ROW)
   end
-  return { config = translate_plugins.classpath(translation, project),
+  return { config = translate_plugins.project(translation, project),
            name = carried(translation, project.name, "rootProject.name"), unpinned = translation.unpinned,
            blockers = translation.blockers }
 end

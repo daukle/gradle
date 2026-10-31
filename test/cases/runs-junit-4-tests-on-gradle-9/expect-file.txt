@@ -1,0 +1,1 @@
+build/daukle/gradle/build/test-results/test/TEST-example.GreeterTest.xml

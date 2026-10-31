@@ -1,0 +1,2 @@
+build/daukle/gradle/app/build/classes/java/main/com/example/app/App.class
+build/daukle/gradle/app/build/classes/java/test/com/example/app/AppFixture.class

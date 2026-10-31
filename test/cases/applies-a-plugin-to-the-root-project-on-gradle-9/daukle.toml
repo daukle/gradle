@@ -1,0 +1,19 @@
+schema = 1
+project = "example/rootidea"
+version = "1.0.0"
+
+[modules.alpha]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+release = "8"
+version = "9.6.0"
+tasks = ["idea"]
+
+[toolchains.gradle.root]
+plugins = [{ id = "idea" }]
+
+[toolchains.gradle.root.configure.idea.project]
+jdkName = "17"

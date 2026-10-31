@@ -13,6 +13,7 @@ local build_file_kotlin = daukle.require("lib/build_file_kotlin")
 local verbatim = daukle.require("lib/verbatim")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local tables = daukle.require("lib/tables")
+local pinned_modules = daukle.require("lib/pinned_modules")
 
 local joined = tables.joined
 
@@ -151,8 +152,10 @@ local function write_included_builds(checked, named_of, place)
     local at = composite.path_of(build.name)
     junit.refuse_a_missing_launcher(test_reachable(build.entries))
     local jars = jars_of(build.entries, {}, named_of(build.named))
-    local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
+    local options = { release = build.release, test_framework = build.test_framework, plugins = {},
+                      gradle_plugins = build.gradle_plugins, pinned_modules = pinned_modules.of(build.entries, build.named),
                       group = (not build.plugin_build) and composite.GROUP or nil,
+                      library = not build.plugin_build,
                       declared_configurations = build.declared_configurations }
     if build.verbatim ~= nil or build.settings_verbatim ~= nil then
       write_carrying_included_build(build, at, jars, options, place)
@@ -170,6 +173,16 @@ end
 --- project-wide check would pass while one module's test runtime held a
 --- platform engine and no launcher, which is the declaration that passes on
 --- Gradle 8 and dies on the next major.
+--- What the root's (`name` nil) or an implicit parent's block renders, or nil
+--- for none or for a bare render, which leaves out every plugin.
+local function parent_options(build, name)
+  if build.bare then return nil end
+  local found = build.parents[name or ""]
+  if found == nil then return nil end
+  return { plugins = found.plugins.pinned, core_plugins = found.plugins.core,
+           included_plugins = found.plugins.included, configure = found.configure }
+end
+
 local function refuse_a_module_missing_launcher(module)
   junit.refuse_a_missing_launcher(test_reachable(module.entries))
 end
@@ -183,6 +196,7 @@ local function module_options(build, module)
   local own = build.bare and { pinned = {}, included = {}, core = {} } or module.plugins
   return extended(project_wide, { release = module.release,
                                   sources_jar = module.sources_jar,
+                                  test_framework = module.test_framework,
                                   plugins = joined(project_wide.plugins, own.pinned),
                                   core_plugins = joined(project_wide.core_plugins, own.core),
                                   included_plugins = joined(project_wide.included_plugins, own.included),
@@ -191,7 +205,9 @@ local function module_options(build, module)
                                   requires = module.requires,
                                   required_builds = module.required_builds,
                                   source_sets = with_paths(module.source_sets),
-                                  declared_configurations = module.declared_configurations })
+                                  declared_configurations = module.declared_configurations,
+                                  project_dependencies = module.project_dependencies,
+                                  pinned_modules = pinned_modules.of(module.entries, module.named) })
 end
 
 --- @implNote the root file is written on every multi-project run, carrying only
@@ -214,7 +230,8 @@ local function write_today(build)
     }
   end
 
-  daukle.write{ path = BUILD_FILE, text = build_file.buildscript(build.plugin_jars) }
+  daukle.write{ path = BUILD_FILE,
+                text = build_file.parent_project(build.plugin_jars, parent_options(build, nil), build_file.ROOT) }
 
   for _, module in ipairs(build.modules) do
     refuse_a_module_missing_launcher(module)
@@ -227,7 +244,8 @@ local function write_today(build)
   end
 
   for _, parent in ipairs(module_graph.undeclared_parents(build.declared)) do
-    daukle.write{ path = parent .. "/" .. BUILD_FILE, text = build_file.empty_project() }
+    daukle.write{ path = parent .. "/" .. BUILD_FILE,
+                  text = build_file.parent_project({}, parent_options(build, parent), build_file.root_of(parent)) }
   end
 end
 
@@ -235,9 +253,12 @@ local function write_carrying_root(build, root_jars)
   local config = build.config
   local root_verbatim = carried.root_of(config)
   if #build.declared > 0 then
+    local options = parent_options(build, nil)
     return write_carrying_project({ directory = "", verbatim = root_verbatim,
-                                    render = function() return build_file.real_tree_header(root_jars) end,
-                                    ids = {} }, build.blank)
+                                    render = function(wrapped)
+                                      return build_file.real_tree_header(root_jars, options, wrapped)
+                                    end,
+                                    ids = build_file.parent_ids(options) }, build.blank)
   end
   local jars = jars_of(build.entries, root_jars, build.named_of(configurations.named(config, "")))
   write_carrying_project({ directory = "", verbatim = root_verbatim,
@@ -268,7 +289,8 @@ local function write_real_tree(build)
                              ids = build_file.plugin_ids(jars, options) }, build.blank)
   end
   for _, parent in ipairs(module_graph.undeclared_parents(build.declared)) do
-    daukle.write{ path = carried.script_of(parent, nil), text = build_file.empty_project() }
+    daukle.write{ path = carried.script_of(parent, nil),
+                  text = build_file.parent_project({}, parent_options(build, parent), carried.depth_of(parent)) }
   end
 end
 
@@ -348,6 +370,7 @@ local function write_build_file(context, config, options)
   end
   local project_wide = { release = project_options.release,
                          sources_jar = project_options.sources_jar,
+                         test_framework = project_options.test_framework,
                          version = context.version,
                          plugins = pinned_plugins,
                          core_plugins = core_plugins,
@@ -362,9 +385,14 @@ local function write_build_file(context, config, options)
                             { main = project_options.main,
                               required_builds = composite_record.required,
                               source_sets = with_paths(source_sets.read(config, nil)),
-                              declared_configurations = declared_configurations.read(config, "", {}) }),
+                              declared_configurations = declared_configurations.read(config, "", {}),
+                              pinned_modules = pinned_modules.of(entries, configurations.named(config, "")) }),
     declared = module_graph.declared(context),
   }
+  build.parents = {}
+  for _, found in ipairs(validation.checked_parents(config, build.declared, composite_record.owners)) do
+    build.parents[found.name or ""] = found
+  end
   build.modules = #build.declared > 0
                   and validation.checked_modules(config, build.declared, composite_record.read)
                   or {}

@@ -175,7 +175,6 @@ end
 
 local function carried_plugins(generated)
   local carried = {}
-  for id in pairs(core_plugins.IMPLIED) do carried[id] = true end
   for _, plugin in ipairs(generated.plugins or {}) do
     carried[plugin.type] = true
     for _, id in ipairs(plugin.ids or {}) do carried[id] = true end
@@ -237,7 +236,7 @@ end
 
 local METADATA = { ["$readOnly"] = true, ["$blocks"] = true }
 local WRAPPERS = { ["$list"] = true, ["$map"] = true, ["$file"] = true, ["$files"] = true,
-                   ["$sourceDirectories"] = true }
+                   ["$sourceDirectories"] = true, ["$pathString"] = true }
 
 local function union_keys(left, right)
   local seen, keys = {}, {}

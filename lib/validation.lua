@@ -11,6 +11,9 @@ local catalogs = daukle.require("lib/catalogs")
 local verbatim = daukle.require("lib/verbatim")
 local tables = daukle.require("lib/tables")
 local declared_configurations = daukle.require("lib/declared_configurations")
+local parents = daukle.require("lib/parents")
+local project_dependencies = daukle.require("lib/project_dependencies")
+local test_frameworks = daukle.require("lib/test_frameworks")
 
 local DEFAULT_JDK = "17"
 
@@ -120,6 +123,7 @@ local function checked_builds(context, config)
       plugin_build = #build.gradle_plugins > 0, gradle_plugins = build.gradle_plugins,
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
+      test_framework = test_frameworks.read(build.block, test_frameworks.DEFAULT, scope .. "testFramework"),
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
       declared_configurations = declared_configurations.read(build.block, scope, {}),
@@ -344,16 +348,38 @@ local function checked_modules(config, declared, read)
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
       declared_configurations = declared_configurations.read(block, scope, names),
+      project_dependencies = project_dependencies.read(block, scope, names, name),
       verbatim = verbatim.checked(block.verbatim, scope .. "verbatim"),
       release = string_key(block, "release", project_options.release, scope .. "release"),
       sources_jar = module_graph.boolean_key(block, "sourcesJar", project_options.sources_jar,
                                              scope .. "sourcesJar"),
+      test_framework = test_frameworks.read(block, project_options.test_framework, scope .. "testFramework"),
       plugins = checked_module_plugins(config, block, scope, owners),
       configure = block.configure,
     }
     build_file.configuration(block.configure, nil, scope .. "configure")
   end
   module_graph.refuse_two_mains(checked)
+  return checked
+end
+
+--- The root's and each implicit parent's block, checked: its plugins against
+--- the project-wide classpath, which the root build file carries, and its
+--- configure tree rendered once.
+---
+--- @implNote not checked against the project-wide `plugins`, which reach the
+--- modules alone, so an id listed in both places applies once to each project.
+--- @return { { name = <nil for the root>, plugins = { pinned, included, core }, configure } }
+local function checked_parents(config, declared, owners)
+  local checked = {}
+  for _, found in ipairs(parents.blocks(config, declared)) do
+    local key = found.label .. ".plugins"
+    local view = { [key] = found.block.plugins, pluginClasspath = config.pluginClasspath }
+    local pinned, _, included, core = checked_plugin_set(view, key, "pluginClasspath", owners)
+    build_file.configuration(found.block.configure, nil, found.label .. ".configure")
+    checked[#checked + 1] = { name = found.name, plugins = { pinned = pinned, included = included, core = core },
+                              configure = found.block.configure }
+  end
   return checked
 end
 
@@ -475,6 +501,7 @@ local function validated(context, config)
   local record = composite_of(context, config)
   source_sets.refuse_task_collisions(config,
                                      checked_modules(config, declared, record.read))
+  checked_parents(config, declared, record.owners)
   entries_of_configurations(config, "")
   configurations.named(config, "")
   declared_configurations.read(config, "", {})
@@ -513,6 +540,7 @@ return {
   checked_classpath = checked_classpath,
   entries_of_configurations = entries_of_configurations,
   checked_modules = checked_modules,
+  checked_parents = checked_parents,
   instance_of = instance_of,
   checked_builds = checked_builds,
   checked_catalogs = checked_catalogs,
