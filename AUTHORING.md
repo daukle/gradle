@@ -69,6 +69,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 | `tasks` | Gradle task names to surface as daukle tasks, one each. `gradle:discover` tells you which exist |
 | `modules` | per-module blocks, keyed by a name `[modules]` declares. Exactly `sourceRoot`, `resourceRoot`, `testSourceRoot`, `testResourceRoot`, `main`, `requiresBuilds`, `sourceSets`, `declaredConfigurations`, `plugins`, `configure`, `release`, `sourcesJar`, `verbatim` and **every dependency configuration key above**; any other key is refused by name. When the project declares modules these are REFUSED project-wide rather than applied to all of them, except `configurations` and the four that compose (**Per-module plugins** below). **Any of them written in core's `[modules.<name>]` is refused too**, because core reads only `requires` there and would hand the rest on unread |
 | `builds` | included builds, keyed by the build's directory. Exactly `gradlePlugins`, the four source roots, `release` and every dependency configuration key, and any other key is refused by name. See **Included builds** below |
+| `projectDependencies` | in a module block only: other modules on a configuration key other than `classpath`, which core's `requires` is (**A module on any configuration of another** below) |
 | `root`, `parents` | the root project's and each implicit parent's `plugins` and `configure`, which the project-wide keys never reach; only beside declared modules (**The root and the implicit parents** below) |
 | `requiresBuilds` | the library builds this project depends on, by name. In a project with modules it belongs in **`[toolchains.gradle.modules.<name>]`**, never in core's `[modules.<name>]` beside `requires` |
 
@@ -555,6 +556,26 @@ A project-wide value renders into every module and never the root, which is Grad
 
 **Before this, a module's `plugins` was read by nothing and rendered nothing, at exit 0**, which is
 why an unknown module key is now refused by name rather than ignored.
+
+### A module on any configuration of another: `projectDependencies`
+
+**Core's `requires` is `implementation project(...)` and nothing else.** A module block's
+`projectDependencies` puts another module on any other configuration key (`D-211`,
+`docs/superpowers/specs/2026-10-31-gradle-project-dependencies-design.md`):
+
+```toml
+[toolchains.gradle.modules.app]
+projectDependencies = { compileOnly = ["contract"], testClasspath = ["fixtures"] }
+```
+
+- Keyed by the configuration keys the plugin already has and rendered in Gradle's name
+  (`testClasspath` is `testImplementation`). **`classpath` is refused, naming `requires`**.
+- An entry is a module name or `{ module, configuration }`, as `declaredConfigurations` takes it,
+  and must name a declared module other than this one.
+- An `api` or `compileOnlyApi` entry makes that module a `java-library`.
+- **The migrator writes it from the declared project edges**, `api` included: `requires` renders an
+  `api` edge as `implementation`, which leaves the project off a consumer's compile classpath, so an
+  `api` edge is written in both places. An edge to an included build's project still blocks.
 
 ### The root and the implicit parents: `root` and `parents.<name>`
 
