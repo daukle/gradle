@@ -123,6 +123,29 @@ local function module_requires(translation, context, where, blockers)
   return requires
 end
 
+--- The module's `projectDependencies` block, its project paths as module
+--- names, or nil when it declares none (spec D-211).
+local function module_project_dependencies(translation, context, where, blockers)
+  local block = {}
+  for key, edges in pairs(translation.projectDependencies or {}) do
+    local entries = {}
+    for _, edge in ipairs(edges) do
+      local name = context.module_of_path[edge.project]
+      if name == nil then
+        blockers[#blockers + 1] = blocker(edge.project, where, "is a project dependency on a project that becomes"
+                                          .. " no module")
+      elseif edge.configuration ~= nil then
+        entries[#entries + 1] = { module = name, configuration = edge.configuration }
+      else
+        entries[#entries + 1] = name
+      end
+    end
+    if #entries > 0 then block[key] = entries end
+  end
+  if next(block) == nil then return nil end
+  return block
+end
+
 --- Blocks a project-wide key two modules disagree about, and returns the agreed values.
 local function project_wide(module_results, blockers)
   local agreed = {}
@@ -234,6 +257,7 @@ local function translate_module(model, project, name, options, context, blockers
   append(blockers, translation.blockers)
   local block, rest = split_keys(translation.config, module_graph.MODULE_KEYS)
   block.requiresBuilds = translate_included_builds.required(translation, context.by_identity, where, blockers)
+  block.projectDependencies = module_project_dependencies(translation, context, where, blockers)
   return { name = name, project = project, where = where, block = block, rest = rest, version = translation.version,
            requires = module_requires(translation, context, where, blockers),
            unpinned = translation.unpinned, blocked_edges = translation.blocked_edges }

@@ -201,7 +201,8 @@ local function module_options(build, module)
                                   requires = module.requires,
                                   required_builds = module.required_builds,
                                   source_sets = with_paths(module.source_sets),
-                                  declared_configurations = module.declared_configurations })
+                                  declared_configurations = module.declared_configurations,
+                                  project_dependencies = module.project_dependencies })
 end
 
 --- @implNote the root file is written on every multi-project run, carrying only

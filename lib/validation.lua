@@ -12,6 +12,7 @@ local verbatim = daukle.require("lib/verbatim")
 local tables = daukle.require("lib/tables")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local parents = daukle.require("lib/parents")
+local project_dependencies = daukle.require("lib/project_dependencies")
 
 local DEFAULT_JDK = "17"
 
@@ -345,6 +346,7 @@ local function checked_modules(config, declared, read)
       required_builds = builds.required(block, scope .. "requiresBuilds", read),
       source_sets = source_sets.read(block, name),
       declared_configurations = declared_configurations.read(block, scope, names),
+      project_dependencies = project_dependencies.read(block, scope, names, name),
       verbatim = verbatim.checked(block.verbatim, scope .. "verbatim"),
       release = string_key(block, "release", project_options.release, scope .. "release"),
       sources_jar = module_graph.boolean_key(block, "sourcesJar", project_options.sources_jar,

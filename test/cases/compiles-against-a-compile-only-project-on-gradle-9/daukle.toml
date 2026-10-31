@@ -1,0 +1,19 @@
+schema = 1
+project = "example/projectdeps"
+version = "1.0.0"
+
+[modules.contract]
+
+[modules.fixtures]
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+[toolchains.gradle]
+version = "9.6.0"
+tasks = ["testClasses"]
+
+[toolchains.gradle.modules.app]
+projectDependencies = { compileOnly = ["contract"], testClasspath = ["fixtures"] }

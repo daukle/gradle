@@ -404,6 +404,7 @@ function translate_model.project(project, build)
   copy_into(config, translate_plugins.project(translation, project))
   local version = project.version ~= UNSPECIFIED and carried(translation, project.version, "version") or nil
   return { config = config, name = carried(translation, project.name, "rootProject.name"), version = version,
+           projectDependencies = translate_dependencies.project_dependencies(project),
            requires = sorted_keys(translation.requires), requiredBuilds = sorted_keys(translation.required_builds),
            unpinned = translation.unpinned, blocked_edges = translation.blocked_edges,
            blockers = translation.blockers }

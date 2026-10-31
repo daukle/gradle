@@ -5,3 +5,7 @@ plugins {
 dependencies {
   testImplementation project(':fixtures')
 }
+
+test {
+  useJUnitPlatform()
+}

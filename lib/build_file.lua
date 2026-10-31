@@ -16,6 +16,7 @@ local source_sets = daukle.require("lib/source_sets")
 local carried = daukle.require("lib/carried")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local tables = daukle.require("lib/tables")
+local project_dependencies = daukle.require("lib/project_dependencies")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -67,7 +68,9 @@ end
 --- nothing could run. Both are built into Gradle, so naming them here resolves
 --- nothing and the no-repository property is untouched.
 local function block_ids(jars, options)
-  local ids = { configurations.needs_java_library(jars) and "java-library" or "java" }
+  local library = configurations.needs_java_library(jars)
+                  or project_dependencies.needs_java_library(options.project_dependencies)
+  local ids = { library and "java-library" or "java" }
   if #(options.gradle_plugins or {}) > 0 then ids[#ids + 1] = "java-gradle-plugin" end
   if options.main ~= nil then ids[#ids + 1] = "application" end
   for _, id in ipairs(options.included_plugins or {}) do ids[#ids + 1] = id end
@@ -171,6 +174,9 @@ local function render_project(layout, jars, options, depth, prefix)
   for index = 1, #requires do
     lines[#lines + 1] = "  implementation project("
                         .. groovy.quoted(gradle_path(requires[index])) .. ")"
+  end
+  for _, line in ipairs(project_dependencies.lines(options.project_dependencies, gradle_path)) do
+    lines[#lines + 1] = line
   end
   for _, build_name in ipairs(options.required_builds or {}) do
     lines[#lines + 1] = "  implementation " .. groovy.quoted(composite.GROUP .. ":" .. build_name)
