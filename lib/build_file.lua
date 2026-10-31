@@ -70,7 +70,7 @@ end
 --- nothing could run. Both are built into Gradle, so naming them here resolves
 --- nothing and the no-repository property is untouched.
 local function block_ids(jars, options)
-  local library = configurations.needs_java_library(jars)
+  local library = options.library or configurations.needs_java_library(jars)
                   or project_dependencies.needs_java_library(options.project_dependencies)
   local ids = { library and "java-library" or "java" }
   if #(options.gradle_plugins or {}) > 0 then ids[#ids + 1] = "java-gradle-plugin" end
@@ -106,7 +106,8 @@ end
 ---                   named = { { name, paths = {path...} } } }
 --- @param options  { release, main, plugins, core_plugins, configure, requires, included_plugins,
 ---                   required_builds, gradle_plugins, group, version, sources_jar,
----                   source_sets, real_tree }
+---                   source_sets, real_tree, library }
+---                 `library` applies `java-library` whatever the keys say: an included library build is one
 ---                 `real_tree` = { build_directory, wrapped } for a project of a build that
 ---                 carries logic; `wrapped` leaves plugin application to a Kotlin wrapper
 --- @param depth    the `file('...')` prefix the source roots resolve against

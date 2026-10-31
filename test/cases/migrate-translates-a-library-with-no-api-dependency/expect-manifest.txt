@@ -1,0 +1,2 @@
+[[toolchains.gradle.modules.greeting.plugins]]
+id = "java-library"
