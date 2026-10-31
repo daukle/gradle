@@ -17,6 +17,7 @@ local carried = daukle.require("lib/carried")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local tables = daukle.require("lib/tables")
 local project_dependencies = daukle.require("lib/project_dependencies")
+local test_frameworks = daukle.require("lib/test_frameworks")
 
 --[[ The derived directory is build/daukle/gradle/, so the project root is three
      levels up. It is load bearing and fails SILENTLY when wrong: with the
@@ -222,8 +223,9 @@ local function render_project(layout, jars, options, depth, prefix)
        matters more in a generated file than in a hand-written one, because the
        user cannot see this one. ]]
   lines[#lines + 1] = "tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }"
+  lines[#lines + 1] = "tasks.withType(Javadoc).configureEach { options.encoding = 'UTF-8' }"
   lines[#lines + 1] = ""
-  lines[#lines + 1] = "test { useJUnitPlatform() }"
+  lines[#lines + 1] = "test { " .. test_frameworks.call(options.test_framework) .. " }"
   for _, line in ipairs(source_sets.test_task_lines(sets)) do lines[#lines + 1] = line end
   if #gradle_plugins > 0 then
     lines[#lines + 1] = ""

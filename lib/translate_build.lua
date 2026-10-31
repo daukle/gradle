@@ -24,7 +24,7 @@ local ROOT_PATH = ":"
 local PROJECT_WIDE_KEYS = { "jdk" }
 
 --- Module keys a project-wide value composes with (D-168), hoisted when every module shares it.
-local WHOLE_VALUE_KEYS = { "release", "sourcesJar" }
+local WHOLE_VALUE_KEYS = { "release", "sourcesJar", "testFramework" }
 
 local function blocker(construct, where, why)
   return migrate_surface.blocker(construct, where, why, migrate_surface.UNCOVERED_ROW)

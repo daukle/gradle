@@ -13,6 +13,7 @@ local tables = daukle.require("lib/tables")
 local declared_configurations = daukle.require("lib/declared_configurations")
 local parents = daukle.require("lib/parents")
 local project_dependencies = daukle.require("lib/project_dependencies")
+local test_frameworks = daukle.require("lib/test_frameworks")
 
 local DEFAULT_JDK = "17"
 
@@ -122,6 +123,7 @@ local function checked_builds(context, config)
       plugin_build = #build.gradle_plugins > 0, gradle_plugins = build.gradle_plugins,
       layout = module_graph.layout_of(build.name, build.block, "builds"),
       release = string_key(build.block, "release", release, scope .. "release"),
+      test_framework = test_frameworks.read(build.block, test_frameworks.DEFAULT, scope .. "testFramework"),
       entries = entries_of_configurations(build.block, scope),
       named = configurations.named(build.block, scope),
       declared_configurations = declared_configurations.read(build.block, scope, {}),
@@ -351,6 +353,7 @@ local function checked_modules(config, declared, read)
       release = string_key(block, "release", project_options.release, scope .. "release"),
       sources_jar = module_graph.boolean_key(block, "sourcesJar", project_options.sources_jar,
                                              scope .. "sourcesJar"),
+      test_framework = test_frameworks.read(block, project_options.test_framework, scope .. "testFramework"),
       plugins = checked_module_plugins(config, block, scope, owners),
       configure = block.configure,
     }

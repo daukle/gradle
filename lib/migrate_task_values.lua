@@ -160,11 +160,20 @@ local function default_title(project)
   return project.name .. " " .. tostring(project.version) .. " API"
 end
 
+local function is_utf8_or_unset(encoding)
+  return encoding == nil or (type(encoding) == "string" and string.gsub(string.upper(encoding), "[-_]", "") == "UTF8")
+end
+
+--- @implNote the generated build always documents UTF-8, as it compiles it.
+--- An old encoding left unset reads the JDK's default, which differs only for
+--- a non-ASCII source, and lib/translate_model already blocks one of those
+--- when the old build also compiled it with the default.
 local function reconcile_javadoc(old, new, context)
   if context.identity_follows and old.title == default_title(context.old)
      and new.title == default_title(context.generated) then
     old.title, new.title = nil, nil
   end
+  if is_utf8_or_unset(old.encoding) then old.encoding, new.encoding = nil, nil end
 end
 
 local RECONCILE = { test = reconcile_test, jar = reconcile_jar, javadoc = reconcile_javadoc }

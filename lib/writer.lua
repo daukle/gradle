@@ -151,7 +151,8 @@ local function write_included_builds(checked, named_of, place)
     local at = composite.path_of(build.name)
     junit.refuse_a_missing_launcher(test_reachable(build.entries))
     local jars = jars_of(build.entries, {}, named_of(build.named))
-    local options = { release = build.release, plugins = {}, gradle_plugins = build.gradle_plugins,
+    local options = { release = build.release, test_framework = build.test_framework, plugins = {},
+                      gradle_plugins = build.gradle_plugins,
                       group = (not build.plugin_build) and composite.GROUP or nil,
                       declared_configurations = build.declared_configurations }
     if build.verbatim ~= nil or build.settings_verbatim ~= nil then
@@ -193,6 +194,7 @@ local function module_options(build, module)
   local own = build.bare and { pinned = {}, included = {}, core = {} } or module.plugins
   return extended(project_wide, { release = module.release,
                                   sources_jar = module.sources_jar,
+                                  test_framework = module.test_framework,
                                   plugins = joined(project_wide.plugins, own.pinned),
                                   core_plugins = joined(project_wide.core_plugins, own.core),
                                   included_plugins = joined(project_wide.included_plugins, own.included),
@@ -365,6 +367,7 @@ local function write_build_file(context, config, options)
   end
   local project_wide = { release = project_options.release,
                          sources_jar = project_options.sources_jar,
+                         test_framework = project_options.test_framework,
                          version = context.version,
                          plugins = pinned_plugins,
                          core_plugins = core_plugins,
