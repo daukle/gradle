@@ -37,7 +37,13 @@ local MARKERS = {
   end,
 }
 
-local MARKER_NAMES = '"file", "buildOutput", "env" or "filesOf"'
+local MARKER_NAMES = '"file", "buildOutput", "env", "filesOf" or "mapOf"'
+
+--- Markers whose payload is a collection rather than a string (D-216): `mapOf`
+--- is a map value, and `putAll` and `addAll` add to a collection the owner
+--- exposes read-only, which no assignment can reach.
+local COLLECTION_MARKERS = { mapOf = true, putAll = true, addAll = true }
+local MUTATIONS = { putAll = true, addAll = true }
 
 --[[ daukle's own token is the one core credential this plugin does not declare,
      so core scrubs it from Gradle's environment and the rendered `?: ''` would
@@ -69,19 +75,59 @@ local function groovy_number(value)
   return tostring(value)
 end
 
+local read_marker
+
+local function is_scalar(value)
+  local kind = type(value)
+  return kind == "string" or kind == "number" or kind == "boolean"
+end
+
+--- A collection entry: a scalar or a string marker, never a block or another collection.
+local function entry_problem(entry, path)
+  if is_scalar(entry) then return nil end
+  if type(entry) ~= "table" then return '"' .. path .. '" is a ' .. type(entry) .. ", which no Gradle value can be spelled as" end
+  local found, problem = read_marker(entry, path)
+  if problem ~= nil then return problem end
+  if found == nil or COLLECTION_MARKERS[found] then
+    return '"' .. path .. '" must be a string, number, boolean or a "file", "buildOutput", "env" or "filesOf"'
+           .. " marker: a collection holds plain values"
+  end
+  return nil
+end
+
+local function collection_problem(marker, payload, path)
+  local where = path .. "." .. marker
+  if type(payload) ~= "table" then return '"' .. where .. '" must be a table, not a ' .. type(payload) end
+  if marker == "addAll" then
+    if #payload == 0 or #payload ~= #sorted_keys(payload) then return '"' .. where .. '" must be a non-empty list' end
+    for index = 1, #payload do
+      local problem = entry_problem(payload[index], where .. "[" .. index .. "]")
+      if problem ~= nil then return problem end
+    end
+    return nil
+  end
+  for _, key in ipairs(sorted_keys(payload)) do
+    if type(key) ~= "string" then return '"' .. where .. '" must be a map of names to values, not a list' end
+    local problem = entry_problem(payload[key], where .. "." .. key)
+    if problem ~= nil then return problem end
+  end
+  return nil
+end
+
 --- The marker key of a one-key table, or nil when the table is a nested block,
 --- and why the table can be neither, or nil.
-local function read_marker(value, path)
+function read_marker(value, path)
   local found, keys = nil, 0
   for key in pairs(value) do
     keys = keys + 1
-    if MARKERS[key] ~= nil then found = key end
+    if MARKERS[key] ~= nil or COLLECTION_MARKERS[key] then found = key end
   end
   if found == nil then return nil end
   if keys > 1 then
     return found, '"' .. path .. '" mixes the marker "' .. found .. '" with other keys: a marker holds'
-                  .. ' exactly one of ' .. MARKER_NAMES
+                  .. ' exactly one of ' .. MARKER_NAMES .. ', "putAll" or "addAll"'
   end
+  if COLLECTION_MARKERS[found] then return found, collection_problem(found, value[found], path) end
   if type(value[found]) ~= "string" then
     return found, '"' .. path .. "." .. found .. '" must be a string, not a ' .. type(value[found])
   end
@@ -102,15 +148,19 @@ local function entry_kind(entry)
   if kind == "string" or kind == "number" or kind == "boolean" then return "values" end
   if kind ~= "table" then return nil end
   if is_call(entry) then return "calls" end
-  if read_marker(entry, "") ~= nil then return "values" end
+  local marker = read_marker(entry, "")
+  if MUTATIONS[marker] then return nil end
+  if marker ~= nil then return "values" end
   return "blocks"
 end
 
---- @return "assignment", "call", "block", or the kind of a list's first entry
+--- @return "assignment", "mutation", "call", "block", or the kind of a list's first entry
 local function value_kind(value)
   if type(value) ~= "table" then return "assignment" end
   if is_call(value) then return "call" end
-  if read_marker(value, "") ~= nil then return "assignment" end
+  local marker = read_marker(value, "")
+  if MUTATIONS[marker] then return "mutation" end
+  if marker ~= nil then return "assignment" end
   if is_list(value) then return entry_kind(value[1]) end
   if is_empty_array(value) then return "values" end
   return "block"
@@ -123,7 +173,7 @@ end
 
 local function is_call_kind(value)
   local kind = value_kind(value)
-  return kind == "call" or kind == "calls"
+  return kind == "call" or kind == "calls" or kind == "mutation"
 end
 
 local body_problem
@@ -210,7 +260,7 @@ end
 
 local function value_problem(value, path)
   local kind = value_kind(value)
-  if kind == "assignment" then return assignment_problem(value, path) end
+  if kind == "assignment" or kind == "mutation" then return assignment_problem(value, path) end
   if kind == "call" then return call_problem(value, path) end
   if kind == "block" then return block_problem(value, path) end
   return list_problem(value, path)
@@ -293,19 +343,41 @@ local function render_block(lines, indent, name, body, depth)
   lines[#lines + 1] = indent .. "}"
 end
 
-local function render_literal(value, depth)
-  local kind = type(value)
-  if kind == "string" then return groovy.quoted(value) end
-  if kind == "number" then return groovy_number(value) end
-  if kind == "boolean" then return tostring(value) end
-  local marker = read_marker(value, "")
-  return MARKERS[marker](value[marker], depth)
-end
+local render_literal
 
 local function render_literals(entries, depth)
   local rendered = {}
   for index = 1, #entries do rendered[index] = render_literal(entries[index], depth) end
   return rendered
+end
+
+--- @implNote keys are always quoted: a map key such as `teavm.junit.js` is
+--- no Groovy identifier, and a bare one would read a variable of that name.
+local function render_map(map, depth)
+  local entries = {}
+  for _, key in ipairs(sorted_keys(map)) do
+    entries[#entries + 1] = groovy.quoted(key) .. ": " .. render_literal(map[key], depth)
+  end
+  if #entries == 0 then return "[:]" end
+  return "[" .. table.concat(entries, ", ") .. "]"
+end
+
+function render_literal(value, depth)
+  local kind = type(value)
+  if kind == "string" then return groovy.quoted(value) end
+  if kind == "number" then return groovy_number(value) end
+  if kind == "boolean" then return tostring(value) end
+  local marker = read_marker(value, "")
+  if marker == "mapOf" then return render_map(value.mapOf, depth) end
+  return MARKERS[marker](value[marker], depth)
+end
+
+local function render_mutation(lines, indent, key, value, depth)
+  if value.putAll ~= nil then
+    lines[#lines + 1] = indent .. key .. ".putAll(" .. render_map(value.putAll, depth) .. ")"
+  else
+    lines[#lines + 1] = indent .. key .. ".addAll([" .. table.concat(render_literals(value.addAll, depth), ", ") .. "])"
+  end
 end
 
 local function render_assignment(lines, indent, key, value, depth)
@@ -349,7 +421,13 @@ function render_body(lines, indent, body, depth)
   table.sort(blocks)
 
   for _, key in ipairs(values) do render_assignment(lines, indent, key, body[key], depth) end
-  for _, key in ipairs(calls) do render_each(render_call, lines, indent, key, body[key], depth) end
+  for _, key in ipairs(calls) do
+    if value_kind(body[key]) == "mutation" then
+      render_mutation(lines, indent, key, body[key], depth)
+    else
+      render_each(render_call, lines, indent, key, body[key], depth)
+    end
+  end
   for _, key in ipairs(blocks) do render_each(render_block, lines, indent, key, body[key], depth) end
 end
 

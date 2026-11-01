@@ -1,0 +1,3 @@
+build/daukle/gradle/build.gradle daukleProbeMap = ['count': 3, 'probe.key': 'value']
+build/daukle/gradle/build.gradle attributes.putAll(['Automatic-Module-Name': 'example.greeter'])
+build/daukle/gradle/build/tmp/jar/MANIFEST.MF Automatic-Module-Name: example.greeter

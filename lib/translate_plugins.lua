@@ -32,7 +32,8 @@ local COLLECTIONS = { "$list", "$map" }
 
 --- The keys `daukle/gradle` reads as a marker rather than a block in a
 --- configure tree, so a property of that name cannot be said.
-local MARKER_KEYS = { file = true, buildOutput = true, env = true }
+local MARKER_KEYS = { file = true, buildOutput = true, env = true, filesOf = true, mapOf = true, putAll = true,
+                      addAll = true }
 
 local function is_plugin_build_edge(state, edge)
   local build = string.match(edge, "^project (%S+) ")
@@ -122,9 +123,71 @@ end
 
 local function collection_of(value)
   for _, key in ipairs(COLLECTIONS) do
-    if value[key] ~= nil then return value[key] end
+    if value[key] ~= nil then return value[key], key end
   end
   return nil
+end
+
+local function is_scalar(value)
+  local kind = type(value)
+  return kind == "string" or kind == "number" or kind == "boolean"
+end
+
+local function all_scalar(collection)
+  for _, entry in pairs(collection) do
+    if not is_scalar(entry) then return false end
+  end
+  return true
+end
+
+--- The entries a read-only collection holds beyond its plugin's own, as
+--- `addAll` or `putAll`, or nil when it holds none or lost one (D-216).
+---
+--- @implNote a mutation can only add, so a list whose plugin default is not
+--- a prefix of it, or a map that drops or changes a default entry, has no
+--- spelling; nil leaves it to the comparison, which blocks it there.
+local function additions(collection, kind, default)
+  local base = type(default) == "table" and default[kind] or {}
+  if type(base) ~= "table" then return nil end
+  if kind == "$list" then
+    for index = 1, #base do
+      if not tables.deep_equal(base[index], collection[index]) then return nil end
+    end
+    if #collection == #base then return nil end
+    local added = {}
+    for index = #base + 1, #collection do added[#added + 1] = collection[index] end
+    return { addAll = added }
+  end
+  local added = {}
+  for key, entry in pairs(base) do
+    if not tables.deep_equal(entry, collection[key]) then return nil end
+  end
+  for key, entry in pairs(collection) do
+    if base[key] == nil then added[key] = entry end
+  end
+  if next(added) == nil then return nil end
+  return { putAll = added }
+end
+
+--- A collection as a configure value: a plain list as itself, a plain map as
+--- `mapOf`, a read-only one as what it adds; anything else blocks by name.
+local function collection_value(state, collection, kind, path, read_only, surface, default)
+  if next(collection) == nil then return nil end
+  if not all_scalar(collection) then
+    if not read_only then
+      block(state, path, "holds a list or a map whose entries are not plain values, which a configure tree"
+            .. " cannot assign", surface)
+    end
+    return nil
+  end
+  local entries = {}
+  for key, entry in pairs(collection) do
+    entries[key] = carried(state, entry, path .. "." .. tostring(key))
+    if entries[key] == nil then return nil end
+  end
+  if read_only then return additions(entries, kind, default) end
+  if kind == "$list" then return entries end
+  return { mapOf = entries }
 end
 
 local configure_tree
@@ -166,13 +229,8 @@ local function configure_value(state, value, path, read_only, surface, default)
     end
     return nil
   end
-  local collection = collection_of(value)
-  if collection ~= nil then
-    if not read_only and next(collection) ~= nil then
-      block(state, path, "holds a list or a map, which a configure tree cannot assign", surface)
-    end
-    return nil
-  end
+  local collection, kind = collection_of(value)
+  if collection ~= nil then return collection_value(state, collection, kind, path, read_only, surface, default) end
   return configure_tree(state, value, path, surface, default)
 end
 
@@ -181,6 +239,7 @@ end
 --- is left to the comparison (`$blocks`, lib/model_dump.lua).
 local function is_unreachable_block(item, read_only, blocks)
   return read_only and not blocks and type(item) == "table" and not is_unrendered(item)
+         and collection_of(item) == nil
 end
 
 function configure_tree(state, value, path, surface, default)

@@ -1,0 +1,13 @@
+plugins {
+  id 'java'
+  id 'example.level'
+}
+
+version = '1.0.0'
+
+level {
+  tags = ['one', 'two']
+  options = ['teavm.junit.js': 'true', plain: 'yes']
+  labels.put('Automatic-Module-Name', 'com.example')
+  steps.add('second')
+}
