@@ -1,0 +1,2 @@
+rootProject.name = 'noted'
+include 'alpha', 'beta'

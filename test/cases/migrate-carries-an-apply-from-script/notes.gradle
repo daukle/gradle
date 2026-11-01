@@ -1,0 +1,5 @@
+tasks.register('notes') {
+  doLast {
+    println 'notes ran'
+  }
+}

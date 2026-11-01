@@ -1,0 +1,8 @@
+[toolchains.gradle.modules.alpha.verbatim]
+groovy = '''
+tasks.register('notes') {
+tasks.named('notes') {
+
+[toolchains.gradle.modules.beta.verbatim]
+groovy = '''
+tasks.register('notes') {

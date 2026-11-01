@@ -1028,13 +1028,25 @@ generates into the derived root (`root-links.gradle`, `plugin-classpath.txt`,
 `settings-plugins.gradle`, `jars.gradle`, `discovered.txt`, `tools.gradle`, `kotlin-settings.gradle`,
 `settings.rendered.gradle`), and every name starting with `migrate-`.
 
+**Applied scripts** (`D-188`). A script a project applied with `apply from` (a literal, `file(...)`,
+`rootProject.file(...)` or `"$rootDir/..."`, from the build script or a parent's `subprojects {}`)
+is selected from like the build script: an action is placed in the script whose class loader
+compiled it, and the four rules run over the union, so a value the build script defines and the
+applied script reads is carried too. The applied statements replace the build script's own `apply
+from` statement; a script applied from elsewhere goes first, as Gradle ran it. Every project it
+was applied to gets them in its own `verbatim`, and the applied file is removed with the build
+scripts. The report names such a statement `verbatim.groovy from <script>: line <n>`, the line
+counted in that script.
+
 **What the proof does not run.** A carried task the proof's task graph does not hold is reported as
 `<task>: carried, configured and compared, not run by the proof`. Carried code is configured and
 compared, not executed beyond what `gradle:jars` schedules.
 
 **Still blocks**, each naming the construct:
 
-- an `apply from:` script: an action it compiled is not in the build script, so its text is not carried;
+- an `apply from:` script that is remote or outside the build, that cannot be parsed, that holds a
+  `buildscript {}` block, that is in the other DSL than the project's build script, or that one build
+  script applies twice;
 - a settings script that did not parse, the root's or an included build's. Its declarations, which
   the translation reads and the render writes, are never carried: `include`, `includeFlat`,
   `includeBuild`, `pluginManagement`, `plugins`, `dependencyResolutionManagement`, `buildCache`,

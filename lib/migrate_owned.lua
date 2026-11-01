@@ -53,7 +53,31 @@ local function add_gradle_directory(owned, seen, directory, build_directories)
   end
 end
 
---- One build's files: each project's build file, and what sits at the build's root.
+local function lies_under_any(path, owned)
+  for _, directory in ipairs(owned) do
+    if path ~= directory and lies_under(path, directory) then return true end
+  end
+  return false
+end
+
+local function sorted_keys(map)
+  local keys = {}
+  for key in pairs(map or {}) do keys[#keys + 1] = key end
+  table.sort(keys)
+  return keys
+end
+
+--- Each script the build applied with `apply from`, which is an old build file
+--- like a build script (spec D-188, 4.7), unless a directory already owned holds it.
+local function add_applied_scripts(owned, seen, directory, model)
+  for _, path in ipairs(sorted_keys(model.appliedScripts)) do
+    local applied = within(directory, path)
+    if migrate_paths.is_below(path) and not lies_under_any(applied, owned) then add(owned, seen, applied) end
+  end
+end
+
+--- One build's files: each project's build file, each script it applied, and
+--- what sits at the build's root.
 local function add_build(owned, seen, directory, model, build_directories)
   for _, project in ipairs(model.projects or {}) do
     if migrate_paths.is_below(project.buildFile) then add(owned, seen, within(directory, project.buildFile)) end
@@ -63,6 +87,7 @@ local function add_build(owned, seen, directory, model, build_directories)
     if migrate_paths.has_file(listed, name) then add(owned, seen, within(directory, name)) end
   end
   add_gradle_directory(owned, seen, directory, build_directories)
+  add_applied_scripts(owned, seen, directory, model)
 end
 
 --- Each included build with a model, as { directory, model }, its directory

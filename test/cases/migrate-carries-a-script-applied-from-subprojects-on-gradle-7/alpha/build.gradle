@@ -1,0 +1,9 @@
+plugins {
+  id 'java'
+}
+
+tasks.named('notes') {
+  doLast {
+    println 'alpha after its notes'
+  }
+}

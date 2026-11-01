@@ -803,8 +803,42 @@ def tasksOf = { File base, project ->
   }
 }
 
-def projectOf = { File base, project ->
-  [path: project.path, name: project.name, dir: pathFrom(base, project.projectDir),
+/**
+ * An inventory with no `apply from` facts, for a script whose application paths are not resolved: a
+ * settings script's, and an applied script's, which is relative to whichever project applied it and
+ * whose own applications arrive anyway through the actions they compiled.
+ */
+def withoutApplies = { Map inventory ->
+  inventory?.statements?.each { it.applies = null }
+  inventory
+}
+
+/** Each top-level `apply from` statement's script as a path from the build's root (D-188). */
+def withAppliedPaths = { File base, project, Map inventory ->
+  inventory?.statements?.each { statement ->
+    if (statement.applies == null) return
+    def directory = statement.applies.from == 'root' ? project.rootDir : project.projectDir
+    statement.applies = pathFrom(base, new File(directory, statement.applies.path))
+  }
+  inventory
+}
+
+def isInsideBuild = { File base, String path -> !new File(path).isAbsolute() && new File(base, path).isFile() }
+
+/**
+ * The scripts a project's build applied (D-188): each one a task's action or type was compiled from,
+ * and each one a top-level `apply from` names, other than its own build script and the settings
+ * script, inside the build. A remote or outside script is left to the migrator to block by name.
+ */
+def appliedScriptsOf = { File base, Map script, List tasks, String settingsPath ->
+  def own = [script?.path, settingsPath] as Set
+  def named = tasks.collectMany { it.scripts } + (script?.statements ?: []).collect { it.applies }
+  named.findAll { it != null && it != UNKNOWN_SCRIPT && !own.contains(it) && isInsideBuild(base, it) }.unique().sort()
+}
+
+def projectOf = { File base, project, String settingsPath ->
+  def script = withAppliedPaths(base, project, scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile, false))
+  def entry = [path: project.path, name: project.name, dir: pathFrom(base, project.projectDir),
    buildFile: (project.buildFile.isFile() ? pathFrom(base, project.buildFile) : null),
    buildDir: pathFrom(base, project.layout.buildDirectory.get().asFile),
    version: project.version.toString(), group: project.group.toString(),
@@ -812,8 +846,15 @@ def projectOf = { File base, project ->
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),
    dependencies: dependenciesOf(project), tasks: tasksOf(base, project),
-   catalogs: catalogNamesOf(project), configurations: configurationsOf(project),
-   script: scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile, false)]
+   catalogs: catalogNamesOf(project), configurations: configurationsOf(project), script: script]
+  entry + [appliedScripts: appliedScriptsOf(base, script, entry.tasks, settingsPath)]
+}
+
+/** Each applied script's inventory, once per build, by its path from the build's root. */
+def appliedInventoriesOf = { File base, List projects ->
+  projects.collectMany { it.appliedScripts }.unique().sort().collectEntries { path ->
+    [path, withoutApplies(scriptInventoryOf(base, gradle.gradleHomeDir, new File(base, path), false))]
+  }
 }
 
 def repositoriesByName = { Iterable repositories ->
@@ -857,7 +898,7 @@ def settingsFacts = [:]
 gradle.settingsEvaluated { settings ->
   def base = settings.rootDir
   def settingsFile = settingsFileOf(settings)
-  settingsFacts.settingsScript = settingsFile == null ? null : scriptInventoryOf(base, gradle.gradleHomeDir, settingsFile, true)
+  settingsFacts.settingsScript = settingsFile == null ? null : withoutApplies(scriptInventoryOf(base, gradle.gradleHomeDir, settingsFile, true))
   settingsFacts.pluginManagementRepositories = repositoriesOf(settings.pluginManagement.repositories)
   settingsFacts.settingsPlugins = pluginsOf(base, settings.plugins)
   settingsFacts.settingsExtensions = extensionsOf(base, settings)
@@ -902,8 +943,10 @@ gradle.taskGraph.whenReady {
                settingsScript: settingsFacts.settingsScript,
                projects: []]
   model.catalogs = safely { catalogsOf(gradle.rootProject) }
-  try { model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it) } }
-  finally { closeKotlinParsers() }
+  try {
+    model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it, settingsFacts.settingsScript?.path) }
+    model.appliedScripts = appliedInventoriesOf(base, model.projects)
+  } finally { closeKotlinParsers() }
   def file = outputFor(gradle)
   file.parentFile.mkdirs()
   file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(writableModel(model))), 'UTF-8')
