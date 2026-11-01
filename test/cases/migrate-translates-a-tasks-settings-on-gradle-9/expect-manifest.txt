@@ -1,0 +1,10 @@
+[toolchains.gradle.configure.tasks.test]
+maxHeapSize = "1g"
+maxParallelForks = 2
+
+"teavm.junit.js" = "true"
+
+[toolchains.gradle.configure.tasks.jar]
+archiveClassifier = "lib"
+
+Automatic-Module-Name = "com.example"

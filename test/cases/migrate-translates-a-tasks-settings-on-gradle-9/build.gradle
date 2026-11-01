@@ -1,0 +1,18 @@
+plugins {
+  id 'java'
+}
+
+version = '1.0.0'
+
+tasks.named('test') {
+  maxHeapSize = '1g'
+  maxParallelForks = 2
+  systemProperty 'teavm.junit.js', 'true'
+}
+
+tasks.named('jar') {
+  archiveClassifier = 'lib'
+  manifest {
+    attributes('Automatic-Module-Name': 'com.example')
+  }
+}

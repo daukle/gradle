@@ -14,6 +14,8 @@ local migrate_blockers = daukle.require("lib/migrate_blockers")
 local migrate_paths = daukle.require("lib/migrate_paths")
 local translation = daukle.require("lib/translation")
 local tables = daukle.require("lib/tables")
+local extension_defaults = daukle.require("lib/extension_defaults")
+local migrate_real_tree = daukle.require("lib/migrate_real_tree")
 
 local blocker = migrate_surface.blocker
 local is_unrendered = translation.is_unrendered
@@ -286,6 +288,97 @@ function migrate_task_values.differences(old, generated, options)
     if generated_task ~= nil then task_blockers(task, generated_task, context, blockers) end
   end
   return blockers
+end
+
+--- The properties that hold a test task's framework, which the walk reads
+--- whole (D-217).
+local FRAMEWORK_SETTINGS = { "testFramework", "testFrameworkProperty", "options" }
+
+--- The walked settings Gradle derives from the others, by name: an archive's
+--- file name composed from its parts, which carried would freeze the
+--- composition (D-217).
+function migrate_task_values.derived(task)
+  local values = task.values or {}
+  if task.reader == "jar" and values.archiveFileName == composed_name(values) then return { archiveFileName = true } end
+  return {}
+end
+
+local ENCODING_READERS = { javaCompile = true, javadoc = true }
+local by_property
+
+--- @implNote the generated build pins UTF-8 (lib/build_file.lua), so the
+--- encoding is left out as `compile_values` leaves it out, and a Javadoc
+--- option file is written from those options.
+local function without_encoding(settings)
+  if type(settings.options) ~= "table" then return end
+  local options = copy(settings.options)
+  options.encoding, options.optionFile = nil, nil
+  settings.options = options
+end
+
+--- A task's walked settings, less what the reader's reconciliation found equal in form.
+--- @param roots { old, new } to read a generated task's paths against the real root, or nil
+local function settings_of(task, other, context, roots)
+  local settings = task.settings
+  if roots ~= nil then settings = migrate_real_tree.generated(settings, roots.new, roots.old, {}) end
+  settings = extension_defaults.without_repeated_directories(settings)
+  for name in pairs(migrate_task_values.derived(task)) do settings[name] = nil end
+  if ENCODING_READERS[task.reader] then without_encoding(settings) end
+  local values, other_values = task.values or {}, other.values or {}
+  if task.reader == "test" and values.framework ~= other_values.framework
+     and not tests_have_sources(values.testClassesDirs, context.old, context.root) then
+    for _, key in ipairs(FRAMEWORK_SETTINGS) do settings[key] = nil end
+  end
+  return settings
+end
+
+local TASK_PROPERTY = "^(configure%.tasks%.[^.]+%.[^.]+)"
+
+--- One blocker per task property, naming how many of its leaves differ: a
+--- value derived from one cause (a copy spec built from a settings plugin's
+--- relocation) otherwise reports that cause once per leaf, 1763 times on
+--- brazier.
+function by_property(blockers)
+  local out, index = {}, {}
+  for _, found in ipairs(blockers) do
+    local property = string.match(found.construct, TASK_PROPERTY) or found.construct
+    local key = property .. "\0" .. found.why
+    local seen = index[key]
+    if seen == nil then
+      index[key] = { blocker = found, leaves = 1, property = property }
+      out[#out + 1] = index[key]
+    else
+      seen.leaves = seen.leaves + 1
+    end
+  end
+  local collapsed = {}
+  for _, entry in ipairs(out) do
+    local found = entry.blocker
+    if entry.leaves > 1 then
+      found = blocker(entry.property, found.where, found.why .. " (" .. entry.leaves .. " values under it differ)",
+                      found.surface)
+    end
+    collapsed[#collapsed + 1] = found
+  end
+  return collapsed
+end
+
+--- Each task both builds have, compared by what its own type declares as an
+--- extension is compared (D-217): what the reader leaves out blocks by name
+--- rather than passing unseen.
+--- @param options { where, root, roots?, directories = { old, new } }
+function migrate_task_values.settings(old, generated, options)
+  local context = { old = old, root = options.root }
+  local old_settings, new_settings = {}, {}
+  for _, task in ipairs(old.tasks or {}) do
+    local generated_task = tables.named(generated.tasks, task.name)
+    if generated_task ~= nil and type(task.settings) == "table" and type(generated_task.settings) == "table" then
+      old_settings[task.name] = { value = settings_of(task, generated_task, context) }
+      new_settings[task.name] = { value = settings_of(generated_task, task, context, options.roots) }
+    end
+  end
+  return by_property(migrate_blockers.extension_differences(old_settings, new_settings, options.where,
+                                                           "configure.tasks", options.directories))
 end
 
 --- The core `application` extension: absent from the generated build, or

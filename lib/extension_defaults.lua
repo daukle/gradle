@@ -43,11 +43,27 @@ local function without_repeated_directories(value)
   return out
 end
 
-local function by_path(model)
-  local projects = {}
-  for _, project in ipairs(model.projects or {}) do projects[project.path] = project.extensions or {} end
-  return { projects = projects, settings = model.settingsExtensions or {} }
+local function settings_by_task(project)
+  local settings = {}
+  for _, task in ipairs(project.tasks or {}) do
+    if type(task.settings) == "table" then settings[task.name] = task.settings end
+  end
+  return settings
 end
+
+local function by_path(model)
+  local projects, tasks = {}, {}
+  for _, project in ipairs(model.projects or {}) do
+    projects[project.path] = project.extensions or {}
+    tasks[project.path] = settings_by_task(project)
+  end
+  return { projects = projects, tasks = tasks, settings = model.settingsExtensions or {} }
+end
+
+--- A value with each `srcDirs` list holding a directory once: the generated
+--- build adds a conventional root again from the real tree, which maps back
+--- onto the same path.
+extension_defaults.without_repeated_directories = without_repeated_directories
 
 local function read(model, real_root, modules)
   local mapped = migrate_real_tree.generated(model, model.rootDir, real_root, modules)
@@ -78,6 +94,14 @@ function extension_defaults.project(defaults, build, path)
   if defaults == extension_defaults.SKIP then return defaults end
   local found = build_of(defaults, build)
   return found ~= nil and found.projects[path] or nil
+end
+
+--- One project's task settings in the defaults build, by task name, as
+--- `project` returns its extensions (D-217).
+function extension_defaults.tasks(defaults, build, path)
+  if defaults == extension_defaults.SKIP then return defaults end
+  local found = build_of(defaults, build)
+  return found ~= nil and found.tasks[path] or nil
 end
 
 --- A build's settings extensions in the defaults build, as `project` returns them.

@@ -13,6 +13,7 @@ local migrate_surface = daukle.require("lib/migrate_surface")
 local tables = daukle.require("lib/tables")
 local extension_defaults = daukle.require("lib/extension_defaults")
 local core_plugins = daukle.require("lib/core_plugins")
+local migrate_task_values = daukle.require("lib/migrate_task_values")
 
 local block = translation_state.block
 local carried = translation_state.carried
@@ -237,9 +238,19 @@ end
 --- Whether a configure tree can open the key as a block. A read-only object
 --- the owner has no `key { }` method for is reachable only as a value, so it
 --- is left to the comparison (`$blocks`, lib/model_dump.lua).
-local function is_unreachable_block(item, read_only, blocks)
-  return read_only and not blocks and type(item) == "table" and not is_unrendered(item)
-         and collection_of(item) == nil
+local function is_wrapper(item)
+  for key in pairs(item) do
+    if type(key) == "string" and string.sub(key, 1, 1) == "$" and key ~= READ_ONLY and key ~= BLOCKS then return true end
+  end
+  return false
+end
+
+--- @param blocks_only for a task's walk (D-217): an object no `key { }` opens is
+--- unreachable even when assignable, because it is a property holding another
+--- model object (a publication), which a block would not configure.
+local function is_unreachable_block(item, read_only, blocks, blocks_only)
+  if type(item) ~= "table" or is_wrapper(item) or blocks then return false end
+  return read_only or blocks_only == true
 end
 
 function configure_tree(state, value, path, surface, default)
@@ -247,7 +258,7 @@ function configure_tree(state, value, path, surface, default)
   local blocks = as_set(value[BLOCKS])
   local tree = {}
   for _, key in ipairs(sorted_keys(value)) do
-    if key ~= READ_ONLY and key ~= BLOCKS and not is_unreachable_block(value[key], read_only[key], blocks[key]) then
+    if key ~= READ_ONLY and key ~= BLOCKS and not is_unreachable_block(value[key], read_only[key], blocks[key], state.blocks_only) then
       local key_path = path .. "." .. key
       local item = configure_value(state, value[key], key_path, read_only[key], surface, default_at(default, key))
       if item ~= nil and MARKER_KEYS[key] then
@@ -288,6 +299,38 @@ local function configure_of(state, extensions, label, surface, defaults)
   return configure
 end
 
+--- One configure block per task the old build and the defaults build both
+--- have, holding what the old build changed (D-217), or nil.
+--- @implNote with no defaults build nothing is translated, since every value
+--- a plugin set would then read as set; a task only the old build has is its
+--- carried code's own, and that code configures it. Nothing here blocks: a
+--- task's walk also reads what it derives from other objects (a publication,
+--- a launcher), which differs from the defaults build until those are carried,
+--- so whether a value still differs is the comparison's to say.
+local function task_configure_of(state, tasks, defaults)
+  if defaults == nil or defaults == extension_defaults.SKIP then return nil end
+  local lenient = setmetatable({ blocked = {}, blockers = {}, blocks_only = true }, { __index = state })
+  local configure = {}
+  for _, task in ipairs(tasks or {}) do
+    local default = defaults[task.name]
+    if default ~= nil and type(task.settings) == "table" and not is_unrendered(task.settings) then
+      local settings = tables.shallow_copy(task.settings)
+      for name in pairs(migrate_task_values.derived(task)) do settings[name] = nil end
+      configure[task.name] = configure_value(lenient, settings, "configure.tasks." .. task.name, false,
+                                             UNCOVERED_ROW, default)
+    end
+  end
+  if next(configure) == nil then return nil end
+  return configure
+end
+
+local function with_tasks(configure, tasks)
+  if tasks == nil then return configure end
+  configure = configure or {}
+  configure.tasks = tasks
+  return configure
+end
+
 local function non_empty(list)
   if #list == 0 then return nil end
   return list
@@ -299,8 +342,12 @@ function translate_plugins.project(state, project)
   return {
     plugins = non_empty(plugin_entries(state, project.plugins, buildscript, not state.included)),
     pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)),
-    configure = configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
-                             extension_defaults.project(state.extension_defaults, state.defaults_build, project.path)),
+    configure = with_tasks(configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
+                                        extension_defaults.project(state.extension_defaults, state.defaults_build,
+                                                                   project.path)),
+                           task_configure_of(state, project.tasks,
+                                             extension_defaults.tasks(state.extension_defaults, state.defaults_build,
+                                                                      project.path))),
   }
 end
 

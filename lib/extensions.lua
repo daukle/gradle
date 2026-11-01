@@ -335,6 +335,7 @@ local function configuration_problem(configure, label)
 end
 
 local render_body
+local render_tasks
 
 local function render_block(lines, indent, name, body, depth)
   if not is_identifier(name) then name = groovy.quoted(name) end
@@ -431,13 +432,33 @@ function render_body(lines, indent, body, depth)
   for _, key in ipairs(blocks) do render_each(render_block, lines, indent, key, body[key], depth) end
 end
 
+--- Each `configure.tasks` entry, configured whenever a task of that name is
+--- registered: a plugin may register one after the build script runs
+--- (`generateMetadataFileForJavaPublication`), which `tasks { name { } }`
+--- would fail on (D-217).
+function render_tasks(lines, tasks, depth)
+  for _, name in ipairs(sorted_keys(tasks)) do
+    lines[#lines + 1] = "tasks.matching { it.name == " .. groovy.quoted(name) .. " }.configureEach {"
+    render_body(lines, "  ", tasks[name], depth)
+    lines[#lines + 1] = "}"
+  end
+end
+
 --- @param label as `configuration_problem` takes it
 local function configuration(configure, depth, label)
   local problem = configuration_problem(configure, label)
   if problem ~= nil then error(problem, 0) end
   if configure == nil then return {} end
   local lines = {}
+  local tasks = configure.tasks
+  if is_block(tasks) and not is_list(tasks) then
+    configure = tables.shallow_copy(configure)
+    configure.tasks = nil
+  else
+    tasks = nil
+  end
   render_body(lines, "", configure, depth)
+  if tasks ~= nil then render_tasks(lines, tasks, depth) end
   return lines
 end
 
