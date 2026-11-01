@@ -133,10 +133,13 @@ local function task_types(project)
   return types
 end
 
+--- @implNote an applied script's statement holds only its own script's
+--- actions, since its lines are counted in another file.
 local function holds_an_action_of(statement, task)
   for _, action in ipairs(task.actions or {}) do
     local line = action.lastLine
-    if line ~= nil and statement.startLine <= line and line <= statement.endLine then return true end
+    local same_script = statement.script == nil or action.script == statement.script
+    if same_script and line ~= nil and statement.startLine <= line and line <= statement.endLine then return true end
   end
   return false
 end
@@ -155,9 +158,12 @@ local function row_of(statement, project)
   return migrate_surface.BOUNDARY_ROW
 end
 
+--- @implNote an applied script's statement is named with its script, since
+--- its line is counted in that file (spec D-188).
 local function record_statements(result, carried_statements, label, project)
   for _, statement in ipairs(carried_statements) do
-    result.statements[#result.statements + 1] = { label = label, line = statement.startLine,
+    local shown = statement.script == nil and label or label .. " from " .. statement.script
+    result.statements[#result.statements + 1] = { label = shown, line = statement.startLine,
                                                   row = row_of(statement, project) }
   end
 end
@@ -186,10 +192,10 @@ local function carry_target(target, built, result, taken)
                   and migrate_blockers.missing_task_names(target.project, target.counterpart) or {}
   add_missing(result, target.build, missing)
   local selection = migrate_logic.select(target.project, missing, target.where,
-                                         parsed_settings_path(built, target.build))
+                                         parsed_settings_path(built, target.build), (built.applied or {})[target.build])
   append(result.blockers, selection.blockers)
   if #selection.carried == 0 then return end
-  local dsl = dsl_of(target.project)
+  local dsl = selection.dsl or dsl_of(target.project)
   if not is_placed(target.place) then
     result.blockers[#result.blockers + 1] = no_place_blocker(target)
     return
@@ -200,8 +206,7 @@ local function carry_target(target, built, result, taken)
     return
   end
   taken[label] = true
-  translate_build.set_verbatim(config, target.place, dsl,
-                               migrate_logic.text(selection.carried, dsl, (target.project.script or {}).lineEnding))
+  translate_build.set_verbatim(config, target.place, dsl, migrate_logic.text(selection.carried, dsl, selection.lineEnding))
   record_statements(result, selection.carried, label .. "." .. dsl, target.project)
   carry_catalogs(target, selection.catalogs or {}, (built.catalogs or {})[target.build], config, result)
   result.covered[target.project] = selection.covered

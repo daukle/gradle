@@ -1,0 +1,5 @@
+:alpha:notes: carried, configured and compared, not run by the proof
+:beta:notes: carried, configured and compared, not run by the proof
+provisioning gradle 9.6.0
+modules.alpha.verbatim.groovy from notes.gradle: line 1 carried verbatim, coverage owed
+modules.beta.verbatim.groovy from notes.gradle: line 1 carried verbatim, coverage owed

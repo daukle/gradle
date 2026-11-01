@@ -147,7 +147,23 @@ def REGISTERING_CALLS = ['register', 'create', 'task', 'maybeCreate'] as Set
 def statementOf = { ScriptSource source, List starts, int index, int start, int end, Map facts ->
   [index: index, text: source.originalSlice(start, end), startLine: lineOfOffset(starts, start),
    endLine: lineOfOffset(starts, Math.max(start, end - 1)), registers: facts.registers as List,
-   defines: facts.defines as List, uses: facts.uses as List, definition: facts.definition]
+   defines: facts.defines as List, uses: facts.uses as List, definition: facts.definition, applies: facts.applies]
+}
+
+/** Where an `apply from` argument's path is relative to: the project's directory, or the build's root. */
+def APPLIED_FROM_PROJECT = 'project'
+def APPLIED_FROM_ROOT = 'root'
+def ROOT_DIRECTORY_NAMES = ['rootDir', 'rootProject.rootDir', 'rootProject.projectDir'] as Set
+def PROJECT_DIRECTORY_NAMES = ['projectDir', 'project.projectDir'] as Set
+
+def appliedFromOf = { String directory ->
+  if (ROOT_DIRECTORY_NAMES.contains(directory)) return APPLIED_FROM_ROOT
+  PROJECT_DIRECTORY_NAMES.contains(directory) ? APPLIED_FROM_PROJECT : null
+}
+
+/** A path written after a directory in a string template: `"$rootDir/gradle/x.gradle"`. */
+def appliedBelow = { String from, String rest ->
+  from == null || rest == null || !rest.startsWith('/') ? null : [from: from, path: rest.substring(1)]
 }
 
 /**
@@ -290,13 +306,51 @@ def isGroovyDeclaration = { node ->
   (node instanceof org.codehaus.groovy.ast.stmt.ExpressionStatement && node.expression instanceof org.codehaus.groovy.ast.expr.DeclarationExpression)
 }
 
+def groovyDirectoryTextOf = { expression ->
+  if (expression instanceof org.codehaus.groovy.ast.expr.VariableExpression) return expression.name
+  if (expression instanceof org.codehaus.groovy.ast.expr.PropertyExpression &&
+      expression.objectExpression instanceof org.codehaus.groovy.ast.expr.VariableExpression) {
+    return expression.objectExpression.name + '.' + expression.propertyAsString
+  }
+  null
+}
+
+/** The script an `apply from` argument names, as [from, path], or null when it is computed. */
+def groovyAppliedPathOf = { expression ->
+  def literal = GroovyFacts.stringConstant(expression)
+  if (literal != null) return [from: APPLIED_FROM_PROJECT, path: literal]
+  if (expression instanceof org.codehaus.groovy.ast.expr.GStringExpression && expression.values.size() == 1 &&
+      expression.strings.size() == 2 && expression.strings[0].value == '') {
+    return appliedBelow(appliedFromOf(groovyDirectoryTextOf(expression.values[0])), expression.strings[1].value)
+  }
+  if (!(expression instanceof org.codehaus.groovy.ast.expr.MethodCallExpression) || expression.methodAsString != 'file') return null
+  def arguments = expression.arguments.expressions
+  def path = arguments.size() == 1 ? GroovyFacts.stringConstant(arguments[0]) : null
+  if (path == null) return null
+  if (expression.implicitThis) return [from: APPLIED_FROM_PROJECT, path: path]
+  groovyDirectoryTextOf(expression.objectExpression) == 'rootProject' ? [from: APPLIED_FROM_ROOT, path: path] : null
+}
+
+/** What a top-level `apply from: ...` or `apply(from: ...)` statement applies; null for any other statement. */
+def groovyAppliesOf = { node ->
+  if (!(node instanceof org.codehaus.groovy.ast.stmt.ExpressionStatement)) return null
+  def call = node.expression
+  if (!(call instanceof org.codehaus.groovy.ast.expr.MethodCallExpression) || call.methodAsString != 'apply' || !call.implicitThis) return null
+  def arguments = call.arguments.expressions
+  if (arguments.size() != 1 || !(arguments[0] instanceof org.codehaus.groovy.ast.expr.MapExpression)) return null
+  def entries = arguments[0].mapEntryExpressions
+  if (entries.size() != 1 || GroovyFacts.stringConstant(entries[0].keyExpression) != 'from') return null
+  groovyAppliedPathOf(entries[0].valueExpression)
+}
+
 def groovyFactsOf = { node ->
   def visitor = new GroovyFacts(registeringCalls: REGISTERING_CALLS)
   if (node instanceof org.codehaus.groovy.ast.ClassNode) visitor.visitClass(node)
   else if (node instanceof org.codehaus.groovy.ast.MethodNode) visitor.visitMethod(node)
   else if (node instanceof org.codehaus.groovy.ast.stmt.Statement) node.visit(visitor)
   def defines = groovyDefinesOf(node)
-  [registers: visitor.registers, defines: defines, uses: visitor.uses, definition: isGroovyDeclaration(node) || !defines.isEmpty()]
+  [registers: visitor.registers, defines: defines, uses: visitor.uses, definition: isGroovyDeclaration(node) || !defines.isEmpty(),
+   applies: groovyAppliesOf(node)]
 }
 
 def groovyModuleOf = { String text ->
@@ -514,11 +568,49 @@ def kotlinDefinesOf = { KotlinParser parser, element ->
   [kotlinExtraNameOf(parser, element.getBody())].findAll { it != null }
 }
 
+def kotlinTemplatePathOf = { KotlinParser parser, expression ->
+  if (!parser.is('org.jetbrains.kotlin.psi.KtStringTemplateExpression', expression)) return null
+  def entries = expression.getEntries() as List
+  if (entries.size() != 2 || !parser.is('org.jetbrains.kotlin.psi.KtLiteralStringTemplateEntry', entries[1])) return null
+  def directory = entries[0].getExpression()
+  if (directory == null || parser.is('org.jetbrains.kotlin.psi.KtLiteralStringTemplateEntry', entries[0])) return null
+  appliedBelow(appliedFromOf(directory.getText()), entries[1].getText())
+}
+
+/** The script an `apply(from = ...)` argument names, as [from, path], or null when it is computed. */
+def kotlinAppliedPathOf = { KotlinParser parser, expression ->
+  def literal = kotlinStringOf(parser, expression)
+  if (literal != null) return [from: APPLIED_FROM_PROJECT, path: literal]
+  def template = kotlinTemplatePathOf(parser, expression)
+  if (template != null) return template
+  if (kotlinCalleeNameOf(parser, expression) != 'file') return null
+  def call = parser.is('org.jetbrains.kotlin.psi.KtQualifiedExpression', expression) ? expression.getSelectorExpression() : expression
+  def arguments = call.getValueArguments() as List
+  def path = arguments.size() == 1 ? kotlinStringOf(parser, arguments[0].getArgumentExpression()) : null
+  if (path == null) return null
+  def receiver = kotlinReceiverTextOf(parser, expression)
+  if (receiver == null) return [from: APPLIED_FROM_PROJECT, path: path]
+  receiver == 'rootProject' ? [from: APPLIED_FROM_ROOT, path: path] : null
+}
+
+/** What a top-level `apply(from = ...)` statement applies; null for any other statement. */
+def kotlinAppliesOf = { KotlinParser parser, element ->
+  if (!parser.is('org.jetbrains.kotlin.psi.KtScriptInitializer', element)) return null
+  def call = element.getBody()
+  if (!parser.is('org.jetbrains.kotlin.psi.KtCallExpression', call) || kotlinCalleeNameOf(parser, call) != 'apply') return null
+  def arguments = call.getValueArguments() as List
+  if (arguments.size() != 1 || !call.getLambdaArguments().isEmpty()) return null
+  def name = arguments[0].getArgumentName()
+  if (name == null || name.getAsName().asString() != 'from') return null
+  kotlinAppliedPathOf(parser, arguments[0].getArgumentExpression())
+}
+
 def kotlinFactsOf = { KotlinParser parser, element ->
   def uses = parser.childrenOf(element, 'org.jetbrains.kotlin.psi.KtNameReferenceExpression').collect { it.getReferencedName() } as TreeSet
   def defines = kotlinDefinesOf(parser, element)
   [registers: kotlinRegistersOf(parser, element), defines: defines, uses: uses,
-   definition: KOTLIN_DECLARATIONS.any { parser.is(it, element) } || !defines.isEmpty()]
+   definition: KOTLIN_DECLARATIONS.any { parser.is(it, element) } || !defines.isEmpty(),
+   applies: kotlinAppliesOf(parser, element)]
 }
 
 /** The first syntax error the PSI holds, as an `unparsed` reason: the compiler does not throw on one. */

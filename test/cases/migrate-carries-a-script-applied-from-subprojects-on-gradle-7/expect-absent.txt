@@ -1,0 +1,5 @@
+notes.gradle
+build.gradle
+settings.gradle
+alpha/build.gradle
+beta/build.gradle

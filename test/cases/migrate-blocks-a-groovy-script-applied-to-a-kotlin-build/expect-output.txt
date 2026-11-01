@@ -1,0 +1,2 @@
+notes.gradle: is a groovy script applied to a kotlin build, and one verbatim key holds one DSL, so its statements are not carried
+notes: carries code that notes.gradle compiled
