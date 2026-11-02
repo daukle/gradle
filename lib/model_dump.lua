@@ -975,12 +975,29 @@ def appliedScriptsOf = { File base, Map script, List tasks, String settingsPath 
   named.findAll { it != null && it != UNKNOWN_SCRIPT && !own.contains(it) && isInsideBuild(base, it) }.unique().sort()
 }
 
+/**
+ * The properties `Project` itself has a setter for, read from the interface so that a Gradle adding one
+ * is read too. `version` is core's key, `buildDir` the generated build's own, and `group` the identity the
+ * generated build gives every project for its included builds' substitution.
+ */
+def PROJECT_OWNED = ['version', 'buildDir', 'group'] as Set
+def PROJECT_SETTINGS = (org.gradle.api.Project.methods
+  .findAll { it.name.startsWith('set') && it.name.length() > 3 && it.parameterCount == 1 }
+  .collect { it.name.substring(3, 4).toLowerCase() + it.name.substring(4) } as Set) - PROJECT_OWNED
+
+def projectSettingsOf = { File base, project ->
+  PROJECT_SETTINGS.sort().collectEntries { name ->
+    [name, safely { walk(base, project."$name", WALK_DEPTH - 1, [] as Set, new WalkBudget(remaining: TASK_PROPERTY_BUDGET)) }]
+  }
+}
+
 def projectOf = { File base, project, String settingsPath ->
   def script = withAppliedPaths(base, project, scriptInventoryOf(base, gradle.gradleHomeDir, project.buildFile, false))
   def entry = [path: project.path, name: project.name, dir: pathFrom(base, project.projectDir),
    buildFile: (project.buildFile.isFile() ? pathFrom(base, project.buildFile) : null),
    buildDir: pathFrom(base, project.layout.buildDirectory.get().asFile),
    version: project.version.toString(), group: project.group.toString(),
+   settings: safely { projectSettingsOf(base, project) },
    parent: project.parent?.path, children: project.childProjects.values().collect { it.path },
    plugins: pluginsOf(base, project.plugins), extensions: extensionsOf(base, project),
    repositories: repositoriesOf(project.repositories), buildscript: buildscriptOf(project),

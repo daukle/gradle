@@ -1,0 +1,16 @@
+pluginManagement {
+  includeBuild('build-logic')
+}
+
+plugins {
+  id 'example.providers'
+}
+
+rootProject.name = 'hooked'
+include 'a', 'b'
+
+gradle.allprojects {
+  tasks.withType(JavaCompile).configureEach {
+    options.compilerArgumentProviders.add(new com.example.logic.Lint())
+  }
+}

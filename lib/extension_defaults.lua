@@ -52,12 +52,13 @@ local function settings_by_task(project)
 end
 
 local function by_path(model)
-  local projects, tasks = {}, {}
+  local projects, tasks, own = {}, {}, {}
   for _, project in ipairs(model.projects or {}) do
     projects[project.path] = project.extensions or {}
     tasks[project.path] = settings_by_task(project)
+    own[project.path] = project.settings
   end
-  return { projects = projects, tasks = tasks, settings = model.settingsExtensions or {} }
+  return { projects = projects, tasks = tasks, own = own, settings = model.settingsExtensions or {} }
 end
 
 --- A value with each `srcDirs` list holding a directory once: the generated
@@ -102,6 +103,14 @@ function extension_defaults.tasks(defaults, build, path)
   if defaults == extension_defaults.SKIP then return defaults end
   local found = build_of(defaults, build)
   return found ~= nil and found.tasks[path] or nil
+end
+
+--- One project's own settings in the defaults build (`description`, `status`), as
+--- `project` returns its extensions.
+function extension_defaults.own(defaults, build, path)
+  if defaults == extension_defaults.SKIP then return defaults end
+  local found = build_of(defaults, build)
+  return found ~= nil and found.own[path] or nil
 end
 
 --- A build's settings extensions in the defaults build, as `project` returns them.

@@ -351,12 +351,13 @@ end
 
 --- The translated settings statements, named beside a comparison that failed
 --- with them translated and again with them carried.
-local function translated_blockers(carrying, where)
+local function translated_blockers(carrying, where, reported)
   local blockers = {}
   for _, statement in ipairs(carrying.translated) do
     blockers[#blockers + 1] = migrate_surface.blocker(statement.label .. ":" .. string.format("%d", statement.line),
       where, "is settings code translated into keys, which reaches every project of its build: the comparison"
-      .. " differs with it translated, and again with it carried verbatim", migrate_surface.BOUNDARY_ROW)
+      .. " differs with it translated, and again with it carried verbatim; the differences named are the "
+      .. reported .. " build's, the one with fewer", migrate_surface.BOUNDARY_ROW)
   end
   return blockers
 end
@@ -366,7 +367,9 @@ end
 --- @implNote when the build with its settings code translated does not compare
 --- equal, it is rendered once more with that code carried, and the second
 --- result stands only if it compares equal (spec D-187, 4.1a); otherwise the
---- first comparison's blockers stand, with the translated statements named.
+--- comparison with fewer blockers is reported, with the translated statements
+--- named and which build it was: a hook whose effect only carried code has
+--- otherwise reads as a difference in every project it reaches.
 local function compared_with_fallback(context, model, built, carrying, generated, generated_models, settings)
   local compared = comparison_of(context, model, built, generated, generated_models, settings)
   if compared == nil then return {}, generated, generated_models end
@@ -378,9 +381,12 @@ local function compared_with_fallback(context, model, built, carrying, generated
   local second = comparison_of(context, model, built, retried, retried_models, settings)
   if second == nil or #second > 0 then
     fallback.restore()
-    append(compared, translated_blockers(carrying, built.projects[1].where))
-    append(compared, refusals)
-    return compared, generated, generated_models
+    local carried_is_closer = second ~= nil and #second < #compared
+    local reported = carried_is_closer and second or compared
+    append(reported, translated_blockers(carrying, built.projects[1].where,
+                                         carried_is_closer and "carried" or "translated"))
+    append(reported, refusals)
+    return reported, generated, generated_models
   end
   append(carrying.statements, fallback.statements)
   carrying.translated = {}

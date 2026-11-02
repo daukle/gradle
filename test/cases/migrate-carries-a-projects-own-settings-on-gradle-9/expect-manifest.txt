@@ -1,0 +1,3 @@
+[toolchains.gradle.configure.project]
+description = "A described library"
+status = "release"
