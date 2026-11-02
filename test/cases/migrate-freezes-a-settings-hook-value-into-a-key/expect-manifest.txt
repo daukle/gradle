@@ -1,0 +1,2 @@
+[toolchains.gradle.configure.tasks.jar.manifest.attributes.putAll]
+X-Settings-Directory = "migrate-freezes-a-settings-hook-value-into-a-key"

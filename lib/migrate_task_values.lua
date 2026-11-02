@@ -28,10 +28,6 @@ local TASK_DIFFERS = "differs in the build daukle/gradle generates from the tran
 local APPLICATION_DIFFERS = "differs in the build daukle/gradle generates from the translated keys, and no"
                             .. " key carries this setting of the application extension"
 local PROVIDER_FIELDS = { "jvmArgumentProviders", "compilerArgumentProviders" }
-local MAIN_CLASS_ATTRIBUTE = "manifestAttributes.Main-Class"
-local MAIN_CLASS_DIFFERS = "is a jar manifest attribute of the old build, and the `main` key it translates"
-                           .. " to applies the application plugin, which writes none into the jar"
-
 local function copy(values)
   local out = {}
   for key, value in pairs(values) do out[key] = value end
@@ -207,11 +203,6 @@ local function differences_of(old, new, path, out)
   return out
 end
 
-local function why_of(difference, default)
-  if string.sub(difference, -#MAIN_CLASS_ATTRIBUTE) == MAIN_CLASS_ATTRIBUTE then return MAIN_CLASS_DIFFERS end
-  return default
-end
-
 local function unreadable(values, path, side, where, blockers)
   for _, found in ipairs(migrate_blockers.unrendered_paths(values, path)) do
     blockers[#blockers + 1] = blocker(found.path, where, "could not be read from " .. side .. " (" .. found.why
@@ -223,7 +214,7 @@ local function value_blockers(old, new, path, where, why, blockers)
   unreadable(old, path, "the old build", where, blockers)
   unreadable(new, path, "the build daukle/gradle generates", where, blockers)
   for _, difference in ipairs(differences_of(old, new, path, {})) do
-    blockers[#blockers + 1] = blocker(difference, where, why_of(difference, why),
+    blockers[#blockers + 1] = blocker(difference, where, why,
                                       UNCOVERED_ROW)
   end
 end
@@ -276,12 +267,16 @@ local function task_blockers(task, generated_task, context, blockers)
   value_blockers(old, new, path, where, TASK_DIFFERS, blockers)
 end
 
+local function comparison_context(old, generated, options)
+  return { old = old, generated = generated, where = options.where, root = options.root,
+           identity_follows = old.version ~= generated.version or old.name ~= generated.name }
+end
+
 --- @param old       an old project of the model
 --- @param generated its counterpart in the generated build's model
 --- @param options   { where, root = <the old project's build root, relative to the directory migrate runs in> }
 function migrate_task_values.differences(old, generated, options)
-  local context = { old = old, generated = generated, where = options.where, root = options.root,
-                    identity_follows = old.version ~= generated.version or old.name ~= generated.name }
+  local context = comparison_context(old, generated, options)
   local blockers = {}
   for _, task in ipairs(old.tasks or {}) do
     local generated_task = tables.named(generated.tasks, task.name)
@@ -294,13 +289,50 @@ end
 --- whole (D-217).
 local FRAMEWORK_SETTINGS = { "testFramework", "testFrameworkProperty", "options" }
 
+--- An archive's file, from its directory and file name, and Gradle 7's
+--- aliases of the `archive*` properties, each compared as what it derives from.
+local ARCHIVE_DERIVED = { "archiveFile", "archivePath", "archiveName", "baseName", "appendix", "version",
+                          "classifier", "extension", "destinationDir" }
+
 --- The walked settings Gradle derives from the others, by name: an archive's
 --- file name composed from its parts, which carried would freeze the
 --- composition (D-217).
 function migrate_task_values.derived(task)
+  if task.reader ~= "jar" then return {} end
+  local derived = tables.as_set(ARCHIVE_DERIVED)
   local values = task.values or {}
-  if task.reader == "jar" and values.archiveFileName == composed_name(values) then return { archiveFileName = true } end
-  return {}
+  if values.archiveFileName == composed_name(values) then derived.archiveFileName = true end
+  return derived
+end
+
+--- The walked settings that hold what Gradle derives from the project's own
+--- name and version, which the `version` key and the project's name carry,
+--- so a translation that wrote them would freeze them.
+function migrate_task_values.follows_identity(task, project)
+  local values, out = task.values or {}, {}
+  if task.reader == "jar" then
+    if values.archiveVersion == archive_version_of(project) then out.archiveVersion = true end
+    if values.archiveBaseName == project.name then out.archiveBaseName = true end
+  elseif task.reader == "javadoc" and values.title == default_title(project) then
+    out.title = true
+  end
+  return out
+end
+
+--- The reader's fields its reconciliation found equal in form, such as an
+--- archive version following the version a migration gives an unversioned
+--- build, which the walk holds under the same names.
+local function equal_in_form(task, generated_task, context)
+  local out = {}
+  if RECONCILE[task.reader] == nil or generated_task.reader ~= task.reader then return out end
+  if type(task.values) ~= "table" or type(generated_task.values) ~= "table" then return out end
+  local old, new = reconciled(task, generated_task, context)
+  for _, values in ipairs({ task.values, generated_task.values }) do
+    for key in pairs(values) do
+      if old[key] == nil and new[key] == nil then out[key] = true end
+    end
+  end
+  return out
 end
 
 local ENCODING_READERS = { javaCompile = true, javadoc = true }
@@ -318,11 +350,13 @@ end
 
 --- A task's walked settings, less what the reader's reconciliation found equal in form.
 --- @param roots { old, new } to read a generated task's paths against the real root, or nil
-local function settings_of(task, other, context, roots)
+--- @param equal the names `equal_in_form` found, left out on both sides
+local function settings_of(task, other, context, equal, roots)
   local settings = task.settings
   if roots ~= nil then settings = migrate_real_tree.generated(settings, roots.new, roots.old, {}) end
   settings = extension_defaults.without_repeated_directories(settings)
   for name in pairs(migrate_task_values.derived(task)) do settings[name] = nil end
+  for name in pairs(equal) do settings[name] = nil end
   if ENCODING_READERS[task.reader] then without_encoding(settings) end
   local values, other_values = task.values or {}, other.values or {}
   if task.reader == "test" and values.framework ~= other_values.framework
@@ -368,17 +402,18 @@ end
 --- rather than passing unseen.
 --- @param options { where, root, roots?, directories = { old, new } }
 function migrate_task_values.settings(old, generated, options)
-  local context = { old = old, root = options.root }
+  local context = comparison_context(old, generated, options)
   local old_settings, new_settings = {}, {}
   for _, task in ipairs(old.tasks or {}) do
     local generated_task = tables.named(generated.tasks, task.name)
     if generated_task ~= nil and type(task.settings) == "table" and type(generated_task.settings) == "table" then
-      old_settings[task.name] = { value = settings_of(task, generated_task, context) }
-      new_settings[task.name] = { value = settings_of(generated_task, task, context, options.roots) }
+      local equal = equal_in_form(task, generated_task, context)
+      old_settings[task.name] = { value = settings_of(task, generated_task, context, equal) }
+      new_settings[task.name] = { value = settings_of(generated_task, task, context, equal, options.roots) }
     end
   end
   return by_property(migrate_blockers.extension_differences(old_settings, new_settings, options.where,
-                                                           "configure.tasks", options.directories))
+                                                           "configure.tasks", options.directories, TASK_DIFFERS))
 end
 
 --- The core `application` extension: absent from the generated build, or

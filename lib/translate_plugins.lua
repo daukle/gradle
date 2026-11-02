@@ -307,15 +307,16 @@ end
 --- task's walk also reads what it derives from other objects (a publication,
 --- a launcher), which differs from the defaults build until those are carried,
 --- so whether a value still differs is the comparison's to say.
-local function task_configure_of(state, tasks, defaults)
+local function task_configure_of(state, project, defaults)
   if defaults == nil or defaults == extension_defaults.SKIP then return nil end
   local lenient = setmetatable({ blocked = {}, blockers = {}, blocks_only = true }, { __index = state })
   local configure = {}
-  for _, task in ipairs(tasks or {}) do
+  for _, task in ipairs(project.tasks or {}) do
     local default = defaults[task.name]
     if default ~= nil and type(task.settings) == "table" and not is_unrendered(task.settings) then
       local settings = tables.shallow_copy(task.settings)
       for name in pairs(migrate_task_values.derived(task)) do settings[name] = nil end
+      for name in pairs(migrate_task_values.follows_identity(task, project)) do settings[name] = nil end
       configure[task.name] = configure_value(lenient, settings, "configure.tasks." .. task.name, false,
                                              UNCOVERED_ROW, default)
     end
@@ -345,7 +346,7 @@ function translate_plugins.project(state, project)
     configure = with_tasks(configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
                                         extension_defaults.project(state.extension_defaults, state.defaults_build,
                                                                    project.path)),
-                           task_configure_of(state, project.tasks,
+                           task_configure_of(state, project,
                                              extension_defaults.tasks(state.extension_defaults, state.defaults_build,
                                                                       project.path))),
   }

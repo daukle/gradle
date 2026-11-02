@@ -281,6 +281,8 @@ function compare_values(old, new, path, differences, directories)
 end
 
 local DIFFERS = "differs in the build daukle/gradle generates from the translated keys"
+local EXTENSION_DIFFERS = DIFFERS .. ": the old build set it in a way a configure tree does not carry (a read-only"
+                          .. " property, a file, a list or a method call)"
 
 local function difference_blockers(old, new, path, where, why, directories)
   local differences = {}
@@ -305,7 +307,9 @@ end
 --- @param label       "configure" for a project's extensions, "settingsConfigure" for the settings'
 --- @param directories { old, new }: each project's build directory, which a file collection's entries are
 ---                    compared within (lib/migrate_file_collections); nil for the settings'
-function migrate_blockers.extension_differences(extensions, generated_extensions, where, label, directories)
+--- @param why         what a difference blocks with, or nil for an extension's
+function migrate_blockers.extension_differences(extensions, generated_extensions, where, label, directories, why)
+  why = why or EXTENSION_DIFFERS
   local blockers = {}
   for _, name in ipairs(union_keys(extensions or {}, {})) do
     local extension = extensions[name]
@@ -317,10 +321,7 @@ function migrate_blockers.extension_differences(extensions, generated_extensions
                                         .. " daukle/gradle generates from the translated keys does not",
                                         UNCOVERED_ROW)
     elseif compared and type(extension.value) == "table" and not is_unrendered(extension.value) then
-      append(blockers, difference_blockers(extension.value, generated.value, path, where, DIFFERS
-                                           .. ": the old build set it in a way a configure tree does not"
-                                           .. " carry (a read-only property, a file, a list or a method call)",
-                                           directories))
+      append(blockers, difference_blockers(extension.value, generated.value, path, where, why, directories))
     end
   end
   return blockers

@@ -1101,9 +1101,9 @@ spells it.
 
 Measured details that decide a block:
 
-- **Jar manifest `Main-Class` blocks** as `:jar.manifestAttributes.Main-Class`. The `main` key applies
-  the `application` plugin, which writes no such attribute into the jar, so mapping it would only
-  produce a failed proof. Rendering it for every `main` would change every existing project's jars.
+- **A jar manifest `Main-Class` is carried as the jar's own setting** (`configure.tasks.jar`, `D-217`)
+  and never translated into `main`: that key applies the `application` plugin, which writes no such
+  attribute into the jar and sets `compileJava`'s `javaModuleMainClass`, so the two builds would differ.
 - **`gradle.properties` keys outside the inert set block**, naming the key and never its value. The
   set: `org.gradle.jvmargs`, `.daemon`, `.parallel`, `.caching`, `.configureondemand`, `.console`,
   `.logging.level`, `.warning.mode`, `.workers.max`, `.vfs.watch`. Applies to every included build.

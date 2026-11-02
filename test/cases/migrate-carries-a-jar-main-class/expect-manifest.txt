@@ -1,0 +1,2 @@
+[toolchains.gradle.configure.tasks.jar.manifest.attributes.putAll]
+Main-Class = "example.Plain"
