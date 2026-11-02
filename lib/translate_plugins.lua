@@ -325,10 +325,27 @@ local function task_configure_of(state, project, defaults)
   return configure
 end
 
-local function with_tasks(configure, tasks)
-  if tasks == nil then return configure end
+--- What the old build set through `Project`'s own setters (`description`,
+--- `status`) that the defaults build does not hold, as the reserved
+--- `configure.project` block, or nil; nothing with no defaults build, as for a
+--- task. An unset value is left to the comparison, which blocks it by name.
+local function project_configure_of(state, project, defaults)
+  if defaults == nil or defaults == extension_defaults.SKIP or type(project.settings) ~= "table" then return nil end
+  local tree = {}
+  for _, name in ipairs(sorted_keys(project.settings)) do
+    local value = project.settings[name]
+    if value ~= nil then
+      tree[name] = configure_value(state, value, "configure.project." .. name, false, UNCOVERED_ROW, defaults[name])
+    end
+  end
+  if next(tree) == nil then return nil end
+  return tree
+end
+
+local function with_reserved(configure, key, value)
+  if value == nil then return configure end
   configure = configure or {}
-  configure.tasks = tasks
+  configure[key] = value
   return configure
 end
 
@@ -343,12 +360,16 @@ function translate_plugins.project(state, project)
   return {
     plugins = non_empty(plugin_entries(state, project.plugins, buildscript, not state.included)),
     pluginClasspath = non_empty(classpath_of(state, buildscript, "buildscript.classpath", UNCOVERED_ROW)),
-    configure = with_tasks(configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
-                                        extension_defaults.project(state.extension_defaults, state.defaults_build,
-                                                                   project.path)),
-                           task_configure_of(state, project,
-                                             extension_defaults.tasks(state.extension_defaults, state.defaults_build,
-                                                                      project.path))),
+    configure = with_reserved(
+      with_reserved(configure_of(state, project.extensions, "configure", UNCOVERED_ROW,
+                                 extension_defaults.project(state.extension_defaults, state.defaults_build,
+                                                            project.path)),
+                    "tasks", task_configure_of(state, project,
+                                               extension_defaults.tasks(state.extension_defaults, state.defaults_build,
+                                                                        project.path))),
+      "project", project_configure_of(state, project,
+                                      extension_defaults.own(state.extension_defaults, state.defaults_build,
+                                                             project.path))),
   }
 end
 
