@@ -1,0 +1,13 @@
+pluginManagement {
+  includeBuild('build-logic')
+}
+
+plugins {
+  id 'example.marking'
+}
+
+rootProject.name = 'marked'
+
+marking {
+  mark(':')
+}
