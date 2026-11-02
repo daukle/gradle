@@ -366,6 +366,7 @@ table. Every spelling was run on Gradle 8.13 and 9.6.0.
 | --- | --- | --- |
 | `{ file = "assets" }` | `new File(file('../../..'), 'assets')` | a path in YOUR tree |
 | `{ buildOutput = "libs/x.jar" }` | `layout.buildDirectory.file('libs/x.jar').get().asFile` | a path Gradle produced |
+| `{ buildOutputPath = "fixtures" }` | `layout.buildDirectory.file('fixtures').get().asFile.absolutePath` | the same path as TEXT, where a value is a `String` (a system property, an argument); `"."` is the build directory itself (`D-222`) |
 | `{ env = "GITHUB_TOKEN" }` | `System.getenv('GITHUB_TOKEN') ?: ''` | a value that may not be committed |
 | `{ filesOf = "compileClasspath" }` | `configurations['compileClasspath']` | a task property that takes a configuration's files |
 | `{ mapOf = { "probe.key" = "v", n = 3 } }` | `['n': 3, 'probe.key': 'v']` | a map value; keys always quoted |
@@ -379,9 +380,9 @@ root is three levels up and the build directory is Gradle's own, so one marker w
 wrong for whichever half it did not serve. Measured over this tree's `build.gradle` files, the two
 kinds are roughly half each, which is why neither could be the default.
 
-**A one-key table whose key is `file`, `buildOutput`, `env`, `filesOf`, `mapOf`, `putAll` or
-`addAll` is a marker, and anything else is a block.** A collection marker holds plain values or the
-first four markers, never a block. The last three were run on Gradle 7.6.4 and 9.6.0 (`D-216`). The cost is that a plugin with a real nested block named exactly `file` and holding one
+**A one-key table whose key is `file`, `buildOutput`, `buildOutputPath`, `env`, `filesOf`, `mapOf`,
+`putAll` or `addAll` is a marker, and anything else is a block.** A collection marker holds plain
+values or the first five markers, never a block. The last three were run on Gradle 7.6.4 and 9.6.0 (`D-216`). The cost is that a plugin with a real nested block named exactly `file` and holding one
 string key cannot be expressed; nothing in this tree has one. A table that MIXES a marker key with
 others is refused, which is the mistake that shape invites.
 

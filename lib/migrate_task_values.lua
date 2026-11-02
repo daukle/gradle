@@ -241,6 +241,22 @@ local function block_providers(old, new, path, where, blockers)
   end
 end
 
+--- The reader's fields the walk holds rendered under the same name, which
+--- the walk compares with paths mapped between the two build directories,
+--- where the reader holds a path as raw text (D-222). A field the walk leaves
+--- unrendered (a classpath, compared by sha256) stays the reader's, and so do
+--- the providers, whose reader blocker names what no key can carry.
+local function walked_fields(task)
+  local fields = {}
+  if type(task.settings) ~= "table" or type(task.values) ~= "table" then return fields end
+  local providers = tables.as_set(PROVIDER_FIELDS)
+  for name in pairs(task.values) do
+    local walked = task.settings[name]
+    if walked ~= nil and not is_unrendered(walked) and not providers[name] then fields[name] = true end
+  end
+  return fields
+end
+
 local function task_blockers(task, generated_task, context, blockers)
   local path, where = task.path or task.name, context.where
   if task.enabled ~= generated_task.enabled then
@@ -267,6 +283,7 @@ local function task_blockers(task, generated_task, context, blockers)
     return
   end
   local old, new = reconciled(task, generated_task, context)
+  for name in pairs(walked_fields(task)) do old[name], new[name] = nil, nil end
   block_providers(old, new, path, where, blockers)
   value_blockers(old, new, path, where, TASK_DIFFERS, blockers)
 end

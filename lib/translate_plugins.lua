@@ -33,8 +33,8 @@ local COLLECTIONS = { "$list", "$map" }
 
 --- The keys `daukle/gradle` reads as a marker rather than a block in a
 --- configure tree, so a property of that name cannot be said.
-local MARKER_KEYS = { file = true, buildOutput = true, env = true, filesOf = true, mapOf = true, putAll = true,
-                      addAll = true }
+local MARKER_KEYS = { file = true, buildOutput = true, buildOutputPath = true, env = true, filesOf = true,
+                      mapOf = true, putAll = true, addAll = true }
 
 local function is_plugin_build_edge(state, edge)
   local build = string.match(edge, "^project (%S+) ")
@@ -170,6 +170,17 @@ local function additions(collection, kind, default)
   return { putAll = added }
 end
 
+--- A checkout path held as text inside the project's build directory, as the
+--- `buildOutputPath` marker that says it against the generated build's own
+--- build directory, which is elsewhere (D-222); nil for any other path.
+local function build_output_path(state, path)
+  local build_dir = state.build_directory
+  if type(build_dir) ~= "string" or type(path) ~= "string" then return nil end
+  if path == build_dir then return { buildOutputPath = "." } end
+  if string.sub(path, 1, #build_dir + 1) ~= build_dir .. "/" then return nil end
+  return { buildOutputPath = string.sub(path, #build_dir + 2) }
+end
+
 --- An assignable map's plain entries as `mapOf`, each other entry blocked by
 --- its own key: a map's entries stand alone, so one that holds a path or an
 --- object does not take the plain ones with it (D-222). What is left out
@@ -178,8 +189,12 @@ local function partial_map(state, collection, path, surface)
   local entries = {}
   for _, key in ipairs(sorted_keys(collection)) do
     local entry_path = path .. "." .. tostring(key)
-    if is_scalar(collection[key]) then
-      entries[key] = carried(state, collection[key], entry_path)
+    local entry = collection[key]
+    local marker = type(entry) == "table" and build_output_path(state, entry[PATH_STRING]) or nil
+    if is_scalar(entry) then
+      entries[key] = carried(state, entry, entry_path)
+    elseif marker ~= nil then
+      entries[key] = marker
     else
       block(state, entry_path, "holds a value that is not plain, which a configure tree cannot assign", surface)
     end
@@ -245,10 +260,11 @@ local function configure_value(state, value, path, read_only, surface, default)
   end
   if value[FILE] ~= nil or value[FILES] ~= nil or value[SOURCE_DIRECTORIES] ~= nil then return nil end
   if value[PATH_STRING] ~= nil then
-    if not read_only then
-      block(state, path, "holds an absolute path of this checkout as text, which a configure tree would"
-            .. " carry to every other checkout unchanged", surface)
-    end
+    if read_only then return nil end
+    local marker = build_output_path(state, value[PATH_STRING])
+    if marker ~= nil then return marker end
+    block(state, path, "holds an absolute path of this checkout as text, which a configure tree would"
+          .. " carry to every other checkout unchanged", surface)
     return nil
   end
   local collection, kind = collection_of(value)
@@ -377,6 +393,7 @@ end
 
 --- @return { plugins?, pluginClasspath?, configure? }
 function translate_plugins.project(state, project)
+  state.build_directory = project.buildDir
   local buildscript = project.buildscript or {}
   return {
     plugins = non_empty(plugin_entries(state, project.plugins, buildscript, not state.included)),

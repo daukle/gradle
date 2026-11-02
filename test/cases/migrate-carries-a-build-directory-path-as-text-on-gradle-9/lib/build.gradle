@@ -1,0 +1,8 @@
+plugins {
+  id 'java'
+}
+
+test {
+  systemProperty 'target', layout.buildDirectory.dir('fixtures').get().asFile.absolutePath
+  systemProperty 'root', layout.buildDirectory.get().asFile.absolutePath
+}
