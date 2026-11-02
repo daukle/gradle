@@ -1,0 +1,7 @@
+plugins {
+  id 'java'
+}
+
+test {
+  jvmArgumentProviders.add(new com.example.logic.Flag())
+}
