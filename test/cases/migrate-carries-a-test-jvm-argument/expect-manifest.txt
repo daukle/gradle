@@ -1,0 +1,7 @@
+[toolchains.gradle.configure.tasks.test]
+jvmArgs = ["-XX:+UseSerialGC"]
+maxHeapSize = "256m"
+!allJvmArgs =
+
+[toolchains.gradle.configure.tasks.test.systemProperties.mapOf]
+greeting = "hello"
