@@ -1,0 +1,20 @@
+plugins {
+  id 'java'
+}
+
+version = '1.0.0'
+
+repositories {
+  ivy {
+    url = 'https://repo.maven.apache.org/maven2'
+    patternLayout {
+      artifact '[organisation]/[module]/[revision]/[artifact]-[revision](-[classifier]).[ext]'
+      m2compatible = true
+    }
+    metadataSources { artifact() }
+  }
+}
+
+dependencies {
+  implementation 'com.google.code.gson:gson:2.10.1'
+}
