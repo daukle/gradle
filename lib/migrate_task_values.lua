@@ -137,7 +137,7 @@ end
 --- parts. Where the project's own name or version differs by design (the
 --- version a migration gives an unversioned build, the name and version an
 --- included build block does not carry), a part that follows it is equal.
-local function reconcile_jar(old, new, context)
+local function reconcile_archive(old, new, context)
   if old.archiveFileName == composed_name(old) and new.archiveFileName == composed_name(new) then
     old.archiveFileName, new.archiveFileName = nil, nil
   end
@@ -174,7 +174,11 @@ local function reconcile_javadoc(old, new, context)
   if is_utf8_or_unset(old.encoding) then old.encoding, new.encoding = nil, nil end
 end
 
-local RECONCILE = { test = reconcile_test, jar = reconcile_jar, javadoc = reconcile_javadoc }
+local RECONCILE = { test = reconcile_test, jar = reconcile_archive, archive = reconcile_archive,
+                    javadoc = reconcile_javadoc }
+
+--- The readers of an archive task: a jar, and any other, such as a distribution's tar and zip.
+local ARCHIVE_READERS = { jar = true, archive = true }
 
 --- Both sides' values, with what differs only in form made equal.
 local function reconciled(task, generated_task, context)
@@ -298,7 +302,7 @@ local ARCHIVE_DERIVED = { "archiveFile", "archivePath", "archiveName", "baseName
 --- file name composed from its parts, which carried would freeze the
 --- composition (D-217).
 function migrate_task_values.derived(task)
-  if task.reader ~= "jar" then return {} end
+  if not ARCHIVE_READERS[task.reader] then return {} end
   local derived = tables.as_set(ARCHIVE_DERIVED)
   local values = task.values or {}
   if values.archiveFileName == composed_name(values) then derived.archiveFileName = true end
@@ -310,7 +314,7 @@ end
 --- so a translation that wrote them would freeze them.
 function migrate_task_values.follows_identity(task, project)
   local values, out = task.values or {}, {}
-  if task.reader == "jar" then
+  if ARCHIVE_READERS[task.reader] then
     if values.archiveVersion == archive_version_of(project) then out.archiveVersion = true end
     if values.archiveBaseName == project.name then out.archiveBaseName = true end
   elseif task.reader == "javadoc" and values.title == default_title(project) then

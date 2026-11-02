@@ -1,0 +1,5 @@
+[toolchains.gradle.configure.tasks.run]
+args = ["world"]
+!commandLine
+
+![toolchains.gradle.configure.tasks.run.commandLine
