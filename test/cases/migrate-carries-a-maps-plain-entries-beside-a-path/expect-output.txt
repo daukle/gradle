@@ -1,1 +1,1 @@
-:test.systemProperties.where: differs in the build daukle/gradle generates
+systemProperties.where: differs in the build daukle/gradle generates

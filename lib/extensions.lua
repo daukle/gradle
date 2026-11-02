@@ -28,6 +28,11 @@ local MARKERS = {
   buildOutput = function(text)
     return "layout.buildDirectory.file(" .. groovy.quoted(text) .. ").get().asFile"
   end,
+  -- buildOutput's text twin (D-222): a system property or an argument holds the path as a String
+  buildOutputPath = function(text)
+    if text == "." then return "layout.buildDirectory.get().asFile.absolutePath" end
+    return "layout.buildDirectory.file(" .. groovy.quoted(text) .. ").get().asFile.absolutePath"
+  end,
   env = function(text)
     return "System.getenv(" .. groovy.quoted(text) .. ") ?: ''"
   end,
@@ -37,7 +42,7 @@ local MARKERS = {
   end,
 }
 
-local MARKER_NAMES = '"file", "buildOutput", "env", "filesOf" or "mapOf"'
+local MARKER_NAMES = '"file", "buildOutput", "buildOutputPath", "env", "filesOf" or "mapOf"'
 
 --- Markers whose payload is a collection rather than a string (D-216): `mapOf`
 --- is a map value, and `putAll` and `addAll` add to a collection the owner
@@ -89,7 +94,7 @@ local function entry_problem(entry, path)
   local found, problem = read_marker(entry, path)
   if problem ~= nil then return problem end
   if found == nil or COLLECTION_MARKERS[found] then
-    return '"' .. path .. '" must be a string, number, boolean or a "file", "buildOutput", "env" or "filesOf"'
+    return '"' .. path .. '" must be a string, number, boolean or a "file", "buildOutput", "buildOutputPath", "env" or "filesOf"'
            .. " marker: a collection holds plain values"
   end
   return nil

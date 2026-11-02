@@ -265,12 +265,39 @@ local function is_file_collection(value)
   return type(value) == "table" and type(value["$files"]) == "table"
 end
 
+local SINGLE_PATHS = { "$pathString", "$file" }
+
+--- A path as what follows its build's build directory, marked so it cannot
+--- equal a path elsewhere, or the path itself when it lies outside it.
+local function within_build_directory(path, directory)
+  if type(path) ~= "string" or type(directory) ~= "string" then return path end
+  if path == directory then return "<build>" end
+  if string.sub(path, 1, #directory + 1) ~= directory .. "/" then return path end
+  return "<build>/" .. string.sub(path, #directory + 2)
+end
+
+--- The kind of single path both values hold, or nil: two builds keep their
+--- build directories in different places, so a path in each compares by what
+--- follows it, as a file collection's entries do (D-222).
+local function single_path_kind(old, new)
+  if type(old) ~= "table" or type(new) ~= "table" then return nil end
+  for _, kind in ipairs(SINGLE_PATHS) do
+    if type(old[kind]) == "string" and type(new[kind]) == "string" then return kind end
+  end
+  return nil
+end
+
 --- @implNote an unrendered old value is skipped, because its caller reports
 --- it by name; an unrendered new one is one difference, not one per key.
 function compare_values(old, new, path, differences, directories)
+  local kind = single_path_kind(old, new)
   if is_unrendered(old) then return end
   if is_unrendered(new) then
     differences[#differences + 1] = path
+  elseif kind ~= nil then
+    if within_build_directory(old[kind], directories.old) ~= within_build_directory(new[kind], directories.new) then
+      differences[#differences + 1] = path
+    end
   elseif is_file_collection(old) and is_file_collection(new) then
     migrate_file_collections.differences(old["$files"], new["$files"], path, directories, differences)
   elseif type(old) == "table" and type(new) == "table" then
