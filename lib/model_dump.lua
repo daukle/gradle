@@ -167,6 +167,8 @@ def isAssignable = { MetaProperty property, Object raw ->
  * led the Kotlin plugin's walk into its whole internal model on brazier, D-207.
  * A source set arrives as its name: the `sourceSets` reader judges it, and inside an extension it is
  * a reference (checkstyle's `sourceSets`, D-173).
+ * A `Spec` is a predicate, not state, and arrives unrendered: a pattern set's `asExcludeSpec` holds a
+ * result cache that differed between two builds on one runner only (D-217).
  */
 /**
  * Whether a value is a Gradle service rather than state: its type, a supertype or an interface carries
@@ -211,6 +213,7 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   }
   if (LIVE_TYPES.any { it.isInstance(value) }) return unrendered('live object ' + value.getClass().name)
   if (isService(value.getClass())) return unrendered('service')
+  if (value instanceof org.gradle.api.specs.Spec) return unrendered('predicate')
   if (budget.remaining <= 0) return unrendered('budget')
   budget.remaining--
   def identity = System.identityHashCode(value)
