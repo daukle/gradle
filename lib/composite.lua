@@ -25,12 +25,13 @@ function composite.plugins_block(ids)
   return lines
 end
 
---- @implNote each plugin is created under an index name rather than its id,
---- because an id may hold characters a Groovy identifier cannot.
+--- @implNote a plugin is created under its `name`, the old build's declaration
+--- name, or else an index name rather than its id; the name is quoted, so an id
+--- holding characters a Groovy identifier cannot is never one.
 function composite.gradle_plugin_block(plugins)
   local lines = { "gradlePlugin {", "  plugins {" }
   for index = 1, #plugins do
-    lines[#lines + 1] = "    create('plugin" .. index .. "') {"
+    lines[#lines + 1] = "    create(" .. groovy.quoted(plugins[index].name or ("plugin" .. index)) .. ") {"
     lines[#lines + 1] = "      id = " .. groovy.quoted(plugins[index].id)
     lines[#lines + 1] = "      implementationClass = "
                         .. groovy.quoted(plugins[index].implementationClass)

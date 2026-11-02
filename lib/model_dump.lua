@@ -36,7 +36,7 @@ def DENY = ['class', 'convention', 'conventionMapping', 'extensions', 'asDynamic
             'properties', 'services', 'objects', 'providers', 'fileOperations', 'layout', 'asMap', 'rootProject',
             'parent', 'gradle', 'buildscript', 'configurations', 'dependencies', 'artifacts', 'components', 'tasks',
             'plugins', 'pluginManager', 'conventionWhileDisabledDeprecationLogger', 'taskThatOwnsThisObject',
-            'modelIdentityDisplayName', 'publishableArtifacts', 'attributes', 'factoryId', 'xmlAction', 'ant', 'logger',
+            'modelIdentityDisplayName', 'publishableArtifacts', 'factoryId', 'xmlAction', 'ant', 'logger',
             'logging', 'state', 'modelRegistry', 'inheritedScope', 'identityPath', 'projectEvaluator', 'instantiator',
             'dependencyFactory', 'immutable', 'buildDependencies'] as Set
 def WALK_DEPTH = 5
@@ -46,6 +46,15 @@ def LIVE_TYPES = [org.gradle.api.Project, org.gradle.api.Task, org.gradle.api.in
                   org.gradle.api.provider.ProviderFactory]
 
 def unrendered = { String why -> ['$unrendered': why] }
+
+/**
+ * Whether a property is no state of the object it is read from: a static (a logger, a constant), or a
+ * configuration's `AttributeContainer`, which variant matching owns. Denied by type rather than by the
+ * name `attributes`, which a jar manifest's own attributes also have (D-217).
+ */
+def isSkippedProperty = { MetaProperty property, Object item ->
+  java.lang.reflect.Modifier.isStatic(property.modifiers) || item instanceof org.gradle.api.attributes.AttributeContainer
+}
 
 def slashes = { String path -> path.replace('\\', '/') }
 
@@ -147,9 +156,8 @@ def isAssignable = { MetaProperty property, Object raw ->
 /**
  * The bounded walk of an extension the keys do not model. A list, a map, a file, a file collection and a source
  * directory set arrive as one-key tables (`$list`, `$map`, `$file`, `$files`, `$sourceDirectories`),
- * because JSON cannot tell an empty list from an object nor a path. `$blocks` names the read-only
- * properties a script can open as a block
- * from a string, and an object names the properties no script can assign in `$readOnly`.
+ * because JSON cannot tell an empty list from an object nor a path. `$blocks` names the object-valued
+ * properties a script can open as a block, and `$readOnly` the properties no script can assign.
  * It sees only what an object exposes as a public property (a getter or a public field), so state
  * a plugin keeps elsewhere is invisible to it; a getter that throws is an `unrendered` value.
  * An enum arrives as its constant's name, the one string Groovy assigns back to it: `JavaVersion`
@@ -159,7 +167,32 @@ def isAssignable = { MetaProperty property, Object raw ->
  * led the Kotlin plugin's walk into its whole internal model on brazier, D-207.
  * A source set arrives as its name: the `sourceSets` reader judges it, and inside an extension it is
  * a reference (checkstyle's `sourceSets`, D-173).
+ * A `Spec` is a predicate, not state, and arrives unrendered: a pattern set's `asExcludeSpec` holds a
+ * result cache that differed between two builds on one runner only (D-217).
  */
+/**
+ * Whether a value is a Gradle service rather than state: its type, a supertype or an interface carries
+ * `@ServiceScope`, which every Gradle service type has. A service holds clocks and counters that differ
+ * every run (D-217). Null where the annotation does not exist.
+ */
+def SERVICE_SCOPE = null
+try { SERVICE_SCOPE = Class.forName('org.gradle.internal.service.scopes.ServiceScope') } catch (Throwable ignored) { }
+def serviceTypes = [:]
+def isService
+isService = { Class type ->
+  if (SERVICE_SCOPE == null || type == null || type == Object) return false
+  if (serviceTypes.containsKey(type)) return serviceTypes[type]
+  def found = type.isAnnotationPresent(SERVICE_SCOPE) || isService(type.superclass)
+              || type.interfaces.any { isService(it) }
+  serviceTypes[type] = found
+  found
+}
+
+/** Whether a walked value is an object a block could open: not a scalar, a marker or a wrapper. */
+def isObjectValue = { Object walked ->
+  walked instanceof Map && !walked.keySet().any { it.toString().startsWith('$') && it != '$readOnly' && it != '$blocks' }
+}
+
 def walk
 walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
   def value
@@ -179,6 +212,8 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
     return plain(base, value)
   }
   if (LIVE_TYPES.any { it.isInstance(value) }) return unrendered('live object ' + value.getClass().name)
+  if (isService(value.getClass())) return unrendered('service')
+  if (value instanceof org.gradle.api.specs.Spec) return unrendered('predicate')
   if (budget.remaining <= 0) return unrendered('budget')
   budget.remaining--
   def identity = System.identityHashCode(value)
@@ -190,7 +225,12 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
       return value.names.collectEntries { name -> [name, safely { walk(base, value.getByName(name), depth + 1, seen, budget) }] }
     }
     if (value instanceof Map) return ['$map': value.collectEntries { key, item -> [key.toString(), walk(base, item, depth + 1, seen, budget)] }]
-    if (value instanceof Iterable) return ['$list': value.collect { walk(base, it, depth + 1, seen, budget) }.findAll { it != null }]
+    if (value instanceof Iterable) {
+      def entries = value.collect { walk(base, it, depth + 1, seen, budget) }.findAll { it != null }
+      // a Set's iteration order differs between two builds holding the same entries (D-217)
+      if (value instanceof Set) entries = entries.sort { JsonOutput.toJson(it) }
+      return ['$list': entries]
+    }
     if (value.getClass().name.startsWith('java.')) return isIdentity(value) ? unrendered('identity') : value.toString()
     def out = [:]
     def readOnly = []
@@ -200,11 +240,10 @@ walk = { File base, Object raw, int depth, Set seen, WalkBudget budget ->
       if (DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__') || name.contains('$')) return
       try {
         def item = property.getProperty(value)
+        if (isSkippedProperty(property, item)) return
         out[name] = walk(base, item, depth + 1, seen, budget)
-        if (!isAssignable(property, item)) {
-          readOnly << name
-          if (isConfigurableByBlock(value, name)) blocks << name
-        }
+        if (!isAssignable(property, item)) readOnly << name
+        if (isObjectValue(out[name]) && isConfigurableByBlock(value, name)) blocks << name
       } catch (Throwable failure) {
         out[name] = unrendered('unreadable: ' + failure.class.simpleName)
       }
@@ -786,6 +825,91 @@ def actionsOf = { File base, task ->
   }
 }
 
+/**
+ * What a task's own type declares, walked as an extension is (D-217). The properties every task has from
+ * `DefaultTask` are its identity (project, inputs, outputs, state), so they are left out, except `group` and
+ * `description`. A file collection is left unrendered: its sources are the keys' and the readers', and a
+ * `source` tree would list every file of the project. Each property has its own budget, so where one
+ * runs out does not depend on what was walked before it, and two builds compare alike. An assignable
+ * property holding an object no block opens (a publication, a repository) is another model object,
+ * compared where it is declared, so only its name is kept: walked, brazier's two models outgrew core's
+ * 64 MB Lua limit.
+ */
+def TASK_BASE = (org.gradle.api.DefaultTask.metaClass.properties*.name as Set) - ['group', 'description']
+
+/**
+ * A forked process's `environment` is the daemon's own plus the task's changes, so walked whole it is this
+ * machine's environment; the readers read the changes alone.
+ */
+def TASK_DENY = ['environment'] as Set
+
+/** A task's JDK tool, which the `jdk` key and the toolchain blockers own. */
+def TOOLCHAIN_TOOLS = [org.gradle.jvm.toolchain.JavaLauncher, org.gradle.jvm.toolchain.JavaCompiler,
+                       org.gradle.jvm.toolchain.JavadocTool]
+def TASK_WALK_DEPTH = 2
+def TASK_PROPERTY_BUDGET = 40
+
+/**
+ * Whether a getter is a service Gradle injects (`@Inject`, usually protected) rather than a setting: its
+ * value is a clock or an executor whose state differs every run. Looked up the hierarchy, because the
+ * generated `_Decorated` subclass implements the getter without its annotation.
+ */
+def isServiceGetter = { Class type, String getter ->
+  for (def owner = type; owner != null && owner != Object; owner = owner.superclass) {
+    def method = owner.declaredMethods.find { it.name == getter && it.parameterCount == 0 }
+    if (method != null && (method.isAnnotationPresent(javax.inject.Inject)
+                           || !java.lang.reflect.Modifier.isPublic(method.modifiers))) return true
+  }
+  false
+}
+
+def isSetting = { task, MetaProperty property ->
+  if (!(property instanceof MetaBeanProperty) || property.getter == null) return false
+  !isServiceGetter(task.getClass(), property.getter.name)
+}
+
+/**
+ * Whether a task is one of Gradle's own `help` or `Build Setup` tasks (`init`, `wrapper`, `updateDaemonJvm`,
+ * the reports), which describe the tool rather than the build and are not walked. Measured on brazier with
+ * Gradle 9.3.1: reading `updateDaemonJvm.toolchainDownloadUrls` ends the daemon (D-217).
+ */
+def TOOL_GROUPS = ['help', 'build setup'] as Set
+def isToolTask = { Class type, task ->
+  isCoreType(type) && TOOL_GROUPS.contains(task.group?.toLowerCase())
+}
+
+def taskSettingsOf = { File base, task ->
+  def seen = [System.identityHashCode(task)] as Set
+  def out = [:]
+  def readOnly = []
+  def blocks = []
+  task.metaClass.properties.each { property ->
+    def name = property.name
+    if (TASK_BASE.contains(name) || TASK_DENY.contains(name) || DENY.contains(name) || name.startsWith('_gr_') || name.startsWith('__')
+        || name.contains('$') || !isSetting(task, property)) return
+    try {
+      def item = property.getProperty(task)
+      if (isSkippedProperty(property, item)) return
+      def raw = item
+      try { raw = unwrap(item) } catch (Throwable ignored) { }
+      out[name] = raw instanceof org.gradle.api.file.FileCollection ? unrendered('file collection')
+                  : TOOLCHAIN_TOOLS.any { it.isInstance(raw) } ? unrendered('toolchain tool')
+                  : walk(base, item, WALK_DEPTH - TASK_WALK_DEPTH, seen, new WalkBudget(remaining: TASK_PROPERTY_BUDGET))
+      def assignable = isAssignable(property, item)
+      if (!assignable) readOnly << name
+      if (isObjectValue(out[name])) {
+        if (isConfigurableByBlock(task, name)) blocks << name
+        else if (assignable) out[name] = isIdentity(raw) ? unrendered('identity') : raw.toString()
+      }
+    } catch (Throwable failure) {
+      out[name] = unrendered('unreadable: ' + failure.class.simpleName)
+    }
+  }
+  if (!readOnly.isEmpty()) out['$readOnly'] = readOnly.sort()
+  if (!blocks.isEmpty()) out['$blocks'] = blocks.sort()
+  out
+}
+
 def tasksOf = { File base, project ->
   project.tasks.collect { task ->
     def type = typeOf(task)
@@ -794,6 +918,7 @@ def tasksOf = { File base, project ->
     def scripts = ([typeScript] + actions*.script).findAll { it != null }.unique()
     def entry = [name: task.name, path: task.path, type: type.name, enabled: task.enabled, actions: actions,
                  buildLogic: !scripts.isEmpty(), scripts: scripts]
+    if (!isToolTask(type, task)) entry.settings = safely { taskSettingsOf(base, task) }
     def reader = TASK_READERS.find { it[0].isInstance(task) }
     if (reader != null) {
       entry.reader = reader[1]

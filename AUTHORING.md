@@ -357,7 +357,7 @@ else is refused. **A block name may be any other string**, such as a container e
 and is then written quoted (`'my-mod' {`), which Gradle reads as the same block; only a backslash
 or a control character is refused there.
 
-### The four markers, and why each is a table rather than a string
+### The markers, and why each is a table rather than a string
 
 A magic prefix inside a string is a thing a real value collides with one day, so each is a one-key
 table. Every spelling was run on Gradle 8.13 and 9.6.0.
@@ -368,6 +368,9 @@ table. Every spelling was run on Gradle 8.13 and 9.6.0.
 | `{ buildOutput = "libs/x.jar" }` | `layout.buildDirectory.file('libs/x.jar').get().asFile` | a path Gradle produced |
 | `{ env = "GITHUB_TOKEN" }` | `System.getenv('GITHUB_TOKEN') ?: ''` | a value that may not be committed |
 | `{ filesOf = "compileClasspath" }` | `configurations['compileClasspath']` | a task property that takes a configuration's files |
+| `{ mapOf = { "probe.key" = "v", n = 3 } }` | `['n': 3, 'probe.key': 'v']` | a map value; keys always quoted |
+| `key = { putAll = { k = "v" } }` | `key.putAll(['k': 'v'])` | adding to a map the owner exposes read-only, such as a jar's `manifest.attributes` |
+| `key = { addAll = ["v"] }` | `key.addAll(['v'])` | adding to a read-only list |
 
 **`file` and `buildOutput` are a PAIR because daukle moved the project directory out from under a
 hand-written path.** In a build file at the project root, `file('assets')` meant the root and
@@ -376,8 +379,9 @@ root is three levels up and the build directory is Gradle's own, so one marker w
 wrong for whichever half it did not serve. Measured over this tree's `build.gradle` files, the two
 kinds are roughly half each, which is why neither could be the default.
 
-**A one-key table whose key is `file`, `buildOutput`, `env` or `filesOf` is a marker, and anything
-else is a block.** The cost is that a plugin with a real nested block named exactly `file` and holding one
+**A one-key table whose key is `file`, `buildOutput`, `env`, `filesOf`, `mapOf`, `putAll` or
+`addAll` is a marker, and anything else is a block.** A collection marker holds plain values or the
+first four markers, never a block. The last three were run on Gradle 7.6.4 and 9.6.0 (`D-216`). The cost is that a plugin with a real nested block named exactly `file` and holding one
 string key cannot be expressed; nothing in this tree has one. A table that MIXES a marker key with
 others is refused, which is the mistake that shape invites.
 
@@ -1097,9 +1101,9 @@ spells it.
 
 Measured details that decide a block:
 
-- **Jar manifest `Main-Class` blocks** as `:jar.manifestAttributes.Main-Class`. The `main` key applies
-  the `application` plugin, which writes no such attribute into the jar, so mapping it would only
-  produce a failed proof. Rendering it for every `main` would change every existing project's jars.
+- **A jar manifest `Main-Class` is carried as the jar's own setting** (`configure.tasks.jar`, `D-217`)
+  and never translated into `main`: that key applies the `application` plugin, which writes no such
+  attribute into the jar and sets `compileJava`'s `javaModuleMainClass`, so the two builds would differ.
 - **`gradle.properties` keys outside the inert set block**, naming the key and never its value. The
   set: `org.gradle.jvmargs`, `.daemon`, `.parallel`, `.caching`, `.configureondemand`, `.console`,
   `.logging.level`, `.warning.mode`, `.workers.max`, `.vfs.watch`. Applies to every included build.

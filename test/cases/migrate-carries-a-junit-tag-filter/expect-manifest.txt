@@ -1,0 +1,2 @@
+[toolchains.gradle.configure.tasks.test.options]
+includeTags = ["fast"]

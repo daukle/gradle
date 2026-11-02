@@ -15,6 +15,7 @@ local tables = daukle.require("lib/tables")
 
 local append = tables.append
 local CURRENT_BUILD = ":"
+local unmapped_roots
 
 local function project_blockers(old, generated, where, comparison)
   local blockers = {}
@@ -25,6 +26,10 @@ local function project_blockers(old, generated, where, comparison)
   append(blockers, migrate_blockers.task_difference(old, generated, where))
   append(blockers, migrate_task_values.differences(old, generated, { where = where, root = comparison.root }))
   append(blockers, migrate_task_values.application(old, generated, where))
+  append(blockers, migrate_task_values.settings(old, generated, { where = where, root = comparison.root,
+                                                                   roots = comparison.roots,
+                                                                   directories = { old = old.buildDir,
+                                                                                   new = generated.buildDir } }))
   append(blockers, migrate_classpaths.differences(old, generated, { where = where, unpinned = comparison.unpinned,
                                                                     identities = comparison.identities }))
   return blockers
@@ -96,6 +101,19 @@ local function compared_models(model, built, generated)
          migrate_real_tree.generated(generated, generated.rootDir, model.rootDir, module_names(built))
 end
 
+--- The old and generated roots of a build the comparison reads as they are,
+--- or nil for a carrying one, whose models are already mapped.
+function unmapped_roots(built, model, generated)
+  if carried.build_carries(built.config) then return nil end
+  return { old = model.rootDir, new = generated.rootDir }
+end
+
+--- The same for an included build, nil when that build carries.
+local function unmapped_included_roots(built, record, old_root, counterpart)
+  if carried.included_build_carries((built.config.builds or {})[record.dir] or {}) then return nil end
+  return { old = old_root .. "/" .. record.dir, new = counterpart.model.rootDir }
+end
+
 --- An included build's old and generated root project, mapped like the main
 --- build's when that included build carries.
 local function compared_included(built, record, old_root, counterpart)
@@ -138,7 +156,8 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
       blockers[#blockers + 1] = missing(entry.project.path, entry.where)
     else
       local project_comparison = { identities = comparison.identities, root = comparison.root,
-                                   unpinned = skipped_for(comparison.unpinned, entry) }
+                                   unpinned = skipped_for(comparison.unpinned, entry),
+                                   roots = unmapped_roots(built, model, generated) }
       append(blockers, project_blockers(old_projects[entry.project.path], counterpart, entry.where,
                                         project_comparison))
     end
@@ -149,7 +168,8 @@ function migrate_comparison.blockers(model, built, generated, generated_builds, 
       blockers[#blockers + 1] = missing(record.dir, record.where)
     else
       local build_comparison = { identities = comparison.identities, unpinned = skipped_for(record.unpinned, record),
-                                 root = migrate_paths.within(dir, record.dir) }
+                                 root = migrate_paths.within(dir, record.dir),
+                                 roots = unmapped_included_roots(built, record, old_root, counterpart) }
       local old, new = compared_included(built, record, old_root, counterpart)
       append(blockers, project_blockers(old, new, record.where, build_comparison))
       append(blockers, included_catalog_blockers(built, record, counterpart))

@@ -26,7 +26,7 @@ local function project_names(declared, project_name)
   return names
 end
 
-local PLUGIN_ENTRY_KEYS = { id = true, implementationClass = true }
+local PLUGIN_ENTRY_KEYS = { id = true, implementationClass = true, name = true }
 
 local function unknown_plugin_entry_key_problem(label, entry)
   for key in pairs(entry) do
@@ -60,6 +60,9 @@ local function gradle_plugins_of(name, block)
     local problem = unknown_plugin_entry_key_problem('builds.' .. name .. '.gradlePlugins[' .. index .. ']',
                                                      entry)
     if problem ~= nil then return nil, problem end
+    if entry.name ~= nil and (type(entry.name) ~= "string" or entry.name == "") then
+      return nil, '"builds.' .. name .. '.gradlePlugins[' .. index .. '].name" must be a non-empty string'
+    end
   end
   return entries
 end

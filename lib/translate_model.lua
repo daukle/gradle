@@ -26,7 +26,6 @@ local sorted_keys = tables.sorted_keys
 local MAIN = "main"
 local TEST = "test"
 local SOURCES_JAR_TASK = "sourcesJar"
-local JAR_TASK = "jar"
 local UNSPECIFIED = "unspecified"
 local HIGH_BYTE = "[\128-\255]"
 
@@ -112,10 +111,6 @@ local function translate_main(translation, project)
   local application = extension_value(project, "application")
   if application ~= nil and type(application.mainClass) == "string" then
     return carried(translation, application.mainClass, "application.mainClass")
-  end
-  local attributes = task_values(project, JAR_TASK).manifestAttributes
-  if type(attributes) == "table" and type(attributes["Main-Class"]) == "string" then
-    return carried(translation, attributes["Main-Class"], "jar.manifest.attributes.Main-Class")
   end
   return nil
 end
