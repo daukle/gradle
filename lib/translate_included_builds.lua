@@ -52,7 +52,7 @@ end
 
 --- One `gradlePlugins` entry, or nil when the model holds no readable id
 --- and class or either holds an environment value.
-local function gradle_plugin_entry(state, construct, plugin)
+local function gradle_plugin_entry(state, construct, name, plugin)
   if type(plugin.id) ~= "string" or type(plugin.implementationClass) ~= "string" then
     translation_state.block(state, construct, "names no id or implementation class the model could read",
                             UNCOVERED_ROW)
@@ -65,7 +65,7 @@ local function gradle_plugin_entry(state, construct, plugin)
   local id = translation_state.carried(state, plugin.id, construct .. ".id")
   local class = translation_state.carried(state, plugin.implementationClass, construct .. ".implementationClass")
   if id == nil or class == nil then return nil end
-  return { id = id, implementationClass = class }
+  return { name = name, id = id, implementationClass = class }
 end
 
 local function gradle_plugins_of(project, state)
@@ -74,7 +74,7 @@ local function gradle_plugins_of(project, state)
   if type(value) ~= "table" or type(value.plugins) ~= "table" then return nil end
   local entries = {}
   for _, name in ipairs(sorted_keys(value.plugins)) do
-    local entry = gradle_plugin_entry(state, "gradlePlugin.plugins." .. name, value.plugins[name])
+    local entry = gradle_plugin_entry(state, "gradlePlugin.plugins." .. name, name, value.plugins[name])
     if entry ~= nil then entries[#entries + 1] = entry end
   end
   if #entries == 0 then return nil end

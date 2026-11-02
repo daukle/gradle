@@ -5,5 +5,5 @@ plugins {
 version = '1.0.0'
 
 processResources {
-  exclude '**/draft.txt'
+  filesMatching('**/draft.txt') { exclude() }
 }

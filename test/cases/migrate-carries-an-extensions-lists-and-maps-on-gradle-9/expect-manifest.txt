@@ -1,0 +1,9 @@
+tags = ["one", "two"]
+
+"teavm.junit.js" = "true"
+plain = "yes"
+
+Automatic-Module-Name = "com.example"
+!given
+
+addAll = ["second"]

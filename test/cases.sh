@@ -10,6 +10,11 @@
 # bad input is refused.
 set -eu
 
+# Unset before any build runs: a sandbox is named after its case, so a
+# build reading its own directory name would read this variable's value.
+only_case=${DAUKLE_CASE:-}
+unset DAUKLE_CASE
+
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work="$root/test/.work"
 
@@ -529,7 +534,7 @@ compare_expected() {
 rm -rf "$work"
 for case_dir in "$root"/test/cases/*/; do
   [ -d "$case_dir" ] || continue
-  if [ -n "${DAUKLE_CASE:-}" ] && [ "$(basename "$case_dir")" != "$DAUKLE_CASE" ]; then
+  if [ -n "$only_case" ] && [ "$(basename "$case_dir")" != "$only_case" ]; then
     continue
   fi
   run_case "${case_dir%/}"
