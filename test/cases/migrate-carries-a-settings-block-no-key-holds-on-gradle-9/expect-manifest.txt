@@ -1,0 +1,7 @@
+[toolchains.gradle.settingsVerbatim]
+marking {
+  mark(':')
+
+!settingsConfigure
+
+![toolchains.gradle.settingsConfigure

@@ -455,17 +455,19 @@ end
 --- @param missing_task_names the tasks signal 2 found the generated build lacks
 --- @param settings_path the build's settings script, whose actions this leaves to `select_settings`
 --- @param applied the build's applied scripts as the dump inventoried them, by path
+--- @param forced statements carried whatever the rules find, or nil
 --- @return table { carried = statements in the order the old build ran them, blockers = blockers,
 ---         covered = set of the task names the carried statements account for,
 ---         catalogs = the names of the version catalogs a carried statement reads,
 ---         dsl, lineEnding = the format the carried text takes }
-function migrate_logic.select(project, missing_task_names, where, settings_path, applied)
+function migrate_logic.select(project, missing_task_names, where, settings_path, applied, forced)
   local script = project.script or { path = "", statements = {} }
   if script.unparsed ~= nil then return unparsed_result(project, missing_task_names, where) end
   local sources = sources_of(project, applied)
   local statements = selectable_statements(sources)
   local seeds, blockers, actions = statements_with_actions(sources, project.tasks, where, settings_path)
   append_all(seeds, statements_registering(statements, missing_task_names))
+  append_all(seeds, forced or {})
   local carried = {}
   for _, seed in ipairs(seeds) do add(carried, seed) end
   local active = activate_definitions(seeds)
@@ -485,10 +487,11 @@ end
 --- every project of its build (spec D-187, 4.1).
 --- @param selectable the statements that may be carried: no declaration, which the render already writes
 --- @param tasks every task of every project of the build
-function migrate_logic.select_settings(script, selectable, tasks, missing_task_names, where)
+--- @param forced statements carried whatever the rules find, or nil
+function migrate_logic.select_settings(script, selectable, tasks, missing_task_names, where, forced)
   local project = { script = { path = script.path, statements = selectable },
                     tasks = with_actions_from(tasks, script.path) }
-  return migrate_logic.select(project, missing_task_names, where)
+  return migrate_logic.select(project, missing_task_names, where, nil, nil, forced)
 end
 
 local function is_import(statement)

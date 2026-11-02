@@ -252,13 +252,45 @@ local function shown_settings_path(build, script)
   return build.place.build .. "/" .. script.path
 end
 
---- The statements a settings script holds that are code, not declarations.
-local function code_statements(settings)
-  local code = {}
-  for _, statement in ipairs(settings.script.statements or {}) do
-    if not migrate_blockers.is_settings_declaration(statement, settings.extensions) then code[#code + 1] = statement end
+--- The settings extensions a declaration may configure: every one but those
+--- whose state the translation could not say as keys.
+local function translatable_extensions(settings, untranslated)
+  local out = {}
+  for name, extension in pairs(settings.extensions or {}) do
+    if untranslated[name] == nil then out[name] = extension end
   end
-  return code
+  return out
+end
+
+--- The statements a settings script holds that are code, not declarations,
+--- and among them those configuring an untranslated extension, which are
+--- carried whatever the rules find.
+local function code_statements(settings, untranslated)
+  local code, forced = {}, {}
+  local translatable = translatable_extensions(settings, untranslated)
+  for _, statement in ipairs(settings.script.statements or {}) do
+    if not migrate_blockers.is_settings_declaration(statement, translatable) then
+      code[#code + 1] = statement
+      if migrate_blockers.is_settings_declaration(statement, settings.extensions) then forced[#forced + 1] = statement end
+    end
+  end
+  return code, forced
+end
+
+--- The blockers of each untranslated extension no forced statement configures.
+local function untaken_blockers(untranslated, forced, settings)
+  local taken, blockers = {}, {}
+  for _, statement in ipairs(forced) do
+    for name in pairs(untranslated) do
+      if migrate_blockers.is_settings_declaration(statement, { [name] = (settings.extensions or {})[name] }) then
+        taken[name] = true
+      end
+    end
+  end
+  for _, name in ipairs(tables.sorted_keys(untranslated)) do
+    if not taken[name] then append(blockers, untranslated[name]) end
+  end
+  return blockers
 end
 
 local function cover_in_every_project(result, projects, covered)
@@ -285,12 +317,17 @@ end
 --- other code statement is translated, its effect left to the keys (spec D-187, 4.1).
 local function carry_settings(build, built, result)
   local settings = settings_of(built, build.name)
-  if parsed_settings_path(built, build.name) == nil then return end
-  local code = code_statements(settings)
+  local untranslated = build.name == MAIN_BUILD and built.untranslated_settings or {}
+  if parsed_settings_path(built, build.name) == nil then
+    append(result.blockers, untaken_blockers(untranslated, {}, settings))
+    return
+  end
+  local code, forced = code_statements(settings, untranslated)
+  append(result.blockers, untaken_blockers(untranslated, forced, settings))
   if #code == 0 then return end
   local tasks = all_tasks(build.projects)
   local selection = migrate_logic.select_settings(settings.script, code, tasks,
-                                                  sorted_set(result.missing[build.name]), build.where)
+                                                  sorted_set(result.missing[build.name]), build.where, forced)
   append(result.blockers, selection.blockers)
   local dsl = settings.script.dsl or GROOVY
   local translated_before = #result.translated

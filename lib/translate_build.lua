@@ -357,6 +357,34 @@ end
 --- @return { config = <the [toolchains.gradle] keys>, name, version, modules = <core's [modules]>,
 ---           declared = { { name, requires } }, projects = { { project, where, module? } },
 ---           builds = { { dir, gradle_name, identity, project, where } }, blockers }
+local UNTRANSLATABLE_SETTING = "^settingsConfigure%.([^.]+)"
+
+--- The settings extensions whose state the translation could not say as keys,
+--- each left out of `settingsConfigure` with its blockers set aside, so that
+--- the block configuring it is carried as code instead (D-219): such state is
+--- what a method's side effects left, a map of objects no configure tree
+--- assigns. lib/migrate_carry gives the blockers back when no block takes it.
+--- @return extension name -> its blockers
+local function without_untranslatable_extensions(settings)
+  local untranslated, kept = {}, {}
+  for _, found in ipairs(settings.blockers) do
+    local name = string.match(found.construct, UNTRANSLATABLE_SETTING)
+    if name == nil then
+      kept[#kept + 1] = found
+    else
+      untranslated[name] = untranslated[name] or {}
+      append(untranslated[name], { found })
+    end
+  end
+  settings.blockers = kept
+  local configure = settings.config.settingsConfigure
+  if configure ~= nil then
+    for name in pairs(untranslated) do configure[name] = nil end
+    if next(configure) == nil then settings.config.settingsConfigure = nil end
+  end
+  return untranslated
+end
+
 function translate_build.build(model, included_models, options)
   local blockers = {}
   local included = translate_included_builds.read(model, included_models, options, blockers)
@@ -370,6 +398,7 @@ function translate_build.build(model, included_models, options)
   end
   local settings = translate_model.settings(project_options(model, options, context,
                                                             within(options.dir, options.settings)))
+  result.untranslated_settings = without_untranslatable_extensions(settings)
   append(blockers, settings.blockers)
   for key, value in pairs(settings.config) do result.config[key] = value end
   result.config.builds = translate_included_builds.config(included.records, result.config.jdk, blockers)
