@@ -170,10 +170,31 @@ local function additions(collection, kind, default)
   return { putAll = added }
 end
 
+--- An assignable map's plain entries as `mapOf`, each other entry blocked by
+--- its own key: a map's entries stand alone, so one that holds a path or an
+--- object does not take the plain ones with it (D-222). What is left out
+--- differs in the generated build, so the comparison still blocks it.
+local function partial_map(state, collection, path, surface)
+  local entries = {}
+  for _, key in ipairs(sorted_keys(collection)) do
+    local entry_path = path .. "." .. tostring(key)
+    if is_scalar(collection[key]) then
+      entries[key] = carried(state, collection[key], entry_path)
+    else
+      block(state, entry_path, "holds a value that is not plain, which a configure tree cannot assign", surface)
+    end
+  end
+  if next(entries) == nil then return nil end
+  return { mapOf = entries }
+end
+
 --- A collection as a configure value: a plain list as itself, a plain map as
 --- `mapOf`, a read-only one as what it adds; anything else blocks by name.
 local function collection_value(state, collection, kind, path, read_only, surface, default)
   if next(collection) == nil then return nil end
+  if kind == "$map" and not read_only and not all_scalar(collection) then
+    return partial_map(state, collection, path, surface)
+  end
   if not all_scalar(collection) then
     if not read_only then
       block(state, path, "holds a list or a map whose entries are not plain values, which a configure tree"
