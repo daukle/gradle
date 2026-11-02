@@ -17,8 +17,26 @@ local append = tables.append
 local CURRENT_BUILD = ":"
 local unmapped_roots
 
+local PROJECT_DIFFERS = "differs in the build daukle/gradle generates from the translated keys, and no key"
+                        .. " carries this setting of the project"
+
+--- What `Project`'s own setters hold (`description`, `status`), each compared
+--- by name, so a value no key carries blocks rather than passing unseen (D-221).
+local function own_settings_blockers(old, generated, where)
+  local blockers = {}
+  if type(old.settings) ~= "table" or type(generated.settings) ~= "table" then return blockers end
+  for _, name in ipairs(tables.sorted_keys(old.settings)) do
+    if not tables.deep_equal(old.settings[name], generated.settings[name]) then
+      blockers[#blockers + 1] = migrate_surface.blocker("configure.project." .. name, where, PROJECT_DIFFERS,
+                                                        migrate_surface.UNCOVERED_ROW)
+    end
+  end
+  return blockers
+end
+
 local function project_blockers(old, generated, where, comparison)
   local blockers = {}
+  append(blockers, own_settings_blockers(old, generated, where))
   append(blockers, migrate_blockers.core_plugins(old, generated, where))
   append(blockers, migrate_blockers.third_party_plugins(old.plugins, generated.plugins, where, ""))
   append(blockers, migrate_blockers.extension_differences(old.extensions, generated.extensions, where, "configure",

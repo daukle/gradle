@@ -336,6 +336,7 @@ end
 
 local render_body
 local render_tasks
+local render_project
 
 local function render_block(lines, indent, name, body, depth)
   if not is_identifier(name) then name = groovy.quoted(name) end
@@ -444,6 +445,14 @@ function render_tasks(lines, tasks, depth)
   end
 end
 
+--- The `configure.project` entry: what `Project`'s own setters take
+--- (`description`, `status`), which no extension can be named for (D-221).
+function render_project(lines, own, depth)
+  lines[#lines + 1] = "project.with {"
+  render_body(lines, "  ", own, depth)
+  lines[#lines + 1] = "}"
+end
+
 --- @param label as `configuration_problem` takes it
 local function configuration(configure, depth, label)
   local problem = configuration_problem(configure, label)
@@ -457,8 +466,16 @@ local function configuration(configure, depth, label)
   else
     tasks = nil
   end
+  local own = configure.project
+  if is_block(own) and not is_list(own) then
+    configure = tables.shallow_copy(configure)
+    configure.project = nil
+  else
+    own = nil
+  end
   render_body(lines, "", configure, depth)
   if tasks ~= nil then render_tasks(lines, tasks, depth) end
+  if own ~= nil then render_project(lines, own, depth) end
   return lines
 end
 
