@@ -362,6 +362,19 @@ def pluginsOf = { File base, Iterable plugins ->
   }
 }
 
+/**
+ * An Ivy repository's artifact patterns and whether its organisation is a Maven group (dots as directories),
+ * read from its internal descriptor: the public API has no getter, and a pinned url for what it served is the
+ * pattern with the module's values in it (D-220).
+ */
+def ivyLayoutOf = { repository ->
+  try {
+    def properties = repository.descriptor.properties
+    [artifactPatterns: properties['ARTIFACT_PATTERNS']?.collect { it.toString() },
+     m2Compatible: properties['M2_COMPATIBLE'] == true]
+  } catch (Throwable ignored) { [:] }
+}
+
 def repositoriesOf = { Iterable repositories ->
   repositories.collect { repository ->
     def kind = 'other'
@@ -370,7 +383,8 @@ def repositoriesOf = { Iterable repositories ->
     else if (repository instanceof org.gradle.api.artifacts.repositories.FlatDirectoryArtifactRepository) kind = 'flatDir'
     def url = null
     if (kind == 'maven' || kind == 'ivy') url = repository.url?.toString()
-    [name: repository.name, kind: kind, type: typeOf(repository).name, url: url]
+    def entry = [name: repository.name, kind: kind, type: typeOf(repository).name, url: url]
+    kind == 'ivy' ? entry + ivyLayoutOf(repository) : entry
   }
 }
 
@@ -1014,7 +1028,9 @@ def appliedInventoriesOf = { File base, List projects ->
 }
 
 def repositoriesByName = { Iterable repositories ->
-  repositoriesOf(repositories).collectEntries { [it.name, [kind: it.kind, type: it.type, url: it.url]] }
+  repositoriesOf(repositories).collectEntries { [it.name, [kind: it.kind, type: it.type, url: it.url,
+                                                             artifactPatterns: it.artifactPatterns,
+                                                             m2Compatible: it.m2Compatible]] }
 }
 
 /** @implNote `toolchainManagement` is a property of `Settings`, not one of its extensions. */

@@ -98,6 +98,61 @@ local function maven_path(row)
   return (string.gsub(row.group, "%.", "/")) .. "/" .. row.module .. "/" .. row.version .. "/" .. row.fileName
 end
 
+--- A pattern's `[token]`s filled from `values`, and whether one had no value.
+local function fill(text, values)
+  local missing = false
+  local filled = string.gsub(text, "%[(%w+)%]", function(token)
+    local value = values[token]
+    if value == nil then
+      missing = true
+      return ""
+    end
+    return value
+  end)
+  return filled, missing
+end
+
+--- An Ivy pattern with `values` in it: an optional `( )` part is kept only
+--- when every token in it has a value, any other missing token gives nil.
+local function substitute(pattern, values)
+  local kept = string.gsub(pattern, "%(([^()]*)%)", function(inner)
+    local filled, missing = fill(inner, values)
+    if missing then return "" end
+    return filled
+  end)
+  local filled, missing = fill(kept, values)
+  if missing then return nil end
+  return filled
+end
+
+--- The url an Ivy repository's artifact pattern gives for a resolved row, or
+--- nil when no pattern names the file the old build fetched (D-220).
+---
+--- @implNote `[classifier]` and `[ext]` are read back from the file's own
+--- name, `<module>-<revision>` then an optional classifier then `.<ext>`, and
+--- a url counts only when its last segment IS that name, so a pattern this
+--- reading does not fit blocks rather than pinning another file.
+local function ivy_url(row, repository)
+  local prefix = row.module .. "-" .. row.version
+  if string.sub(row.fileName, 1, #prefix) ~= prefix then return nil end
+  local rest = string.sub(row.fileName, #prefix + 1)
+  local ext = string.match(rest, "%.([^.]+)$")
+  if ext == nil then return nil end
+  local middle = string.sub(rest, 1, #rest - #ext - 1)
+  local organisation = repository.m2Compatible and (string.gsub(row.group, "%.", "/")) or row.group
+  local values = { organisation = organisation, organization = organisation, module = row.module,
+                   artifact = row.module, revision = row.version, ext = ext, type = ext,
+                   classifier = middle ~= "" and string.sub(middle, 2) or nil }
+  for _, pattern in ipairs(repository.artifactPatterns or {}) do
+    local path = substitute(pattern, values)
+    if path ~= nil and string.match(path, "[^/]+$") == row.fileName then
+      if string.match(path, "^%a[%w+.-]*:") then return path end
+      return with_trailing_slash(repository.url) .. path
+    end
+  end
+  return nil
+end
+
 --- @implNote an artifact transform hands the classpath a file it made, still
 --- under the component's identifier: the IntelliJ Platform plugin unpacks a
 --- Marketplace plugin's zip into its inner jars. Pinned at the component's
@@ -123,11 +178,18 @@ local function unpinnable(row, repository)
   if repository == nil or repository.url == nil then
     return "resolved from a repository the model names no url for"
   end
-  if repository.kind ~= "maven" then
-    return "resolved from " .. repository.name .. ", which is not a Maven layout"
-  end
   if string.sub(repository.url, 1, 5) == "file:" then
     return "resolved from " .. repository.name .. ", a file: repository that exists on this machine only"
+  end
+  if repository.kind == "ivy" then
+    if ivy_url(row, repository) == nil then
+      return "resolved from " .. repository.name .. ", an Ivy repository whose artifact pattern names no"
+             .. " url for the file it served"
+    end
+    return nil
+  end
+  if repository.kind ~= "maven" then
+    return "resolved from " .. repository.name .. ", which is not a Maven layout"
   end
   if not is_in_maven_layout(row) then
     return "resolved to files its Maven layout does not hold, made by an artifact transform, so no pinned url"
@@ -144,7 +206,8 @@ local function settings_repositories(state)
   for _, name in ipairs(tables.sorted_keys(by_name)) do
     local repository = by_name[name]
     repositories[#repositories + 1] = { name = name, kind = repository.kind, type = repository.type,
-                                        url = repository.url }
+                                        url = repository.url, artifactPatterns = repository.artifactPatterns,
+                                        m2Compatible = repository.m2Compatible }
   end
   return repositories, management.repositoriesMode
 end
@@ -178,8 +241,9 @@ function translation.pin_of(state, repositories, row)
   for _, part in ipairs(parts) do
     if translation.carried(state, part, row.component) == nil then return nil end
   end
-  return { url = with_trailing_slash(repository.url) .. maven_path(row), sha256 = row.sha256,
-           as = row.module .. " " .. row.version }
+  local url = repository.kind == "ivy" and ivy_url(row, repository)
+              or with_trailing_slash(repository.url) .. maven_path(row)
+  return { url = url, sha256 = row.sha256, as = row.module .. " " .. row.version }
 end
 
 return translation
