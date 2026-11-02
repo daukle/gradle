@@ -147,8 +147,16 @@ def isPlainFileCollection = { Object value ->
  * Whether a build script could have assigned the property: a setter, a non-final field, or a lazy
  * Gradle type, which the Groovy DSL assigns through its own setter.
  */
+/**
+ * A property whose setter is overloaded, such as a `Test` task's `jvmArgs` (a `List` and an `Iterable`):
+ * Groovy gives it its own type, which is not a `MetaBeanProperty`.
+ */
+def isMultipleSetter = { MetaProperty property ->
+  property instanceof org.codehaus.groovy.runtime.metaclass.MultipleSetterProperty
+}
+
 def isAssignable = { MetaProperty property, Object raw ->
-  if (raw instanceof org.gradle.api.provider.HasConfigurableValue) return true
+  if (raw instanceof org.gradle.api.provider.HasConfigurableValue || isMultipleSetter(property)) return true
   if (property instanceof MetaBeanProperty) return property.setter != null
   !java.lang.reflect.Modifier.isFinal(property.modifiers)
 }
@@ -719,15 +727,18 @@ def extensionsOf = { File base, owner ->
   }
 }
 
-def jarReader = { File base, task ->
+def archiveReader = { File base, task ->
   [archiveFileName: safely { plain(base, task.archiveFileName) }, archiveBaseName: safely { plain(base, task.archiveBaseName) },
    archiveAppendix: safely { plain(base, task.archiveAppendix) }, archiveVersion: safely { plain(base, task.archiveVersion) },
    archiveClassifier: safely { plain(base, task.archiveClassifier) }, archiveExtension: safely { plain(base, task.archiveExtension) },
    destinationDirectory: safely { plain(base, task.destinationDirectory) },
-   manifestAttributes: safely { plain(base, task.manifest.attributes) },
    preserveFileTimestamps: safely { plain(base, task.preserveFileTimestamps) },
    reproducibleFileOrder: safely { plain(base, task.reproducibleFileOrder) },
    duplicatesStrategy: safely { plain(base, task.duplicatesStrategy) }]
+}
+
+def jarReader = { File base, task ->
+  archiveReader(base, task) + [manifestAttributes: safely { plain(base, task.manifest.attributes) }]
 }
 
 /**
@@ -811,7 +822,8 @@ def TASK_READERS = [[org.gradle.api.tasks.bundling.Jar, 'jar', jarReader],
                     [org.gradle.api.tasks.compile.JavaCompile, 'javaCompile', javaCompileReader],
                     [org.gradle.api.tasks.testing.Test, 'test', testReader],
                     [org.gradle.api.tasks.javadoc.Javadoc, 'javadoc', javadocReader],
-                    [org.gradle.api.tasks.JavaExec, 'javaExec', javaExecReader]]
+                    [org.gradle.api.tasks.JavaExec, 'javaExec', javaExecReader],
+                    [org.gradle.api.tasks.bundling.AbstractArchiveTask, 'archive', archiveReader]]
 
 def actionsOf = { File base, task ->
   task.actions.collect { action ->
@@ -839,9 +851,11 @@ def TASK_BASE = (org.gradle.api.DefaultTask.metaClass.properties*.name as Set) -
 
 /**
  * A forked process's `environment` is the daemon's own plus the task's changes, so walked whole it is this
- * machine's environment; the readers read the changes alone.
+ * machine's environment; the readers read the changes alone. `allJvmArgs` is the command line Gradle derives
+ * from `jvmArgs`, the system properties and the heap, with this machine's encoding and locale added, and
+ * `commandLine` the one it derives from the executable and `args`, which an `Exec` task's setter only splits.
  */
-def TASK_DENY = ['environment'] as Set
+def TASK_DENY = ['environment', 'allJvmArgs', 'commandLine'] as Set
 
 /** A task's JDK tool, which the `jdk` key and the toolchain blockers own. */
 def TOOLCHAIN_TOOLS = [org.gradle.jvm.toolchain.JavaLauncher, org.gradle.jvm.toolchain.JavaCompiler,
@@ -864,7 +878,7 @@ def isServiceGetter = { Class type, String getter ->
 }
 
 def isSetting = { task, MetaProperty property ->
-  if (!(property instanceof MetaBeanProperty) || property.getter == null) return false
+  if (!(property instanceof MetaBeanProperty || isMultipleSetter(property)) || property.getter == null) return false
   !isServiceGetter(task.getClass(), property.getter.name)
 }
 
