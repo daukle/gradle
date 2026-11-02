@@ -1,0 +1,5 @@
+[toolchains.gradle.configure.tasks.test.systemProperties.mapOf.target]
+buildOutputPath = "fixtures"
+
+[toolchains.gradle.configure.tasks.test.systemProperties.mapOf.root]
+buildOutputPath = "."

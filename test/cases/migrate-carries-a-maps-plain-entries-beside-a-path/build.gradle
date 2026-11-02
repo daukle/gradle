@@ -4,5 +4,5 @@ plugins {
 
 test {
   systemProperty 'plain', 'kept'
-  systemProperty 'where', layout.buildDirectory.dir('fixtures').get().asFile.absolutePath
+  systemProperty 'where', file('fixtures').absolutePath
 }
