@@ -27,7 +27,7 @@ release = "8"
 
 | key | meaning |
 | --- | --- |
-| `version` | which Gradle to provision, defaulting to `8.13`. Sixteen are pinned, `7.6.4` to `9.6.0`, and one it does not pin is refused by name with the whole list. `7.6.4` is the floor, and asking for less says why: `6.7` cannot run on the oldest JDK available here, and the versions in between are pinnable and nobody has asked |
+| `version` | which Gradle to provision, defaulting to `8.13`. Twenty-nine are pinned, `7.6.4` to `9.8.2`, and one it does not pin is refused by name with the whole list. `7.6.4` is the floor, and asking for less says why: `6.7` cannot run on the oldest JDK available here, and the versions in between are pinnable and nobody has asked |
 | `jdk` | which JDK, through `daukle/java`'s table, defaulting to `17` |
 | `release` | the Java source and target level |
 | `sourcesJar` | `true` adds Gradle's sources jar, which `gradle:sources-jar` builds |
