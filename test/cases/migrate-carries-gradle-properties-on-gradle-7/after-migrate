@@ -1,0 +1,3 @@
+migrate --done
+gradle:jar
+gradle:jar

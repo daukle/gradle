@@ -1,0 +1,4 @@
+[toolchains.gradle.gradleProperties]
+note = "first line continued\tend A"
+pomName = "Greeter Library"
+!org.gradle.jvmargs
