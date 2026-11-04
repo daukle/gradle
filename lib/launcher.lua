@@ -47,4 +47,13 @@ local function stderr_tail(result)
   return "..." .. string.sub(text, -STDERR_SHOWN)
 end
 
-return { run = run, jdk_home = jdk_home, stderr_tail = stderr_tail }
+--- The flags every migration run passes to keep the configuration cache off.
+---
+--- @implNote isolated projects is turned off with it, because a build enabling
+--- `org.gradle.unsafe.isolated-projects` refuses `--no-configuration-cache`
+--- outright: okhttp does, measured on 7.6.4 and 9.8.2, and the command line
+--- wins over its `gradle.properties`.
+local NO_CONFIGURATION_CACHE = { "--no-configuration-cache", "-Dorg.gradle.unsafe.isolated-projects=false" }
+
+return { run = run, jdk_home = jdk_home, stderr_tail = stderr_tail,
+         NO_CONFIGURATION_CACHE = NO_CONFIGURATION_CACHE }

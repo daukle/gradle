@@ -120,12 +120,12 @@ local function arguments_of(context, plan, jdk_home)
   local arguments = {
     "--project-dir", ".",
     "--project-cache-dir", derived_from_instance(context, migrate_paths.PROJECT_CACHE),
-    "--no-configuration-cache",
     "--init-script", derived_from_instance(context, INIT_SCRIPT),
     "-D" .. PLAN_PROPERTY .. "=" .. derived_from_instance(context, migrate_jars.PLAN),
     "-D" .. JDK_PROPERTY .. "=" .. jdk_home,
     "--quiet",
   }
+  for _, argument in ipairs(launcher.NO_CONFIGURATION_CACHE) do arguments[#arguments + 1] = argument end
   for _, argument in ipairs(toolchain_arguments(plan.gradle, jdk_home)) do arguments[#arguments + 1] = argument end
   for _, task in ipairs(plan.tasks) do arguments[#arguments + 1] = task end
   return arguments
