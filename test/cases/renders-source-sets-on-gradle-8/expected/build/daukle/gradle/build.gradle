@@ -15,17 +15,17 @@ sourceSets {
     java      { srcDirs(new File(file('../../..'), 'src/test/java')) }
     resources { srcDirs(new File(file('../../..'), 'src/test/resources')) }
   }
-  create('bench') {
+  maybeCreate('bench').with {
     java      { srcDirs(new File(file('../../..'), 'src/bench/java')) }
     resources { srcDirs(new File(file('../../..'), 'src/bench/resources')) }
   }
-  create('integrationTest') {
+  maybeCreate('integrationTest').with {
     java      { srcDirs(new File(file('../../..'), 'src/integrationTest/java')) }
     resources { srcDirs(new File(file('../../..'), 'src/integrationTest/resources')) }
     compileClasspath += sourceSets.main.output
     runtimeClasspath += sourceSets.main.output
   }
-  create('tools') {
+  maybeCreate('tools').with {
     java      { srcDirs(new File(file('../../..'), 'src/tools/java'), new File(file('../../..'), 'generated/tools')) }
     resources { srcDirs(new File(file('../../..'), 'src/tools/resources')) }
   }

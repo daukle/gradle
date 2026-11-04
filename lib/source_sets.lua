@@ -213,9 +213,12 @@ end
 --- @implNote the name is always a quoted string, never a bare identifier: a
 --- bare `native {` is a Groovy parse error, and a bare `all {` calls the
 --- container's own all(Closure) and re-points main instead of creating a set.
+--- `maybeCreate` rather than `create`, because an applied plugin may already
+--- have made the set: `java-test-fixtures` makes `testFixtures`, and `create`
+--- then fails the build.
 function source_sets.entry(set, depth)
   local lines = {
-    "  create(" .. groovy.quoted(set.name) .. ") {",
+    "  maybeCreate(" .. groovy.quoted(set.name) .. ").with {",
     "    java      { " .. groovy.src_dirs(set.java, depth) .. " }",
     "    resources { " .. groovy.src_dirs(set.resources, depth) .. " }",
   }
