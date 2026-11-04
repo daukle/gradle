@@ -14,7 +14,23 @@
 -- artifacts D-77 measured, gradle.org publishes one for every distribution. So
 -- a Gradle is pinned the easy way and nothing here needs --resolve.
 local DIGESTS = {
+  ["7.2"] = "f581709a9c35e9cb92e16f585d2c4bc99b2b1a5f85d2badbd3dc6bff59e1e6dd",
+  ["7.3"] = "de8f52ad49bdc759164f72439a3bf56ddb1589c4cde802d3cec7d6ad0e0ee410",
+  ["7.3.1"] = "9afb3ca688fc12c761a0e9e4321e4d24e977a4a8916c8a768b1fe05ddb4d6b66",
+  ["7.3.2"] = "23b89f8eac363f5f4b8336e0530c7295c55b728a9caa5268fdd4a532610d5392",
+  ["7.3.3"] = "b586e04868a22fd817c8971330fec37e298f3242eb85c374181b12d637f80302",
+  ["7.4"] = "8cc27038d5dbd815759851ba53e70cf62e481b87494cc97cfd97982ada5ba634",
+  ["7.4.1"] = "e5444a57cda4a95f90b0c9446a9e1b47d3d7f69057765bfb54bd4f482542d548",
+  ["7.4.2"] = "29e49b10984e585d8118b7d0bc452f944e386458df27371b49b4ac1dec4b7fda",
+  ["7.5"] = "cb87f222c5585bd46838ad4db78463a5c5f3d336e5e2b98dc7c0c586527351c2",
+  ["7.5.1"] = "f6b8596b10cce501591e92f229816aa4046424f3b24d771751b06779d58c8ec4",
+  ["7.6"] = "7ba68c54029790ab444b39d7e293d3236b2632631fb5f2e012bb28b4ff669e4b",
+  ["7.6.1"] = "6147605a23b4eff6c334927a86ff3508cb5d6722cd624c97ded4c2e8640f1f87",
+  ["7.6.2"] = "a01b6587e15fe7ed120a0ee299c25982a1eee045abd6a9dd5e216b2f628ef9ac",
+  ["7.6.3"] = "740c2e472ee4326c33bf75a5c9f5cd1e69ecf3f9b580f6e236c86d1f3d98cfac",
   ["7.6.4"] = "bed1da33cca0f557ab13691c77f38bb67388119e4794d113e051039b80af9bb1",
+  ["7.6.5"] = "b812fec0edb7d27e0ae35955887bb2954536fa3e44edaf481150da058e154d9a",
+  ["7.6.6"] = "673d9776f303bc7048fc3329d232d6ebf1051b07893bd9d11616fad9a8673be0",
   ["8.4"] = "3e1af3ae886920c3ac87f7a91f816c0c7c436f276a6eefdb3da152100fef72ae",
   ["8.8"] = "a4b4158601f8636cdeeab09bd76afb640030bb5b144aafe261a5e8af027dc612",
   ["8.10"] = "5b9c5eb3f9fc2c94abaea57d90bd78747ca117ddbbf96c859d3741181a12bf2a",
@@ -93,6 +109,25 @@ local function known()
   return table.concat(ascending(), ", ")
 end
 
+local function major_of(version)
+  return string.match(version, "^(%d+)")
+end
+
+--- The pinned range, and the pins in the asked-for version's major line.
+---
+--- @implNote not the whole list: core keeps 512 bytes of an error, and the
+--- whole list pushed the reason a refusal gives past them.
+local function pinned_summary(version)
+  local all = ascending()
+  local summary = #all .. " versions from " .. all[1] .. " to " .. all[#all]
+  local line = {}
+  for _, pinned in ipairs(all) do
+    if major_of(pinned) == major_of(version) then line[#line + 1] = pinned end
+  end
+  if #line == 0 then return summary end
+  return summary .. "; of the " .. major_of(version) .. " line, " .. table.concat(line, ", ")
+end
+
 local function oldest()
   return ascending()[1]
 end
@@ -100,14 +135,13 @@ end
 --- Why the range stops where it does, appended when a refused version is below
 --- the oldest pin.
 ---
---- @implNote deliberately NOT "an older Gradle cannot run on JDK 17", which is
---- false of 7.3 through 7.6.3: those run on 17 and are unpinned only because
---- nothing asked for them. 6.7 is what was measured. The number is
---- daukle/java's table, so an older JDK row there lowers this floor and changes
---- this sentence with it.
+--- @implNote names what was measured, 2026-11-04: every 7.x release from 7.2 on
+--- passes the compile-and-test case on JDK 17 and 7.0 to 7.1.1 fail it, though
+--- Gradle documents 17 only from 7.3. The number is daukle/java's table, so an
+--- older JDK row there lowers this floor and changes this sentence with it.
 local function why_the_range_stops(floor)
-  return ". Nothing below " .. floor .. " is pinned: Gradle 6.7 cannot run on JDK 17, the oldest"
-         .. " daukle/java provisions, and the versions in between are pinnable and simply unmeasured"
+  return ". Nothing below " .. floor .. " is pinned: Gradle 7.0 to 7.1.1 fail to compile and test on"
+         .. " JDK 17, the oldest daukle/java provisions"
 end
 
 local function for_version(version)
@@ -119,8 +153,8 @@ local function for_version(version)
   if digest == nil then
     local floor = oldest()
     local why = precedes(version, floor) and why_the_range_stops(floor) or ""
-    error('no pinned Gradle "' .. version .. '". This plugin pins ' .. known()
-          .. ', and a version it does not pin is a version it cannot verify' .. why, 0)
+    error('no pinned Gradle "' .. version .. '"' .. why .. '. This plugin pins ' .. pinned_summary(version)
+          .. ', and a version it does not pin is a version it cannot verify', 0)
   end
   return {
     version = version,
@@ -136,9 +170,6 @@ local function is_pinned(version)
   return DIGESTS[version] ~= nil
 end
 
-local function major_of(version)
-  return string.match(version, "^(%d+)")
-end
 
 --- The release a pre-release version leads to: "8.12-rc-1" and
 --- "8.12-milestone-2" are both 8.12, else nil for a plain version.

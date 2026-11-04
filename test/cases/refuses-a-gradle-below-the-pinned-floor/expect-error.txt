@@ -1,1 +1,1 @@
-Nothing below 7.6.4 is pinned: Gradle 6.7 cannot run on JDK 17, the oldest daukle/java provisions, and the versions in between are pinnable and simply unmeasured
+no pinned Gradle "6.7". Nothing below 7.2 is pinned: Gradle 7.0 to 7.1.1 fail to compile and test on JDK 17, the oldest daukle/java provisions. This plugin pins 45 versions from 7.2 to 9.8.2, and a version it does not pin is a version it cannot verify

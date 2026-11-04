@@ -1,1 +1,1 @@
-provisioning gradle 7.6.4
+provisioning gradle 7.2
