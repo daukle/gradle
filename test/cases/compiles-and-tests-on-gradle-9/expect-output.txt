@@ -1,1 +1,1 @@
-provisioning gradle 9.6.0
+provisioning gradle 9.8.2

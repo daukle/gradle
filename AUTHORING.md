@@ -45,7 +45,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 
 | key | meaning |
 | --- | --- |
-| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`7.6.4`, `8.4`, `8.8`, `8.10`, `8.10.2`, `8.11.1`, `8.13`, `8.14`, `8.14.3`, `8.14.4`, `9.0.0`, `9.1.0`, `9.2.0`, `9.3.1`, `9.5.0`, `9.6.0`**, and a version not in that set is refused by name rather than fetched. **`7.6.4` is the floor and the refusal says why**: `6.7` cannot run on JDK 17, and 7.3 to 7.6.3 are pinnable and unmeasured |
+| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`7.6.4`, `8.4`, `8.8`, `8.10`, `8.10.2`, `8.11.1`, `8.13`, `8.14`, `8.14.3` to `8.14.6`, and every 9 release, `9.0.0` to `9.8.2`**, and a version not in that set is refused by name rather than fetched. **`7.6.4` is the floor and the refusal says why**: `6.7` cannot run on JDK 17, and 7.3 to 7.6.3 are pinnable and unmeasured |
 | `jdk` | which JDK to provision, through `daukle/java`'s table. Defaults to `17` |
 | `sourceRoot` | defaults to `src/main/java`. **Each of the four roots takes a root or a list of roots**, Gradle's `srcDirs`, and an empty list declares no root at all. A root is a path relative to the project, or `{ buildOutput = "generated/x" }`, relative to the project's build directory wherever daukle put it, rendered `layout.buildDirectory.dir('generated/x')`: the place a generator in `verbatim` writes, and what `daukle migrate` writes for a root inside the old build directory |
 | `resourceRoot` | defaults to `src/main/resources` |
@@ -823,8 +823,16 @@ versions were each run through the real compile-and-test case against a provisio
 before being pinned, and **a version that had failed would not have been pinned**. A row is a claim
 that this plugin can drive that Gradle, and `D-115` is what an unasserted claim costs here.
 
+**Since 2026-11-04 the table follows Gradle's releases rather than this tree's usage**, because
+the migration corpus (`D-223`) measured the population a migrator actually meets: 4 of its 5
+admitted Gradle projects declared a version past `9.6.0` (`9.8.2` twice, `9.8.0`, and `9.5.1`).
+So every release from `8.14.5` and `9.2.1` to `9.8.2` was added, thirteen rows, each through the
+same compile-and-test case first. The fifth corpus entry declares `6.8.3`, which is below the floor
+for the reason above.
+
 **A row is a url and a digest, so rows are cheap and CI is not.** The e2e cases therefore run one
-version at each EDGE of the range, `7.6.4` and `9.6.0`, which is not decoration: the same build that
+version at each EDGE of the range, `7.6.4` and `9.8.2` (`compiles-and-tests-on-gradle-9`; the
+other Gradle 9 cases stay on `9.6.0`), which is not decoration: the same build that
 works on 8 fails outright on 9 for want of a `junit-platform-launcher` that is in no POM graph.
 A single-major suite would have shipped that. **The 8 line is still exercised** by the three other
 cases that pin `8.13` and by every example, so moving the lower edge off it lost nothing.
