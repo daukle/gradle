@@ -115,15 +115,15 @@ end
 
 local function dump(context, gradle_version)
   daukle.write{ path = INIT_SCRIPT, text = model_dump.SCRIPT }
-  local failure = run_dump(context, gradle_version, context.dir or ".", {
+  local arguments = {
     "--project-dir", ".",
     "--project-cache-dir", derived_from_instance(context, migrate_paths.PROJECT_CACHE),
-    "--no-configuration-cache",
     "--init-script", derived_from_instance(context, INIT_SCRIPT),
     "-D" .. model_dump.PROPERTY .. "=" .. derived_from_instance(context, MODEL),
-    "--quiet",
-    "help",
-  })
+  }
+  tables.append(arguments, launcher.NO_CONFIGURATION_CACHE)
+  tables.append(arguments, { "--quiet", "help" })
+  local failure = run_dump(context, gradle_version, context.dir or ".", arguments)
   if failure ~= nil then
     error("Gradle could not configure the build, so there is no model to migrate from:\n" .. failure, 0)
   end
@@ -197,7 +197,8 @@ local function dump_generated(context, built, config, where, blank)
   if #problems > 0 then return nil, generation_blockers(problems, where) end
   writer.write_build_file(generation, rendered, { blank_verbatim = blank })
   write_generated_files(generation, rendered)
-  local arguments = { "--project-dir", ".", "--offline", "--no-configuration-cache", "--init-script", INIT_SCRIPT }
+  local arguments = { "--project-dir", ".", "--offline", "--init-script", INIT_SCRIPT }
+  tables.append(arguments, launcher.NO_CONFIGURATION_CACHE)
   if carried.settings_is_kotlin(rendered) then
     tables.append(arguments, { "--init-script", carried.KOTLIN_SETTINGS_INIT })
   end
