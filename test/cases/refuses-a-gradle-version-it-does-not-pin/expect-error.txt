@@ -1,1 +1,1 @@
-no pinned Gradle "8.9". This plugin pins 7.6.4, 8.4, 8.8, 8.10, 8.10.2, 8.11.1, 8.13, 8.14, 8.14.3, 8.14.4, 8.14.5, 8.14.6, 9.0.0, 9.1.0, 9.2.0, 9.2.1, 9.3.0, 9.3.1, 9.4.0, 9.4.1, 9.5.0, 9.5.1, 9.6.0, 9.6.1, 9.7.0, 9.7.1, 9.8.0, 9.8.1, 9.8.2, and a version it does not pin is a version it cannot verify
+no pinned Gradle "8.9". This plugin pins 45 versions from 7.2 to 9.8.2; of the 8 line, 8.4, 8.8, 8.10, 8.10.2, 8.11.1, 8.13, 8.14, 8.14.3, 8.14.4, 8.14.5, 8.14.6, and a version it does not pin is a version it cannot verify
