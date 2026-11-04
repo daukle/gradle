@@ -45,7 +45,7 @@ daukle gradle:resolve-tools --resolve   # pin the tools core plugins download, s
 
 | key | meaning |
 | --- | --- |
-| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **`7.6.4`, `8.4`, `8.8`, `8.10`, `8.10.2`, `8.11.1`, `8.13`, `8.14`, `8.14.3` to `8.14.6`, and every 9 release, `9.0.0` to `9.8.2`**, and a version not in that set is refused by name rather than fetched. **`7.6.4` is the floor and the refusal says why**: `6.7` cannot run on JDK 17, and 7.3 to 7.6.3 are pinnable and unmeasured |
+| `version` | which Gradle to provision. Defaults to `8.13`. Pinned: **every 7 release from `7.2` to `7.6.6`, `8.4`, `8.8`, `8.10`, `8.10.2`, `8.11.1`, `8.13`, `8.14`, `8.14.3` to `8.14.6`, and every 9 release, `9.0.0` to `9.8.2`**, and a version not in that set is refused by name rather than fetched. **`7.2` is the floor and the refusal says why**: 7.0 to 7.1.1 fail to compile and test on JDK 17 |
 | `jdk` | which JDK to provision, through `daukle/java`'s table. Defaults to `17` |
 | `sourceRoot` | defaults to `src/main/java`. **Each of the four roots takes a root or a list of roots**, Gradle's `srcDirs`, and an empty list declares no root at all. A root is a path relative to the project, or `{ buildOutput = "generated/x" }`, relative to the project's build directory wherever daukle put it, rendered `layout.buildDirectory.dir('generated/x')`: the place a generator in `verbatim` writes, and what `daukle migrate` writes for a root inside the old build directory |
 | `resourceRoot` | defaults to `src/main/resources` |
@@ -819,10 +819,11 @@ than to this one, serving it means adding a JDK of 15 or less in the other plugi
 the refusal says all of that rather than only listing what is pinned. Measured by running it,
 2026-10-13.
 
-**The refusal deliberately does NOT say "an older Gradle cannot run on JDK 17"**, which is false of
-7.3 through 7.6.3: those run on 17 and are unpinned only because nothing in this tree declares one,
-so they are pinnable and merely unmeasured. The first draft of this feature said the broader thing
-and would have shipped a refusal that was wrong about four minor versions.
+**The floor is 7.2, measured 2026-11-04**: every 7 release from `7.2` to `7.6.6` passes the
+compile-and-test case on JDK 17 and was pinned, `7.2` being what the corpus's termux declares; `7.0`
+to `7.1.1` fail it, though Gradle documents JDK 17 only from `7.3`. **The refusal says the measured
+thing and nothing broader**: the first draft of this feature said "an older Gradle cannot run on JDK
+17", which was false of four minor versions.
 
 **Every other row was measured the same way rather than transcribed and hoped for**: eleven
 versions were each run through the real compile-and-test case against a provisioned Gradle and JDK
@@ -837,8 +838,8 @@ same compile-and-test case first. The fifth corpus entry declares `6.8.3`, which
 for the reason above.
 
 **A row is a url and a digest, so rows are cheap and CI is not.** The e2e cases therefore run one
-version at each EDGE of the range, `7.6.4` and `9.8.2` (`compiles-and-tests-on-gradle-9`; the
-other Gradle 9 cases stay on `9.6.0`), which is not decoration: the same build that
+version at each EDGE of the range, `7.2` and `9.8.2` (`compiles-and-tests-on-gradle-7` and `-9`;
+the other Gradle 7 and 9 cases stay on `7.6.4` and `9.6.0`), which is not decoration: the same build that
 works on 8 fails outright on 9 for want of a `junit-platform-launcher` that is in no POM graph.
 A single-major suite would have shipped that. **The 8 line is still exercised** by the three other
 cases that pin `8.13` and by every example, so moving the lower edge off it lost nothing.
