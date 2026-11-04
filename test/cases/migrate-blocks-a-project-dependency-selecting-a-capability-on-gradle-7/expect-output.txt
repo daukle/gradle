@@ -1,0 +1,1 @@
+app/build.gradle: :lib: is a project dependency selecting example-test-fixtures:lib-test-fixtures, which projectDependencies cannot say

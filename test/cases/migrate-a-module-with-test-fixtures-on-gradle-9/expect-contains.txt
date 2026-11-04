@@ -1,0 +1,2 @@
+build/daukle/gradle/lib/build/libs/lib-1.0.0-test-fixtures.jar com/example/Names.class
+build/daukle/gradle/lib/build/libs/lib-1.0.0.jar com/example/Greeter.class

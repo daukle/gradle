@@ -554,6 +554,7 @@ def declaredRows = { configurations ->
         row.kind = 'project'
         row.project = dependency.hasProperty('path') ? dependency.path : dependency.dependencyProject.path
         row.targetConfiguration = dependency.targetConfiguration
+        row.capabilities = dependency.requestedCapabilities.collect { "${it.group}:${it.name}".toString() }
       } else if (dependency instanceof org.gradle.api.artifacts.ExternalModuleDependency) {
         row.kind = 'module'
         row.group = dependency.group
