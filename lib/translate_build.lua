@@ -123,21 +123,59 @@ local function module_requires(translation, context, where, blockers)
   return requires
 end
 
+local TEST_FIXTURES_PLUGIN = "org.gradle.java-test-fixtures"
+local TEST_FIXTURES_CAPABILITY_SUFFIX = "-test-fixtures"
+
+local function applies_plugin(project, wanted)
+  for _, plugin in ipairs(project.plugins or {}) do
+    for _, id in ipairs(plugin.ids or {}) do
+      if id == wanted then return true end
+    end
+  end
+  return false
+end
+
+--- Whether an edge is the `testImplementation(testFixtures(project))` that
+--- `java-test-fixtures` adds to its own project, which the generated build gets back
+--- by applying the plugin. Measured on 7.6.4 and 9.8.2: the dump reads it as a
+--- declared edge requesting `<group>:<name>-test-fixtures`.
+local function is_test_fixtures_self_edge(project, key, edge)
+  if edge.project ~= project.path or key ~= "testClasspath" then return false end
+  if #edge.capabilities ~= 1 or not applies_plugin(project, TEST_FIXTURES_PLUGIN) then return false end
+  local capability = edge.capabilities[1]
+  return string.sub(capability, -#TEST_FIXTURES_CAPABILITY_SUFFIX) == TEST_FIXTURES_CAPABILITY_SUFFIX
+end
+
+--- Why an edge cannot be a `projectDependencies` entry, or nil when it can.
+local function unsayable_edge(edge, project, name)
+  if #edge.capabilities > 0 then
+    return "is a project dependency selecting " .. table.concat(edge.capabilities, ", ")
+           .. ", which projectDependencies cannot say"
+  end
+  if edge.project == project.path then
+    return "is a project dependency on the project itself, which projectDependencies cannot say"
+  end
+  if name == nil then return "is a project dependency on a project that becomes no module" end
+  return nil
+end
+
 --- The module's `projectDependencies` block, its project paths as module
 --- names, or nil when it declares none (spec D-211).
-local function module_project_dependencies(translation, context, where, blockers)
+local function module_project_dependencies(translation, project, context, where, blockers)
   local block = {}
   for key, edges in pairs(translation.projectDependencies or {}) do
     local entries = {}
     for _, edge in ipairs(edges) do
-      local name = context.module_of_path[edge.project]
-      if name == nil then
-        blockers[#blockers + 1] = blocker(edge.project, where, "is a project dependency on a project that becomes"
-                                          .. " no module")
-      elseif edge.configuration ~= nil then
-        entries[#entries + 1] = { module = name, configuration = edge.configuration }
-      else
-        entries[#entries + 1] = name
+      if not is_test_fixtures_self_edge(project, key, edge) then
+        local name = context.module_of_path[edge.project]
+        local why = unsayable_edge(edge, project, name)
+        if why ~= nil then
+          blockers[#blockers + 1] = blocker(edge.project, where, why)
+        elseif edge.configuration ~= nil then
+          entries[#entries + 1] = { module = name, configuration = edge.configuration }
+        else
+          entries[#entries + 1] = name
+        end
       end
     end
     if #entries > 0 then block[key] = entries end
@@ -257,7 +295,7 @@ local function translate_module(model, project, name, options, context, blockers
   append(blockers, translation.blockers)
   local block, rest = split_keys(translation.config, module_graph.MODULE_KEYS)
   block.requiresBuilds = translate_included_builds.required(translation, context.by_identity, where, blockers)
-  block.projectDependencies = module_project_dependencies(translation, context, where, blockers)
+  block.projectDependencies = module_project_dependencies(translation, project, context, where, blockers)
   return { name = name, project = project, where = where, block = block, rest = rest, version = translation.version,
            requires = module_requires(translation, context, where, blockers),
            unpinned = translation.unpinned, blocked_edges = translation.blocked_edges }
