@@ -52,6 +52,7 @@ local source_sets = daukle.require("lib/source_sets")
 local validation = daukle.require("lib/validation")
 local writer = daukle.require("lib/writer")
 local launcher = daukle.require("lib/launcher")
+local gradle_properties = daukle.require("lib/gradle_properties")
 local composite = daukle.require("lib/composite")
 local migrator = daukle.require("lib/migrator")
 local tool_defaults = daukle.require("lib/tool_defaults")
@@ -106,6 +107,7 @@ local function run_gradle(context, config, arguments, options)
     argv[#argv + 1] = "--init-script"
     argv[#argv + 1] = carried.KOTLIN_SETTINGS_INIT
   end
+  for _, property in ipairs(gradle_properties.arguments(config)) do argv[#argv + 1] = property end
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
   return launcher.run(context, validation.gradle_version_of(context), validation.jdk_version_of(config),
                       argv, options)

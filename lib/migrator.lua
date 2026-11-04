@@ -5,6 +5,7 @@ local migrate_comparison = daukle.require("lib/migrate_comparison")
 local migrate_blockers = daukle.require("lib/migrate_blockers")
 local migrate_paths = daukle.require("lib/migrate_paths")
 local migrate_jars = daukle.require("lib/migrate_jars")
+local gradle_properties = daukle.require("lib/gradle_properties")
 local migrate_owned = daukle.require("lib/migrate_owned")
 local migrate_old_build = daukle.require("lib/migrate_old_build")
 local distributions = daukle.require("lib/distributions")
@@ -202,6 +203,7 @@ local function dump_generated(context, built, config, where, blank)
   if carried.settings_is_kotlin(rendered) then
     tables.append(arguments, { "--init-script", carried.KOTLIN_SETTINGS_INIT })
   end
+  tables.append(arguments, gradle_properties.arguments(rendered))
   tables.append(arguments, { "-D" .. model_dump.PROPERTY .. "=" .. GENERATED_MODEL, "--quiet", "help" })
   local failure = run_dump(context, rendered.version, derived(context, "."), arguments)
   if failure ~= nil then
@@ -434,6 +436,7 @@ local function run(context)
   local defaults = extension_defaults_of(context, translated(model, included, context, settings, gradle_version,
                                                              extension_defaults.SKIP), model)
   local built = translated(model, included, context, settings, gradle_version, defaults)
+  built.config[gradle_properties.KEY] = migrate_owned.root_properties(context)
   local blockers = built.blockers
   append(blockers, settings_code_blockers(context, model, included, settings))
   local carrying, generated, refusals, generated_models = carry(context, built, blockers)
