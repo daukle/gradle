@@ -155,13 +155,14 @@ local function declared_project_rows(project)
 end
 
 --- The project edges a project declares in a configuration
---- `projectDependencies` carries, by key, each { project = <path>, configuration? }.
+--- `projectDependencies` carries, by key, each { project = <path>, configuration?, capabilities }.
 function translate_dependencies.project_dependencies(project)
   local by_key = {}
   for _, row in ipairs(declared_project_rows(project)) do
     local key = PROJECT_DEPENDENCY_KEYS[row.configuration]
     by_key[key] = by_key[key] or {}
-    table.insert(by_key[key], { project = row.project, configuration = row.targetConfiguration })
+    table.insert(by_key[key], { project = row.project, configuration = row.targetConfiguration,
+                                capabilities = row.capabilities or {} })
   end
   return by_key
 end

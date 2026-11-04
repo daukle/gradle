@@ -1,0 +1,6 @@
+[modules.app]
+requires = ["lib"]
+
+[toolchains.gradle]
+version = "9.8.2"
+!projectDependencies

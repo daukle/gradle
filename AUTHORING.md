@@ -582,6 +582,11 @@ projectDependencies = { compileOnly = ["contract"], testClasspath = ["fixtures"]
 - **The migrator writes it from the declared project edges**, `api` included: `requires` renders an
   `api` edge as `implementation`, which leaves the project off a consumer's compile classpath, so an
   `api` edge is written in both places. An edge to an included build's project still blocks.
+- **An edge that selects a capability blocks**, by name: `testFixtures(project(':lib'))` selects
+  `<group>:lib-test-fixtures`, and an entry cannot say that. The one exception is the
+  `testImplementation(testFixtures(project))` that `java-test-fixtures` adds to its own project:
+  it is dropped, because applying the plugin in the generated build adds it back. A project edge on
+  the project itself also blocks rather than reaching the manifest.
 
 ### The root and the implicit parents: `root` and `parents.<name>`
 
