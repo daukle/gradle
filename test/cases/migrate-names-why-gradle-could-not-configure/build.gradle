@@ -1,0 +1,3 @@
+12.times { System.err.println('noise the build prints before it fails, as the Android SDK does') }
+
+throw new GradleException('the reason this build cannot be configured')

@@ -367,11 +367,18 @@ run_case() {
     return
   fi
 
+  # A failure rather than a skip: every hosted runner sets ANDROID_HOME, so a
+  # missing one means the case would stop proving anything without saying so.
+  if [ -f "$case_dir/needs-android-sdk" ] && [ -z "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ]; then
+    fail "$name" "needs an Android SDK: set ANDROID_HOME"
+    return
+  fi
+
   sandbox="$work/$name"
   rm -rf "$sandbox"
   mkdir -p "$(dirname "$sandbox")"
   cp -R "$case_dir" "$sandbox"
-  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/task" \
+  rm -rf "$sandbox/expected" "$sandbox/expect-error.txt" "$sandbox/needs-tools" "$sandbox/needs-android-sdk" "$sandbox/task" \
          "$sandbox/expect-file.txt" "$sandbox/expect-output.txt" "$sandbox/expect-contains.txt" \
          "$sandbox/expect-lacks.txt" "$sandbox/expect-blocks.txt" "$sandbox/resolve" \
          "$sandbox/expect-absent.txt" "$sandbox/task-after" "$sandbox/daukle.after.toml"          "$sandbox/remove-after.txt"

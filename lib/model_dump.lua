@@ -5,7 +5,10 @@ local model_dump_environment = daukle.require("lib/model_dump_environment")
 ---
 --- @implNote the dump runs at `gradle.taskGraph.whenReady`, because a value a
 --- build sets in its own `projectsEvaluated` is not yet visible in the init
---- script's. Core plugins' values come from typed readers (the `java`,
+--- script's, and registers that listener from `projectsEvaluated` so it runs
+--- after the build's own: the Android Gradle plugin 4.2 sets its analytics
+--- service's parameters in a `whenReady` of its own, and any getter reaching
+--- the service earlier fails the build (termux on Gradle 7.2, D-230). Core plugins' values come from typed readers (the `java`,
 --- `sourceSets` and `application` extensions, and the `Jar`, `JavaCompile`,
 --- `Test`, `Javadoc` and `JavaExec` tasks), because a generic walk renders
 --- Gradle 9's `JavaLanguageVersion` as internal fields; the walk, bounded by a
@@ -68,8 +71,20 @@ def pathFrom = { File base, Object target ->
   relative.isEmpty() ? '.' : relative
 }
 
+/**
+ * Whether a provider's value is a build service, which the dump never queries: Gradle caches a service's failed
+ * creation and rethrows it at the plugin's own next use, so reading an Android Gradle plugin 4.2 task's
+ * `analyticsService` before its parameters were set failed the build after the model was written (termux, D-230).
+ */
+def isBuildServiceProvider = { org.gradle.api.provider.Provider provider ->
+  provider instanceof org.gradle.api.internal.provider.ProviderInternal && provider.type != null &&
+    org.gradle.api.services.BuildService.isAssignableFrom(provider.type)
+}
+
 def unwrap = { value ->
-  if (value instanceof org.gradle.api.provider.Provider) return value.getOrNull()
+  if (value instanceof org.gradle.api.provider.Provider) {
+    return isBuildServiceProvider(value) ? unrendered('build service') : value.getOrNull()
+  }
   value
 }
 
@@ -1097,32 +1112,32 @@ def outputFor = { invocation ->
 gradle.projectsEvaluated {
   def help = gradle.rootProject.tasks.findByName('help')
   if (help != null) gradle.includedBuilds.each { build -> help.dependsOn(build.task(':help')) }
-}
 
-gradle.taskGraph.whenReady {
-  def base = gradle.rootProject.rootDir
-  def model = [schema: 1, gradleVersion: gradle.gradleVersion, rootDir: slashes(base.path),
-               included: gradle.parent != null,
-               identityPath: (gradle.hasProperty('identityPath') ? gradle.identityPath.toString() : null),
-               jvm: [fileEncoding: System.getProperty('file.encoding'), nativeEncoding: System.getProperty('native.encoding'),
-                     defaultCharset: java.nio.charset.Charset.defaultCharset().name(),
-                     javaVersion: System.getProperty('java.version')],
-               includedBuilds: gradle.includedBuilds.collect { [name: it.name, dir: pathFrom(base, it.projectDir)] },
-               pluginManagementRepositories: settingsFacts.pluginManagementRepositories ?: [],
-               settingsPlugins: settingsFacts.settingsPlugins ?: [],
-               settingsExtensions: settingsFacts.settingsExtensions ?: [:],
-               settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
-               settingsCore: settingsFacts.settingsCore ?: [:],
-               settingsScript: settingsFacts.settingsScript,
-               projects: []]
-  model.catalogs = safely { catalogsOf(gradle.rootProject) }
-  try {
-    model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it, settingsFacts.settingsScript?.path) }
-    model.appliedScripts = appliedInventoriesOf(base, model.projects)
-  } finally { closeKotlinParsers() }
-  def file = outputFor(gradle)
-  file.parentFile.mkdirs()
-  file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(writableModel(model))), 'UTF-8')
+  gradle.taskGraph.whenReady {
+    def base = gradle.rootProject.rootDir
+    def model = [schema: 1, gradleVersion: gradle.gradleVersion, rootDir: slashes(base.path),
+                 included: gradle.parent != null,
+                 identityPath: (gradle.hasProperty('identityPath') ? gradle.identityPath.toString() : null),
+                 jvm: [fileEncoding: System.getProperty('file.encoding'), nativeEncoding: System.getProperty('native.encoding'),
+                       defaultCharset: java.nio.charset.Charset.defaultCharset().name(),
+                       javaVersion: System.getProperty('java.version')],
+                 includedBuilds: gradle.includedBuilds.collect { [name: it.name, dir: pathFrom(base, it.projectDir)] },
+                 pluginManagementRepositories: settingsFacts.pluginManagementRepositories ?: [],
+                 settingsPlugins: settingsFacts.settingsPlugins ?: [],
+                 settingsExtensions: settingsFacts.settingsExtensions ?: [:],
+                 settingsBuildscript: settingsFacts.settingsBuildscript ?: [repositories: [], resolved: [], errors: []],
+                 settingsCore: settingsFacts.settingsCore ?: [:],
+                 settingsScript: settingsFacts.settingsScript,
+                 projects: []]
+    model.catalogs = safely { catalogsOf(gradle.rootProject) }
+    try {
+      model.projects = gradle.rootProject.allprojects.collect { projectOf(base, it, settingsFacts.settingsScript?.path) }
+      model.appliedScripts = appliedInventoriesOf(base, model.projects)
+    } finally { closeKotlinParsers() }
+    def file = outputFor(gradle)
+    file.parentFile.mkdirs()
+    file.setText(JsonOutput.prettyPrint(JsonOutput.toJson(writableModel(model))), 'UTF-8')
+  }
 }
 ]==]
 

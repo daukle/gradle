@@ -110,7 +110,7 @@ end
 local function run_dump(context, gradle_version, cwd, arguments)
   local result = launcher.run(context, gradle_version, DUMP_JDK, arguments,
                               { cwd = cwd, capture = true, check = false })
-  if result.code ~= 0 then return launcher.stderr_tail(result) end
+  if result.code ~= 0 then return launcher.failure_text(result) end
   return nil
 end
 

@@ -298,7 +298,7 @@ local function reported_tool_defaults(context, config)
                             { capture = true, check = false })
   if result.code ~= 0 then
     error("Gradle failed while reporting the tools its plugins download: "
-          .. launcher.stderr_tail(result), 0)
+          .. launcher.failure_text(result), 0)
   end
   if result.truncated then
     error("Gradle's report of the tools its plugins download was truncated, so some would go"

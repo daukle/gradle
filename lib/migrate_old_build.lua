@@ -140,7 +140,7 @@ function migrate_old_build.build(context)
   local result = launcher.run(context, plan.gradle, plan.jdk, arguments_of(context, plan, jdk_home),
                               { cwd = context.dir or ".", capture = true, check = false })
   if result.code ~= 0 then
-    error("Gradle could not build the old jars:\n" .. launcher.stderr_tail(result), 0)
+    error("Gradle could not build the old jars:\n" .. launcher.failure_text(result), 0)
   end
 end
 
