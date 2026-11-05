@@ -40,11 +40,30 @@ end
 
 local STDERR_SHOWN = 2000
 
---- The end of a failed run's stderr, which is where Gradle says why.
-local function stderr_tail(result)
-  local text = result.stderr or ""
+local function tail(text)
   if #text <= STDERR_SHOWN then return text end
   return "..." .. string.sub(text, -STDERR_SHOWN)
+end
+
+local function section(text, heading)
+  local start = string.find(text, "* " .. heading .. ":\n", 1, true)
+  if start == nil then return nil end
+  local finish = string.find(text, "\n\n* ", start, true)
+  return string.sub(text, start, (finish or #text + 1) - 1)
+end
+
+--- Why a failed run failed: Gradle's "What went wrong" section, then its
+--- "Where", or the end of stderr when it printed neither.
+---
+--- @implNote the reason comes first because core cuts an error at 512 bytes,
+--- and a build's own warnings (the Android SDK's XML namespace lines) can fill
+--- that before the reason is reached, as termux's did (D-230).
+local function failure_text(result)
+  local text = string.gsub(result.stderr or "", "\r\n", "\n")
+  local wrong = section(text, "What went wrong")
+  if wrong == nil then return tail(text) end
+  local where = section(text, "Where")
+  return tail(wrong .. (where ~= nil and "\n" .. where or ""))
 end
 
 --- The flags every migration run passes to keep the configuration cache off.
@@ -55,5 +74,5 @@ end
 --- wins over its `gradle.properties`.
 local NO_CONFIGURATION_CACHE = { "--no-configuration-cache", "-Dorg.gradle.unsafe.isolated-projects=false" }
 
-return { run = run, jdk_home = jdk_home, stderr_tail = stderr_tail,
+return { run = run, jdk_home = jdk_home, failure_text = failure_text,
          NO_CONFIGURATION_CACHE = NO_CONFIGURATION_CACHE }
