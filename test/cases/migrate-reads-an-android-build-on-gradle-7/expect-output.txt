@@ -1,0 +1,2 @@
+provisioning gradle 7.2
+library/build.gradle: configure.android.
