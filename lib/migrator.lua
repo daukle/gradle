@@ -28,6 +28,11 @@ local WRAPPER_DIRECTORY = "gradle/wrapper"
 local WRAPPER_PROPERTIES = "gradle-wrapper.properties"
 local DUMP_JDK = "17"
 
+--- The dump's daemon JVM when the build sets none: Gradle's default heap is 512 MB, which the model
+--- of a large Android and Kotlin build outgrows (retrofit, D-245). A build's own setting is kept,
+--- since replacing it would drop every other flag it passes.
+local DUMP_DAEMON_JVM = "-Xmx2g -XX:MaxMetaspaceSize=1g"
+
 --- The version a build that sets none migrates to.
 ---
 --- @implNote core's own default for a manifest naming no version, written here
@@ -122,6 +127,7 @@ local function dump(context, gradle_version)
     "--init-script", derived_from_instance(context, INIT_SCRIPT),
     "-D" .. model_dump.PROPERTY .. "=" .. derived_from_instance(context, MODEL),
   }
+  if not migrate_owned.sets_daemon_jvm(context) then arguments[#arguments + 1] = "-Dorg.gradle.jvmargs=" .. DUMP_DAEMON_JVM end
   tables.append(arguments, launcher.NO_CONFIGURATION_CACHE)
   tables.append(arguments, { "--quiet", "help" })
   local failure = run_dump(context, gradle_version, context.dir or ".", arguments)
