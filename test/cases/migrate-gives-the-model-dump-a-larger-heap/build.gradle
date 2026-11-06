@@ -1,0 +1,8 @@
+plugins {
+  id 'java'
+}
+
+def heapMegabytes = Runtime.runtime.maxMemory() >> 20
+if (System.getProperty('daukle.migrate.model') != null && heapMegabytes < 1500) {
+  throw new GradleException("the model dump ran with a ${heapMegabytes} MB heap")
+}

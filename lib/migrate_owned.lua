@@ -176,6 +176,16 @@ local function property_blockers(directory, blockers, is_root)
   end
 end
 
+--- Whether the root build's `gradle.properties` sets the daemon's JVM arguments itself.
+function migrate_owned.sets_daemon_jvm(context)
+  local directory = context.dir or "."
+  if not migrate_paths.has_file(directory, GRADLE_PROPERTIES) then return false end
+  for _, entry in ipairs(gradle_properties.parse(daukle.read(within(directory, GRADLE_PROPERTIES)))) do
+    if entry.key == "org.gradle.jvmargs" then return true end
+  end
+  return false
+end
+
 --- The root build's project properties as the `gradleProperties` value, or nil.
 function migrate_owned.root_properties(context)
   local directory = context.dir or "."
