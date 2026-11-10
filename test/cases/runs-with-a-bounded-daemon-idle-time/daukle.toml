@@ -1,0 +1,18 @@
+schema = 1
+project = "example/daemon"
+version = "1.0.0"
+
+[modules.app]
+
+[plugins]
+gradle = "./plugins"
+
+# A build asks the daemon's own start parameters, so the case fails if the launcher stops passing
+# the timeout, which is the only thing that keeps a daemon from lingering for three hours.
+[toolchains.gradle]
+version = "9.6.0"
+
+[toolchains.gradle.verbatim]
+groovy = '''
+println 'daemon idle time ' + gradle.startParameter.systemPropertiesArgs['org.gradle.daemon.idletimeout']
+'''
