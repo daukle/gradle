@@ -40,8 +40,8 @@ daukle.plugin{
       sha256 = "94cecf60ad502541ce8fd1e087e335bf5eff65c67b651b94e21a9979e62b9b88",
     },
     maven = {
-      url = "https://github.com/daukle/maven/releases/download/1.7.0/plugin.lua",
-      sha256 = "d3a2342b6c116be914647b9b8ce8d2a757d30b4d34cf21cc1f1403056ccc4501",
+      url = "https://github.com/daukle/maven/releases/download/1.7.1/plugin.lua",
+      sha256 = "b3349c30acd9653ac0f474cab441e33f52947393a52d7a71e300b109b8954eb6",
     },
   },
 }
