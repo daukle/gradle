@@ -7,6 +7,11 @@ local function provisioned_jdk(context, jdk_version)
   return root, jdk
 end
 
+--- How long an idle Gradle daemon stays alive: Gradle's own three hours left four daemons holding
+--- 3.3 GB on one machine (D-167), and `--no-daemon` would lose the reuse between a migration's runs
+--- and between a user's builds. Measured honoured from the command line on 7.6.4, 8.13 and 9.6.0.
+local DAEMON_IDLE_MILLISECONDS = 300000
+
 --- Runs Gradle `gradle_version` on the JDK `jdk_version`, both provisioned, with
 --- `arguments` after the launcher's own.
 ---
@@ -27,6 +32,7 @@ local function run(context, gradle_version, jdk_version, arguments, options)
   local argv = {
     "-classpath", gradle_root:path(pick.home .. "/lib/gradle-launcher-" .. pick.version .. ".jar"),
     "org.gradle.launcher.GradleMain",
+    "-Dorg.gradle.daemon.idletimeout=" .. DAEMON_IDLE_MILLISECONDS,
   }
   for index = 1, #arguments do argv[#argv + 1] = arguments[index] end
   return daukle.exec(java, argv, options)

@@ -795,6 +795,10 @@ using current Java home"*, which is the JDK daukle provisioned, so the environme
 (`D-32`) never enters into it. The design proposed setting `JAVA_HOME` and the measurement made it
 unnecessary.
 
+**An idle daemon lives five minutes**, not Gradle's three hours: every run passes
+`-Dorg.gradle.daemon.idletimeout`, because lingering daemons held 3.3 GB here (`D-167`) and `--no-daemon` would lose the
+reuse between a migration's runs and a user's builds.
+
 ## Pinning Gradle is the easy half
 
 `services.gradle.org` publishes a `.sha256` beside **every** distribution, from its own host. That
