@@ -1,0 +1,1 @@
+build/daukle/gradle/build/out/modules/app/classes/java/main/App.class
